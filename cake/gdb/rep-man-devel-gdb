@@ -1,0 +1,55 @@
+# This file defines handy gdb macros for printing out rep_man
+# co-object information.
+
+# Please don't use tabs in this file. When pasting a
+# macro definition to gdb, tabs are interpreted as completion.
+
+define printallco
+  set $next=head
+  while $next != 0x0
+    print *$next
+    set $next=$next->next
+  end
+end
+document printallco
+  Prints all co-objects
+end
+
+define printco
+  set $num_reps=sizeof head->reps / sizeof head->reps[0]
+  set $next=head
+  while $next != 0x0
+	set $rep=0
+	while $rep < $num_reps
+      if $next->reps[$rep] == $arg0
+        print *$next
+      end
+      set $rep=$rep+1
+    end
+    set $next=$next->next
+  end
+end
+document printco
+  Prints co-object record for object arg0
+end
+
+define printg20typename
+  print (const char *)g_type_name(*(unsigned*)$arg0)
+end
+document printg20typename
+  Prints the name of the gtk+-2.0 type denoted by type object arg0
+end
+
+define printg12typename
+  print (const char *)g_type_name(conv_gtk_type_from_gtk_12_to_gtk_20(*(unsigned*)$arg0, 0, 0))
+end
+document printg12typename
+  Prints the name of the gtk+-1.2 type denoted by type object arg0
+end
+
+define printgobjtypeobj
+	printf "%p\n",*(unsigned*)$arg0
+end
+document printgobjtypeobj
+  Prints the address of the type object corresponding to gtk+-1.2 or gtk+-2.0 object arg0
+end
