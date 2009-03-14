@@ -1,0 +1,4 @@
+include(antlr-m4.inc)
+define(antlr_m4_grammar_name_suffix,Cpp)
+define(antlr_m4_language,Cpp)
+define(antlr_m4_skip_action,skip();)

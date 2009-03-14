@@ -6,7 +6,7 @@ options {
 }
 
 /* The whole input */
-toplevel:   objectExpr /*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
+toplevel:   objectExpr {sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} 
         ;
 
 objectExpr      :   atomicExpr

@@ -1,0 +1,1 @@
+include(antlr-m4.inc) define(antlr_m4_grammar_name_suffix,Py) define(antlr_m4_language,Python) define(antlr_m4_skip_action,self.skip();)
