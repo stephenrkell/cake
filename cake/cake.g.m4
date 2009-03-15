@@ -5,7 +5,7 @@ options {
     language=antlr_m4_language;
     ASTLabelType=CommonTree; // type of $statement.tree ref etc...
 }
-
+tokens { ENCLOSING; MULTIVALUE; }
 /* The whole input */
 toplevel:   declaration* /*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
         ;
@@ -19,7 +19,6 @@ declaration		: existsDeclaration
 
 existsDeclaration	: 'exists'^ IDENT '('! FILENAME ')'! IDENT existsBody
 					;
-
 existsBody			: '{'! claimGroup* '}'!
 					;
 
@@ -28,14 +27,16 @@ claimGroup			: 'check'^ '{'! claim* '}'!
                     | 'override'^ '{'! claim* '}'!
 					;
                     
-claim				: memberNameExpr ':'! valueDescriptionExpr ';'!
+claim				: memberNameExpr ':' valueDescriptionExpr ';'
+						-> ^( memberNameExpr ^( valueDescriptionExpr ) )
 					;
                     
-memberNameExpr		: '.'? ( IDENT^ '.'! )+
-					;
-                    
-functionDescriptionExpr	: 
-						;
+memberNameExpr		: '.'!? IDENT^ ( '.'^ IDENT )* 
+					| '_' ;
+
+      
+/*functionDescriptionExpr	: 
+						;*/
 
 /* The following alternatives are in precedence order, highest to lowest */
 //valueDescriptionExpr	: primitiveValueDescription
@@ -48,54 +49,70 @@ functionDescriptionExpr	:
 /*valueDescriptionExpr 	: structuredValueDescription
 						;*/
 
-valueDescriptionExpr		: primitiveValueDescription
+valueDescriptionExpr		: primitiveOrFunctionValueDescription
                             /*| functionValueDescription*/
                             ;
 
-primitiveValueDescription	: unspecifiedValueDescription^
-							| simpleOrPointerValueDescription^
-                            | 'opaque'^ simpleOrPointerValueDescription
-                            | 'ignored'^ simpleOrPointerValueDescription
-                            /*| 'object'^ '{'! claim* '}'!*/                    
+primitiveValueDescription	: unannotatedValueDescription^
+                            | 'opaque'^ unannotatedValueDescription
+                            | 'ignored'^ unannotatedValueDescription
                         	;
-
-/*pointerValueDescription		: */
-							
-/*
-annotatedValueDescription	: 'opaque' annotatedValueDescription
-							| 'ignored' annotatedValueDescription
-                            | structuredValueDescription
-                            ;
-                            
-structuredValueDescription	: 'object'^ '{'! claim* '}'!
+unannotatedValueDescription : /*unspecifiedValueDescription^
+							|*/ simpleOrObjectOrPointerValueDescription^
                             ;
 
-*/
-                            
-unspecifiedValueDescription	: '_'
-							;
 
-simpleOrPointerValueDescription : simpleValueDescription^ ( 'ptr'^ )+
-                            	;
+primitiveOrFunctionValueDescription	: 
+	(primitiveValueDescription '->')=> 
+    	primitiveValueDescription '->' primitiveOrFunctionValueDescription 
+			-> ^('->' primitiveValueDescription ^( primitiveOrFunctionValueDescription ) )
+	| primitiveValueDescription
+	; 
+							                            
+structuredValueDescription	: 'object' '{' claim* '}'
+								-> ^('object' claim* )
+                            ;
+                           
+/*unspecifiedValueDescription	: '_'
+							;*/
 
-simpleValueDescription		: 'int'^
+simpleOrObjectValueDescription 	: simpleValueDescription^
+								| structuredValueDescription^
+                                ;
+
+simpleOrObjectOrPointerValueDescription 
+	: structuredValueDescription^ ( 'ptr'^ )*
+    | simpleValueDescription^ ( 'ptr'^ )*
+    ;
+
+/*simpleOrPointerValueDescription : simpleOrObjectValueDescription^ ( 'ptr'^ )*
+                            	;*/
+
+simpleValueDescription		: /* 'int'^
+							|*/ IDENT^
+                            | '_'
 							| '('! valueDescriptionExpr^ ')'! 
 							;
 
-/*functionValueDescription	: functionArgumentDescriptionExpr '->'^ functionResultDescriptionExpr
-							| valueDescriptionExpr 
+functionValueDescription	: 
+	(functionArgumentDescriptionExpr '->')=> 
+    	functionArgumentDescriptionExpr '->' functionResultDescriptionExpr
+        	-> ^('->' functionArgumentDescriptionExpr functionResultDescriptionExpr )
+	| valueDescriptionExpr 
 							;
 
-functionArgumentDescriptionExpr	: multiValueDescriptionExpr
-								| primitiveValueDescription
+functionArgumentDescriptionExpr	: /*multiValueDescriptionExpr
+								|*/ primitiveValueDescription
 								;
 
-functionResultDescriptionExpr	: multiValueDescriptionExpr
-								| primitiveValueDescription
-								;*/
-                                
-/*multiValueDescriptionExpr	: '<'! ( primitiveValueDescription ','! )* primitiveValueDescription ','!? '>'!
-							;*/
+functionResultDescriptionExpr	: /*multiValueDescriptionExpr
+								|*/ primitiveValueDescription
+								;
+/*                                
+multiValueDescriptionExpr	: '<' ( primitiveValueDescription^ ',' )* primitiveValueDescription ',' '>'
+	-> ^( MULTIVALUE primitiveValueDescription )
+
+	;*/
 
 /*aliasDeclaration	:
 					;
@@ -107,10 +124,10 @@ inlineDeclaration			:
 							;*/
 /* Lexer */
 INT :   '0'..'9'+ ;
-NEWLINE:'\r'? '\n' ;
+NEWLINE:'\r'? '\n' {antlr_m4_skip_action} ;
 WS  :   (' '|'\t')+ {antlr_m4_skip_action} ;
 LINECOMMENT : '/' '/'( ~ '\n' )* {antlr_m4_skip_action} ;
-BLOCKCOMMENT : '/' '*' ( ~ '/' | ( ~ '*' ) '/' )* '*' '/' ;
+BLOCKCOMMENT : '/' '*' ( ~ '/' | ( ~ '*' ) '/' )* '*' '/' {antlr_m4_skip_action} ;
 FILENAME : '\"' ( ~'\"'|'\\\"' )+ '\"' ;
 IDENT  :   ('a'..'z'|'A'..'Z')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'-')*('a'..'z'|'A'..'Z'|'0'..'9'|'_') ;
 // FIXME: permit reserved words as identifiers, somehow
