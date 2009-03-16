@@ -5,21 +5,35 @@ options {
     language=antlr_m4_language;
     ASTLabelType=CommonTree; // type of $statement.tree ref etc...
 }
-tokens { ENCLOSING; MULTIVALUE; }
+tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; }
 /* The whole input */
 toplevel:   declaration* /*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
         ;
 
 declaration		: existsDeclaration
-/*				| aliasDeclaration
-                | deriveDeclaration
+				| aliasDeclaration
                 | supplementaryDeclaration
+/*                | deriveDeclaration
                 | inlineDeclaration */
 				;
+
+aliasDeclaration	: 'alias'^ aliasDescription IDENT ';'!
+					;
+                    
+aliasDescription	: IDENT^
+					| 'any'^ identList
+                    ;
+                    
+identList			: '[' IDENT ( ',' IDENT )*  ','? ']' -> ^( IDENT_LIST IDENT* )
+					;
+
+supplementaryDeclaration 	: IDENT '{' claimGroup* '}' -> ^( SUPPLEMENTARY claimGroup* )
+							;
 
 existsDeclaration	: 'exists'^ IDENT '('! FILENAME ')'! IDENT existsBody
 					;
 existsBody			: '{'! claimGroup* '}'!
+					| ';'!
 					;
 
 claimGroup			: 'check'^ '{'! claim* '}'!
@@ -72,27 +86,43 @@ primitiveOrFunctionValueDescription	:
 structuredValueDescription	: 'object' '{' claim* '}'
 								-> ^('object' claim* )
                             ;
-                           
-/*unspecifiedValueDescription	: '_'
-							;*/
+                            
+simpleOrObjectOrPointerValueDescription : structuredValueDescription^ ( 'ptr'^ )*
+									    | simpleValueDescription^ ( 'ptr'^ )*
+                                        | enumValueDescription^ ( 'ptr'^ )*
+									    ;
 
-simpleOrObjectValueDescription 	: simpleValueDescription^
-								| structuredValueDescription^
-                                ;
-
-simpleOrObjectOrPointerValueDescription 
-	: structuredValueDescription^ ( 'ptr'^ )*
-    | simpleValueDescription^ ( 'ptr'^ )*
-    ;
-
-/*simpleOrPointerValueDescription : simpleOrObjectValueDescription^ ( 'ptr'^ )*
-                            	;*/
-
-simpleValueDescription		: /* 'int'^
-							|*/ IDENT^
+simpleValueDescription		: dwarfBaseTypeDescription^
                             | '_'
 							| '('! valueDescriptionExpr^ ')'! 
 							;
+
+byteSizeParameter			: '<'! INT '>'!
+							;
+                
+dwarfBaseTypeDescription	: IDENT^ ( byteSizeParameter ( '{'! ( IDENT '=' ( IDENT | INT ) ';' )* '}'! )? )?
+							;
+
+enumValueDescription	: 'enum'^ ( IDENT | '_' ) byteSizeParameter? enumDefinition?
+						;
+                           
+enumDefinition	: '{'! enumElement* '}'!
+				;
+
+enumElement : 'enumerator'^ IDENT '==' constantIntegerArithmeticExpression ';'!
+			;
+            
+constantIntegerArithmeticExpression	: shiftingExpression^
+									;
+
+primitiveIntegerArithmeticExpression	: INT^
+										| '('! constantIntegerArithmeticExpression^ ')'!
+                                        ;
+                                        
+shiftingExpression	: primitiveIntegerArithmeticExpression ( '<<'^ | '>>' primitiveIntegerArithmeticExpression )* 
+					;
+                           
+
 
 functionValueDescription	: 
 	(functionArgumentDescriptionExpr '->')=> 
@@ -101,18 +131,17 @@ functionValueDescription	:
 	| valueDescriptionExpr 
 							;
 
-functionArgumentDescriptionExpr	: /*multiValueDescriptionExpr
-								|*/ primitiveValueDescription
+functionArgumentDescriptionExpr	: multiValueDescriptionExpr
+								| primitiveValueDescription
 								;
 
-functionResultDescriptionExpr	: /*multiValueDescriptionExpr
-								|*/ primitiveValueDescription
+functionResultDescriptionExpr	: multiValueDescriptionExpr
+								| primitiveValueDescription
 								;
-/*                                
-multiValueDescriptionExpr	: '<' ( primitiveValueDescription^ ',' )* primitiveValueDescription ',' '>'
+                               
+multiValueDescriptionExpr	: '<' primitiveValueDescription (',' primitiveValueDescription )*  '>'
 	-> ^( MULTIVALUE primitiveValueDescription )
-
-	;*/
+	;
 
 /*aliasDeclaration	:
 					;
@@ -129,5 +158,20 @@ WS  :   (' '|'\t')+ {antlr_m4_skip_action} ;
 LINECOMMENT : '/' '/'( ~ '\n' )* {antlr_m4_skip_action} ;
 BLOCKCOMMENT : '/' '*' ( ~ '/' | ( ~ '*' ) '/' )* '*' '/' {antlr_m4_skip_action} ;
 FILENAME : '\"' ( ~'\"'|'\\\"' )+ '\"' ;
-IDENT  :   ('a'..'z'|'A'..'Z')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'-')*('a'..'z'|'A'..'Z'|'0'..'9'|'_') ;
+IDENT  :   ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9') /* begin with a-zA-Z or non-terminal '_' */
+(
+	('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'-'|'.'/*'0'..'9'*/)*('a'..'z'|'A'..'Z'|'0'..'9'|'_')
+   /*|('.''0'..'9') /* ending with dot-digit is okay */
+)? ;
+/* The ident rule is a bit different from the conventional -- idents must be at
+ * least two characters, and may embed '-' and '.' characters (not at the start or end). 
+ * The first of these quirks reduces ambiguity, since '_' is given a unique and special
+ * meaning. On the other hand, symbols which are only one character will cause problems.
+ * The second quirk is really odd, but I'm running with it so that we can use library names
+ * in a natural fashion, e.g. glib-2.0 and so on. Note that the ambiguity is less than
+ * you think, in the common case that the dots fall in between digits, since a digit
+ * can't begin an ident anyway.
+ * FIXME: at the moment, to support the allow-digits-after-dots rule, 
+ * we require extra spaces in a name.name.name expression. Fix ANTLR's lexing 
+ * behaviour so that we don't need this (i.e. that blah.blah.blah works as expected). */
 // FIXME: permit reserved words as identifiers, somehow

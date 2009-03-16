@@ -3,7 +3,9 @@ default: cakePyLexer.py cakePyParser.py
 
 .PHONY: test
 test: default
-	cd examples/foobarbaz; ../../cake foo.cake
+	while read line; do \
+		eval python cakePyParser.py $$line || break; \
+	done < cake.g.tests
 
 %Py.g: %.g.m4
 	m4 -Dantlr_m4_include_file=antlr-m4-py.inc "$<" > "$@"
