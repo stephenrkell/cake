@@ -13,8 +13,8 @@ toplevel:   declaration* /*{sys.stdout.write($objectExpr.tree.toStringTree() + '
 declaration		: existsDeclaration
 				| aliasDeclaration
                 | supplementaryDeclaration
-/*                | deriveDeclaration
-                | inlineDeclaration */
+                | inlineDeclaration
+/*                | deriveDeclaration  */
 				;
 
 aliasDeclaration	: 'alias'^ aliasDescription IDENT ';'!
@@ -27,13 +27,22 @@ aliasDescription	: IDENT^
 identList			: '[' IDENT ( ',' IDENT )*  ','? ']' -> ^( IDENT_LIST IDENT* )
 					;
 
-supplementaryDeclaration 	: IDENT '{' claimGroup* '}' -> ^( SUPPLEMENTARY claimGroup* )
+supplementaryDeclaration 	: IDENT '{' claimGroup* '}' -> ^( SUPPLEMENTARY IDENT claimGroup* )
 							;
 
-existsDeclaration	: 'exists'^ IDENT '('! FILENAME ')'! IDENT existsBody
+objectConstructor	: IDENT^ ( '('! STRING_LIT ')'! )?
+							;
+
+objectSpec			: objectConstructor^ ( IDENT | 'deriving' objectConstructor IDENT )
 					;
-existsBody			: '{'! claimGroup* '}'!
+
+existsDeclaration	: 'exists'^ objectSpec existsBody
+					;
+existsBody			: '{'! ( claimGroup | globalRewrite )* '}'!
 					| ';'!
+					;
+                    
+globalRewrite		: 'static'? valueDescriptionExpr '-->'^ valueDescriptionExpr ';'!
 					;
 
 claimGroup			: 'check'^ '{'! claim* '}'!
@@ -46,7 +55,8 @@ claim				: memberNameExpr ':' valueDescriptionExpr ';'
 					;
                     
 memberNameExpr		: '.'!? IDENT^ ( '.'^ IDENT )* 
-					| '_' ;
+					| '_' 
+                    ;
 
       
 /*functionDescriptionExpr	: 
@@ -68,6 +78,7 @@ valueDescriptionExpr		: primitiveOrFunctionValueDescription
                             ;
 
 primitiveValueDescription	: unannotatedValueDescription^
+							| 'const'^ constantValueDescription
                             | 'opaque'^ unannotatedValueDescription
                             | 'ignored'^ unannotatedValueDescription
                         	;
@@ -75,6 +86,9 @@ unannotatedValueDescription : /*unspecifiedValueDescription^
 							|*/ simpleOrObjectOrPointerValueDescription^
                             ;
 
+constantValueDescription	: STRING_LIT^
+							| constantIntegerArithmeticExpression
+                            ;
 
 primitiveOrFunctionValueDescription	: 
 	(primitiveValueDescription '->')=> 
@@ -103,7 +117,7 @@ byteSizeParameter			: '<'! INT '>'!
 dwarfBaseTypeDescription	: IDENT^ ( byteSizeParameter ( '{'! ( IDENT '=' ( IDENT | INT ) ';' )* '}'! )? )?
 							;
 
-enumValueDescription	: 'enum'^ ( IDENT | '_' ) byteSizeParameter? enumDefinition?
+enumValueDescription	: 'enum'^ ( ( ( IDENT | '_' ) byteSizeParameter? enumDefinition? ) | ( byteSizeParameter? enumDefinition ) )
 						;
                            
 enumDefinition	: '{'! enumElement* '}'!
@@ -119,7 +133,7 @@ primitiveIntegerArithmeticExpression	: INT^
 										| '('! constantIntegerArithmeticExpression^ ')'!
                                         ;
                                         
-shiftingExpression	: primitiveIntegerArithmeticExpression ( '<<'^ | '>>' primitiveIntegerArithmeticExpression )* 
+shiftingExpression	: primitiveIntegerArithmeticExpression ( ( '<<'^ | '>>'^ ) primitiveIntegerArithmeticExpression )* 
 					;
                            
 
@@ -143,21 +157,57 @@ multiValueDescriptionExpr	: '<' primitiveValueDescription (',' primitiveValueDes
 	-> ^( MULTIVALUE primitiveValueDescription )
 	;
 
-/*aliasDeclaration	:
+deriveDeclaration	: 'derive'^ objectConstructor IDENT '=' derivedObjectExpression
 					;
-deriveDeclaration	:
-					;
-supplementaryDeclaration	:
+                    
+derivedObjectExpression	: IDENT^ '(' derivedObjectExpression ')'
+						| 'link'^ identList linkRefinement
+						;
+
+linkRefinement	: '{'! pairwiseCorrespondenceBlock^ '}'!
+				| ;
+                
+pairwiseCorrespondenceBlock	:	IDENT '<-->'^ IDENT pairwiseCorrespondenceBody
 							;
-inlineDeclaration			:
-							;*/
+                            
+pairwiseCorrespondenceBody	: '{'! pairwiseCorrespondenceElement* '}'! -> ^( pairwiseCorrespondenceElement* )
+							;
+                            
+pairwiseCorrespondenceElement	:	eventCorrespondence
+								|	valueCorrespondenceBlock
+                                ;
+                                
+eventCorrespondence	:	eventPattern	'-->' eventPatternRewriteExpr
+					|	eventPatternRewriteExpr '<--' eventPattern
+                    |	eventPattern	'<-->' eventPattern
+					;
+                    
+eventPattern	:	memberNameExpr^ '('! ( IDENT ( ',' IDENT )* )? ')'!
+				;
+                
+eventPatternRewriteExpr	: eventPattern^ /* shorthand for a trivial stub */
+						| stubExpression^
+                        ;
+                        
+stubExpression		: '('! stubStatement* ')'! -> ^( stubStatement* )
+					;
+                    
+stubStatement	:	assignment
+				|	invocation
+                ;
+
+inlineDeclaration			:	'inline'^ objectSpec wellNestedTokenBlock
+							;
+                            
+wellNestedTokenBlock : '{' ( INT | STRING_LIT | IDENT | 'alias' | 'any' | ';' | '[' | ',' | ']' | 'exists' | 'check' | 'declare' | 'override' | ':' | '.' | '_' | '->' | 'object' | 'ptr' | '<' | '>' | '=' | 'enum' | 'enumerator' | '==' | '<<' | '>>' | wellNestedTokenBlock | '<-->' | '<--' | '-->' | '#' | '::' | '?' | '+' | '-' | '/' | '|' | '(' | ')' )* '}';
+
 /* Lexer */
 INT :   '0'..'9'+ ;
 NEWLINE:'\r'? '\n' {antlr_m4_skip_action} ;
 WS  :   (' '|'\t')+ {antlr_m4_skip_action} ;
 LINECOMMENT : '/' '/'( ~ '\n' )* {antlr_m4_skip_action} ;
 BLOCKCOMMENT : '/' '*' ( ~ '/' | ( ~ '*' ) '/' )* '*' '/' {antlr_m4_skip_action} ;
-FILENAME : '\"' ( ~'\"'|'\\\"' )+ '\"' ;
+STRING_LIT : '\"' ( ~'\"'|'\\\"' )+ '\"' ;
 IDENT  :   ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9') /* begin with a-zA-Z or non-terminal '_' */
 (
 	('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'-'|'.'/*'0'..'9'*/)*('a'..'z'|'A'..'Z'|'0'..'9'|'_')
