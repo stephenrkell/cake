@@ -5,7 +5,7 @@ options {
     language=antlr_m4_language;
     ASTLabelType=CommonTree; // type of $statement.tree ref etc...
 }
-tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; }
+tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; }
 /* The whole input */
 toplevel:   declaration* /*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
         ;
@@ -14,7 +14,7 @@ declaration		: existsDeclaration
 				| aliasDeclaration
                 | supplementaryDeclaration
                 | inlineDeclaration
-/*                | deriveDeclaration  */
+                | deriveDeclaration 
 				;
 
 aliasDeclaration	: 'alias'^ aliasDescription IDENT ';'!
@@ -87,6 +87,7 @@ unannotatedValueDescription : /*unspecifiedValueDescription^
                             ;
 
 constantValueDescription	: STRING_LIT^
+							| 'void'^
 							| constantIntegerArithmeticExpression
                             ;
 
@@ -145,12 +146,12 @@ functionValueDescription	:
 	| valueDescriptionExpr 
 							;
 
-functionArgumentDescriptionExpr	: multiValueDescriptionExpr
-								| primitiveValueDescription
+functionArgumentDescriptionExpr	: multiValueDescriptionExpr^
+								| primitiveValueDescription^
 								;
 
-functionResultDescriptionExpr	: multiValueDescriptionExpr
-								| primitiveValueDescription
+functionResultDescriptionExpr	: multiValueDescriptionExpr^
+								| primitiveValueDescription^
 								;
                                
 multiValueDescriptionExpr	: '<' primitiveValueDescription (',' primitiveValueDescription )*  '>'
@@ -160,7 +161,7 @@ multiValueDescriptionExpr	: '<' primitiveValueDescription (',' primitiveValueDes
 deriveDeclaration	: 'derive'^ objectConstructor IDENT '=' derivedObjectExpression
 					;
                     
-derivedObjectExpression	: IDENT^ '(' derivedObjectExpression ')'
+derivedObjectExpression	: IDENT^ '('! derivedObjectExpression ')'!
 						| 'link'^ identList linkRefinement
 						;
 
@@ -170,36 +171,63 @@ linkRefinement	: '{'! pairwiseCorrespondenceBlock^ '}'!
 pairwiseCorrespondenceBlock	:	IDENT '<-->'^ IDENT pairwiseCorrespondenceBody
 							;
                             
-pairwiseCorrespondenceBody	: '{'! pairwiseCorrespondenceElement* '}'! -> ^( pairwiseCorrespondenceElement* )
+pairwiseCorrespondenceBody	: '{' pairwiseCorrespondenceElement* '}' -> ^( CORRESP pairwiseCorrespondenceElement* )
 							;
                             
-pairwiseCorrespondenceElement	:	eventCorrespondence
-								|	valueCorrespondenceBlock
+pairwiseCorrespondenceElement	:	eventCorrespondence^
+								|	valueCorrespondenceBlock^
                                 ;
                                 
-eventCorrespondence	:	eventPattern	'-->' eventPatternRewriteExpr
-					|	eventPatternRewriteExpr '<--' eventPattern
-                    |	eventPattern	'<-->' eventPattern
+eventCorrespondence	:	eventPattern	'-->'^ eventPatternRewriteExpr ';'!
+					|	eventPatternRewriteExpr '<--'^ eventPattern ';'!
+                    /*|	eventPattern	'<-->' eventPattern*/
 					;
                     
-eventPattern	:	memberNameExpr^ '('! ( IDENT ( ',' IDENT )* )? ')'!
+eventPattern	:	memberNameExpr^ '('! ( identOrAnonymous ( ',' identOrAnonymous )* )? ')'!
 				;
+
+identOrAnonymous	:	IDENT^ 
+					| 	'_'^
+                    ;
                 
 eventPatternRewriteExpr	: eventPattern^ /* shorthand for a trivial stub */
-						| stubExpression^
+						| stubDescription^
                         ;
                         
-stubExpression		: '('! stubStatement* ')'! -> ^( stubStatement* )
+stubDescription		: '(' stubStatementBody ( ';' stubStatementBody )* ')' -> ^( STUB stubStatementBody* )
 					;
+          
+stubStatementBody	:	assignment^
+                	| 	stubLangExpression^
+                    |	'skip'^
+                	;
+                
+stubLangExpression	: constantValueDescription^
+					| ifThenElseExpression^
+					| invocation^
+                    | IDENT^
+					/*| stubDescription^ /* sequence */
+                    ;
                     
-stubStatement	:	assignment
-				|	invocation
-                ;
+ifThenElseExpression	:	'if'^ stubLangExpression 'then'! stubLangExpression 'else'! stubLangExpression
+						;  
+
+assignment 	: 'let'^ IDENT '='! stubLangExpression
+			;
+            
+invocation	: memberNameExpr '(' ( stubLangExpression ( ',' stubLangExpression ',' )* )? ')' -> ^( INVOCATION memberNameExpr stubLangExpression* )
+			;
+
+valueCorrespondenceBlock	: 'values'^ '{'! valueCorrespondence* '}'!
+							;
+                            
+valueCorrespondence	:	IDENT '<-->'^ IDENT ';'!
+					;
 
 inlineDeclaration			:	'inline'^ objectSpec wellNestedTokenBlock
 							;
                             
-wellNestedTokenBlock : '{' ( INT | STRING_LIT | IDENT | 'alias' | 'any' | ';' | '[' | ',' | ']' | 'exists' | 'check' | 'declare' | 'override' | ':' | '.' | '_' | '->' | 'object' | 'ptr' | '<' | '>' | '=' | 'enum' | 'enumerator' | '==' | '<<' | '>>' | wellNestedTokenBlock | '<-->' | '<--' | '-->' | '#' | '::' | '?' | '+' | '-' | '/' | '|' | '(' | ')' )* '}';
+wellNestedTokenBlock : '{' ( INT | STRING_LIT | IDENT | 'alias' | 'any' | ';' | '[' | ',' | ']' | 'exists' | 'check' | 'declare' | 'override' | ':' | '.' | '_' | '->' | 'object' | 'ptr' | '<' | '>' | '=' | 'enum' | 'enumerator' | '==' | '<<' | '>>' | wellNestedTokenBlock | '<-->' | '<--' | '-->' | '#' | '::' | '?' | '+' | '-' | '/' | '|' | '(' | ')' | 'let' )* '}';
 
 /* Lexer */
 INT :   '0'..'9'+ ;
