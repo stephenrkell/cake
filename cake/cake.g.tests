@@ -1,4 +1,5 @@
 --rule='toplevel' < switch-simple.cake 
+--input='(preview_window ::) .gtk_signal_connect_object(i, d, c_h, data) --> .g_signal_connect_data(i, d, c_h, data, null, {});' --rule='eventCorrespondence'
 --input='blah . blah . blah' --rule='memberNameExpr'
 --input='first . second . third' --rule='memberNameExpr'
 --input='.first .second .third' --rule='memberNameExpr'

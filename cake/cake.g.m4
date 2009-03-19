@@ -5,7 +5,8 @@ options {
     language=antlr_m4_language;
     ASTLabelType=CommonTree; // type of $statement.tree ref etc...
 }
-tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; }
+tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; 
+EVENT_CONTEXT; SET_CONST; }
 /* The whole input */
 toplevel:   declaration* /*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
         ;
@@ -88,8 +89,12 @@ unannotatedValueDescription : /*unspecifiedValueDescription^
 
 constantValueDescription	: STRING_LIT^
 							| 'void'^
+                            | constantSetExpression
 							| constantIntegerArithmeticExpression
                             ;
+                            
+constantSetExpression	: '{' ( IDENT ( ',' IDENT* )* )? '}' -> ^( SET_CONST IDENT* )
+						;
 
 primitiveOrFunctionValueDescription	: 
 	(primitiveValueDescription '->')=> 
@@ -137,8 +142,6 @@ primitiveIntegerArithmeticExpression	: INT^
 shiftingExpression	: primitiveIntegerArithmeticExpression ( ( '<<'^ | '>>'^ ) primitiveIntegerArithmeticExpression )* 
 					;
                            
-
-
 functionValueDescription	: 
 	(functionArgumentDescriptionExpr '->')=> 
     	functionArgumentDescriptionExpr '->' functionResultDescriptionExpr
@@ -178,17 +181,28 @@ pairwiseCorrespondenceElement	:	eventCorrespondence^
 								|	valueCorrespondenceBlock^
                                 ;
                                 
-eventCorrespondence	:	eventPattern	'-->'^ eventPatternRewriteExpr ';'!
-					|	eventPatternRewriteExpr '<--'^ eventPattern ';'!
+eventCorrespondence	:	(eventPattern '-->')=> 	eventPattern	'-->'^ eventPatternRewriteExpr ';'!
+					|					eventPatternRewriteExpr '<--'^ eventPattern ';'!
                     /*|	eventPattern	'<-->' eventPattern*/
 					;
-                    
-eventPattern	:	memberNameExpr^ '('! ( identOrAnonymous ( ',' identOrAnonymous )* )? ')'!
-				;
 
-identOrAnonymous	:	IDENT^ 
-					| 	'_'^
-                    ;
+eventContext	: ( '(' ( stackFramePattern '::' )+ ')' )? -> ^( EVENT_CONTEXT stackFramePattern* )
+				;
+                
+stackFramePattern 	: IDENT^
+					;
+
+eventPattern	:	atomicEventPattern
+				; /* TODO: add composite (sequence) event patterns */
+           
+atomicEventPattern	: eventContext memberNameExpr '(' ( ( valuePattern ( ',' valuePattern )* ) | '...' )? ')'
+						-> ^( EVENT_PATTERN eventContext memberNameExpr valuePattern* )
+					;
+
+valuePattern		: IDENT^ /* matches any value, and names it */
+					| constantValueDescription^ /* matches that constant */
+					| '_'^ /* matches any value, doesn't name it */
+                    ; /* FIXME: presumably I need another syntax for matching /named/ values */
                 
 eventPatternRewriteExpr	: eventPattern^ /* shorthand for a trivial stub */
 						| stubDescription^
@@ -221,8 +235,14 @@ invocation	: memberNameExpr '(' ( stubLangExpression ( ',' stubLangExpression ',
 valueCorrespondenceBlock	: 'values'^ '{'! valueCorrespondence* '}'!
 							;
                             
-valueCorrespondence	:	IDENT '<-->'^ IDENT ';'!
+valueCorrespondence	:	memberNameExpr '<-->'^ memberNameExpr ( ';'! | valueCorrespondenceRefinement )
 					;
+                    
+valueCorrespondenceRefinement	:	'{'! valueCorrespondence '}'!
+								;
+                                
+/*valueCorrespondenceRefinementElement	: */
+                    
 
 inlineDeclaration			:	'inline'^ objectSpec wellNestedTokenBlock
 							;
