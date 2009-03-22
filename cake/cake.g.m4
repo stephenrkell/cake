@@ -5,8 +5,8 @@ options {
     language=antlr_m4_language;
     ASTLabelType=CommonTree; // type of $statement.tree ref etc...
 }
-tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; 
-EVENT_CONTEXT; SET_CONST; }
+tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; VALUE_PATTERN; 
+EVENT_CONTEXT; SET_CONST; CONDITIONAL; }
 /* The whole input */
 toplevel:   declaration* /*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
         ;
@@ -55,8 +55,8 @@ claim				: memberNameExpr ':' valueDescriptionExpr ';'
 						-> ^( memberNameExpr ^( valueDescriptionExpr ) )
 					;
                     
-memberNameExpr		: '.'!? IDENT^ ( '.'^ IDENT )* 
-					| '_' 
+memberNameExpr		: '.'!? IDENT ( '.'^ IDENT )* 
+					| '_'^ 
                     ;
 
       
@@ -87,8 +87,12 @@ unannotatedValueDescription : /*unspecifiedValueDescription^
 							|*/ simpleOrObjectOrPointerValueDescription^
                             ;
 
+constantOrVoidValueDescription	:	constantValueDescription^
+								|	'void'^
+                                ;
+
 constantValueDescription	: STRING_LIT^
-							| 'void'^
+                            | 'null'^
                             | constantSetExpression
 							| constantIntegerArithmeticExpression
                             ;
@@ -132,21 +136,21 @@ enumDefinition	: '{'! enumElement* '}'!
 enumElement : 'enumerator'^ IDENT '==' constantIntegerArithmeticExpression ';'!
 			;
             
-constantIntegerArithmeticExpression	: shiftingExpression^
+constantIntegerArithmeticExpression	: constantShiftingExpression^
 									;
 
 primitiveIntegerArithmeticExpression	: INT^
 										| '('! constantIntegerArithmeticExpression^ ')'!
                                         ;
                                         
-shiftingExpression	: primitiveIntegerArithmeticExpression ( ( '<<'^ | '>>'^ ) primitiveIntegerArithmeticExpression )* 
+constantShiftingExpression	: primitiveIntegerArithmeticExpression ( ( '<<'^ | '>>'^ ) primitiveIntegerArithmeticExpression )* 
 					;
                            
 functionValueDescription	: 
 	(functionArgumentDescriptionExpr '->')=> 
     	functionArgumentDescriptionExpr '->' functionResultDescriptionExpr
         	-> ^('->' functionArgumentDescriptionExpr functionResultDescriptionExpr )
-	| valueDescriptionExpr 
+	| valueDescriptionExpr^ 
 							;
 
 functionArgumentDescriptionExpr	: multiValueDescriptionExpr^
@@ -195,14 +199,21 @@ stackFramePattern 	: IDENT^
 eventPattern	:	atomicEventPattern
 				; /* TODO: add composite (sequence) event patterns */
            
-atomicEventPattern	: eventContext memberNameExpr '(' ( ( valuePattern ( ',' valuePattern )* ) | '...' )? ')'
-						-> ^( EVENT_PATTERN eventContext memberNameExpr valuePattern* )
+atomicEventPattern	: eventContext memberNameExpr '(' ( ( annotatedValuePattern ( ',' annotatedValuePattern )* ) | '...' )? ')'
+						-> ^( EVENT_PATTERN eventContext memberNameExpr annotatedValuePattern* )
 					;
 
-valuePattern		: IDENT^ /* matches any value, and names it */
+annotatedValuePattern 	: valuePattern valuePatternAnnotation? -> ^( VALUE_PATTERN valuePattern valuePatternAnnotation? )
+						;
+
+valuePatternAnnotation	: 'as'^ memberNameExpr 
+						| '{'! 'names'^ memberNameExpr '}'!
+						;
+
+valuePattern		: memberNameExpr^ /* matches a named constant value -- also matches '_' */
+					| METAVAR^ /* matches any value, and names it */
 					| constantValueDescription^ /* matches that constant */
-					| '_'^ /* matches any value, doesn't name it */
-                    ; /* FIXME: presumably I need another syntax for matching /named/ values */
+                    ;
                 
 eventPatternRewriteExpr	: eventPattern^ /* shorthand for a trivial stub */
 						| stubDescription^
@@ -212,33 +223,150 @@ stubDescription		: '(' stubStatementBody ( ';' stubStatementBody )* ')' -> ^( ST
 					;
           
 stubStatementBody	:	assignment^
+					|	emitStatement^
                 	| 	stubLangExpression^
                     |	'skip'^
                 	;
                 
-stubLangExpression	: constantValueDescription^
+stubLangExpression	/*: constantOrVoidValueDescription^
 					| ifThenElseExpression^
+                    | booleanArithmeticExpression^
 					| invocation^
-                    | IDENT^
+                    | runtimeValueIdentExpr^*/
 					/*| stubDescription^ /* sequence */
+                    : conditionalExpression^ /* lowest precedence operator */
                     ;
+            
+stubPrimitiveExpression	: STRING_LIT^
+						| INT^
+                        | 'true'^
+                        | 'false'^
+						| METAVAR^
+                        | memberNameExpr^
+                        | '('! stubLangExpression^ ')'!
+                        ;
+
+memberSelectionExpression	: stubPrimitiveExpression^ ('.'^ stubPrimitiveExpression )*
+							; /* left-associative 
+                               * Note this subsumes memberNameExpr, so we don't need it. */
+
+functionInvocationExpression	: memberSelectionExpression '(' ( stubLangExpression (',' stubLangExpression  )* )? ')'
+									-> ^( INVOCATION memberSelectionExpression stubLangExpression* )
+    							;
+         
+unaryOperatorExpression	: ('~'^|'!'^|'-'^|'+'^|'&'^|'*'^)* functionInvocationExpression
+						;
+                        
+multiplicativeOperatorExpression	: unaryOperatorExpression^ ( ( '*' | '/' | '%' )^ unaryOperatorExpression )*
+									;
+                                    
+additiveOperatorExpression 	: multiplicativeOperatorExpression^ ( ( '+' | '-' )^ multiplicativeOperatorExpression )*
+							;
+                            
+shiftingExpression	: additiveOperatorExpression^ ( ( '<<' | '>>' )^  additiveOperatorExpression )*
+					;
                     
+magnitudeComparisonExpression 	: shiftingExpression^ ( ( '<' | '>' | '<=' | '>=' )^ shiftingExpression )?
+								;
+                                
+equalityComparisonExpression	: magnitudeComparisonExpression^ ( ( '==' | '!=' )^ equalityComparisonExpression )*
+								;
+                                
+bitwiseAndExpression	: magnitudeComparisonExpression^ ( '&'^ magnitudeComparisonExpression )*
+						;
+                        
+bitwiseXorExpression	: bitwiseAndExpression^ ( '^'^ bitwiseAndExpression )*
+						;
+                        
+bitwiseOrExpression	: bitwiseXorExpression^ ( '|'^ bitwiseXorExpression )*
+					;
+                    
+logicalAndExpression 	: bitwiseOrExpression^ ( '&&'^ bitwiseOrExpression )*
+						;
+                        
+logicalOrExpression	: logicalAndExpression^ ( '||'^ logicalAndExpression )*
+					;
+                    
+conditionalExpression	: logicalOrExpression^
+						| 'if' cond=conditionalExpression 'then' caseTrue=conditionalExpression 'else' caseFalse=conditionalExpression
+                        	-> ^( CONDITIONAL cond caseTrue caseFalse )
+                        ;
+                        
+/* FIXME: now add actionExpression and sequenceExpression, then get rid of the separate Statement thing
+ * ... and check that ( ... ) notation works like expected! as in, it denotes a separate stub?
+ * what does a sub-stub actually denote?
+ * well, a delayed computation -- we *don't* want to get ( ... ) stubs evaluated before
+ * their containing expressions, but we do want regular brackets to mean that sometimes.... */
+
+/*                    
+booleanArithmeticExpression	: booleanNegationExpression^ ( ( '&&' | '||' )^ booleanNegationExpression )*
+							;
+
+booleanNegationExpression	:	'!'? runtimeValueIdentExpr -> ^( '!'? runtimeValueIdentExpr )
+							;
+
+invocation	: memberNameExpr '(' ( stubLangExpression ( ',' stubLangExpression ',' )* )? ')' -> ^( INVOCATION memberNameExpr stubLangExpression* )
+			;
+*/                                     
+/* Unlike the simpler memberNameExpr, the following can include (and dereference)
+ * values bound at runtime during stub execution, for example in a 'let' clause. */                    
+/*
+runtimeValueIdentExpr	: memberNameExpr^
+						| '*'^ runtimeValueIdentExpr
+                        | ( '(' runtimeValueIdentExpr ')' '.' )=> 
+                        	'(' runtimeValueIdentExpr ')' memberNameExpr
+                            -> ^( memberNameExpr runtimeValueIdentExpr )*/
+                            /* Only take the above option if we have a dot following
+                             * the brackets, to avoid syntactic weirdness where the
+                             * memberNameExpr isn't separated by a dot*/
+                    	/*;*/
+
+/*                    
 ifThenElseExpression	:	'if'^ stubLangExpression 'then'! stubLangExpression 'else'! stubLangExpression
 						;  
-
+*/
 assignment 	: 'let'^ IDENT '='! stubLangExpression
 			;
             
-invocation	: memberNameExpr '(' ( stubLangExpression ( ',' stubLangExpression ',' )* )? ')' -> ^( INVOCATION memberNameExpr stubLangExpression* )
-			;
-
+emitStatement	:	'emit'^ stubLangExpression
+				;
+            
 valueCorrespondenceBlock	: 'values'^ '{'! valueCorrespondence* '}'!
 							;
                             
-valueCorrespondence	:	memberNameExpr '<-->'^ memberNameExpr ( ';'! | valueCorrespondenceRefinement )
+valueCorrespondence	: valueCorrespondenceBase^ ( ';'! | valueCorrespondenceRefinement )
 					;
+                        
+valueCorrespondenceBase	: 
+	memberNameExpr (
+    	leftToRightCorrespondenceOperator |
+        rightToLeftCorrespondenceOperator |
+        bidirectionalCorrespondenceOperator)^ correspondenceOperatorModifier? memberNameExpr        
+ 	|	constantValueDescription leftToRightCorrespondenceOperator^ correspondenceOperatorModifier? memberNameExpr
+    | 	'void' rightToLeftCorrespondenceOperator^ correspondenceOperatorModifier? memberNameExpr
+    |	memberNameExpr rightToLeftCorrespondenceOperator^ correspondenceOperatorModifier? constantValueDescription
+ 	|	stubDescription leftToRightCorrespondenceOperator^ correspondenceOperatorModifier? memberNameExpr
+    |	memberNameExpr rightToLeftCorrespondenceOperator^ correspondenceOperatorModifier? stubDescription
+    ;
+
+/*valuePattern ('<-->'|'-->'|'<--')^ valuePattern
+						;*/
+                            
+bidirectionalCorrespondenceOperator	:	'<-->'^
+									;
+                            
+leftToRightCorrespondenceOperator	: '-->'^
+                            		| '-->?'^
+                                    ;
+                                    
+rightToLeftCorrespondenceOperator	: '<--'^
+									| '<--?'^
+                                    ;
+                                    
+correspondenceOperatorModifier	:	'['  ']'
+								;
                     
-valueCorrespondenceRefinement	:	'{'! valueCorrespondence '}'!
+valueCorrespondenceRefinement	:	'{'! valueCorrespondence* '}'!
 								;
                                 
 /*valueCorrespondenceRefinementElement	: */
@@ -261,6 +389,7 @@ IDENT  :   ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9') /* begin with
 	('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'-'|'.'/*'0'..'9'*/)*('a'..'z'|'A'..'Z'|'0'..'9'|'_')
    /*|('.''0'..'9') /* ending with dot-digit is okay */
 )? ;
+METAVAR	: '@'('a'..'z'|'A'..'Z')('a'..'z'|'A'..'Z'|'0'..'9'|'_')* ;
 /* The ident rule is a bit different from the conventional -- idents must be at
  * least two characters, and may embed '-' and '.' characters (not at the start or end). 
  * The first of these quirks reduces ambiguity, since '_' is given a unique and special
