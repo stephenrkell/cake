@@ -55,7 +55,7 @@ claim				: memberNameExpr ':' valueDescriptionExpr ';'
 						-> ^( memberNameExpr ^( valueDescriptionExpr ) )
 					;
                     
-memberNameExpr		: '.'!? IDENT ( '.'^ IDENT )* 
+memberNameExpr		: '.'!? IDENT ( '.'^ IDENT )*
 					| '_'^ 
                     ;
 
@@ -175,7 +175,7 @@ derivedObjectExpression	: IDENT^ '('! derivedObjectExpression ')'!
 linkRefinement	: '{'! pairwiseCorrespondenceBlock^ '}'!
 				| ;
                 
-pairwiseCorrespondenceBlock	:	IDENT '<-->'^ IDENT pairwiseCorrespondenceBody
+pairwiseCorrespondenceBlock	:	IDENT ( '<-->'^ | '<--'^ | '-->'^ ) IDENT pairwiseCorrespondenceBody
 							;
                             
 pairwiseCorrespondenceBody	: '{' pairwiseCorrespondenceElement* '}' -> ^( CORRESP pairwiseCorrespondenceElement* )
@@ -222,10 +222,10 @@ eventPatternRewriteExpr	: eventPattern^ /* shorthand for a trivial stub */
 stubDescription		: '(' stubStatementBody ( ';' stubStatementBody )* ')' -> ^( STUB stubStatementBody* )
 					;
           
-stubStatementBody	:	assignment^
-					|	emitStatement^
-                	| 	stubLangExpression^
-                    |	'skip'^
+stubStatementBody	:	assignment
+					|	emitStatement
+                	| 	stubLangExpression
+                    |	'skip'
                 	;
                 
 stubLangExpression	/*: constantOrVoidValueDescription^
@@ -234,62 +234,71 @@ stubLangExpression	/*: constantOrVoidValueDescription^
 					| invocation^
                     | runtimeValueIdentExpr^*/
 					/*| stubDescription^ /* sequence */
-                    : conditionalExpression^ /* lowest precedence operator */
+                    : conditionalExpression /* lowest precedence operator */
                     ;
+
+stubLiteralExpression	: STRING_LIT
+						| INT
+                        | 'void'
+                        | 'null'
+                        | 'true'
+                        | 'false'
+                        ;
             
-stubPrimitiveExpression	: STRING_LIT^
-						| INT^
-                        | 'true'^
-                        | 'false'^
-						| METAVAR^
-                        | memberNameExpr^
-                        | '('! stubLangExpression^ ')'!
+stubPrimitiveExpression	: stubLiteralExpression
+						| METAVAR
+                        | memberNameExpr
+                        | '('! stubLangExpression ')'!
                         ;
 
-memberSelectionExpression	: stubPrimitiveExpression^ ('.'^ stubPrimitiveExpression )*
+memberSelectionExpression	: stubPrimitiveExpression ('.'^ stubPrimitiveExpression )*
 							; /* left-associative 
                                * Note this subsumes memberNameExpr, so we don't need it. */
 
-functionInvocationExpression	: memberSelectionExpression '(' ( stubLangExpression (',' stubLangExpression  )* )? ')'
+functionInvocationExpression	: (memberSelectionExpression '(') => memberSelectionExpression '(' ( stubLangExpression (',' stubLangExpression )* )? ')'
 									-> ^( INVOCATION memberSelectionExpression stubLangExpression* )
+                                | memberSelectionExpression
     							;
          
 unaryOperatorExpression	: ('~'^|'!'^|'-'^|'+'^|'&'^|'*'^)* functionInvocationExpression
 						;
                         
-multiplicativeOperatorExpression	: unaryOperatorExpression^ ( ( '*' | '/' | '%' )^ unaryOperatorExpression )*
+castExpression	: unaryOperatorExpression reinterpretation?
+				;
+                                        
+multiplicativeOperatorExpression	: castExpression ( ( '*'^ | '/'^ | '%'^ ) castExpression )*
 									;
                                     
-additiveOperatorExpression 	: multiplicativeOperatorExpression^ ( ( '+' | '-' )^ multiplicativeOperatorExpression )*
+additiveOperatorExpression 	: multiplicativeOperatorExpression ( ( '+'^ | '-'^ ) multiplicativeOperatorExpression )*
 							;
                             
-shiftingExpression	: additiveOperatorExpression^ ( ( '<<' | '>>' )^  additiveOperatorExpression )*
+shiftingExpression	: additiveOperatorExpression ( ( '<<'^ | '>>'^ )  additiveOperatorExpression )*
 					;
                     
-magnitudeComparisonExpression 	: shiftingExpression^ ( ( '<' | '>' | '<=' | '>=' )^ shiftingExpression )?
+magnitudeComparisonExpression 	: shiftingExpression ( ( '<'^ | '>'^ | '<='^ | '>='^ ) shiftingExpression )?
 								;
                                 
-equalityComparisonExpression	: magnitudeComparisonExpression^ ( ( '==' | '!=' )^ equalityComparisonExpression )*
+equalityComparisonExpression	: magnitudeComparisonExpression ( ( '=='^ | '!='^ ) magnitudeComparisonExpression )*
 								;
                                 
-bitwiseAndExpression	: magnitudeComparisonExpression^ ( '&'^ magnitudeComparisonExpression )*
+bitwiseAndExpression	: equalityComparisonExpression ( '&'^ equalityComparisonExpression )*
 						;
                         
-bitwiseXorExpression	: bitwiseAndExpression^ ( '^'^ bitwiseAndExpression )*
+bitwiseXorExpression	: bitwiseAndExpression ( '^'^ bitwiseAndExpression )*
 						;
                         
-bitwiseOrExpression	: bitwiseXorExpression^ ( '|'^ bitwiseXorExpression )*
+bitwiseOrExpression	: bitwiseXorExpression ( '|'^ bitwiseXorExpression )*
 					;
                     
-logicalAndExpression 	: bitwiseOrExpression^ ( '&&'^ bitwiseOrExpression )*
+logicalAndExpression 	: bitwiseOrExpression ( '&&'^ bitwiseOrExpression )*
 						;
                         
-logicalOrExpression	: logicalAndExpression^ ( '||'^ logicalAndExpression )*
+logicalOrExpression	: logicalAndExpression ( '||'^ logicalAndExpression )*
 					;
                     
-conditionalExpression	: logicalOrExpression^
+conditionalExpression	: logicalOrExpression
 						| 'if' cond=conditionalExpression 'then' caseTrue=conditionalExpression 'else' caseFalse=conditionalExpression
-                        	-> ^( CONDITIONAL cond caseTrue caseFalse )
+                        	-> ^( CONDITIONAL $cond $caseTrue $caseFalse )
                         ;
                         
 /* FIXME: now add actionExpression and sequenceExpression, then get rid of the separate Statement thing
@@ -336,21 +345,31 @@ valueCorrespondenceBlock	: 'values'^ '{'! valueCorrespondence* '}'!
                             
 valueCorrespondence	: valueCorrespondenceBase^ ( ';'! | valueCorrespondenceRefinement )
 					;
+
+reinterpretation 	: 'as' memberNameExpr
+					;
                         
 valueCorrespondenceBase	: 
-	memberNameExpr (
-    	leftToRightCorrespondenceOperator |
-        rightToLeftCorrespondenceOperator |
-        bidirectionalCorrespondenceOperator)^ correspondenceOperatorModifier? memberNameExpr        
- 	|	constantValueDescription leftToRightCorrespondenceOperator^ correspondenceOperatorModifier? memberNameExpr
+		valueCorrespondenceSide correspondenceOperator^ correspondenceOperatorModifier? valueCorrespondenceSide
+/*    |   'const'! constantValueDescription ( leftToRightCorrespondenceOperator^ | bidirectionalCorrespondenceOperator^ ) correspondenceOperatorModifier? memberNameExpr reinterpretation?
     | 	'void' rightToLeftCorrespondenceOperator^ correspondenceOperatorModifier? memberNameExpr
-    |	memberNameExpr rightToLeftCorrespondenceOperator^ correspondenceOperatorModifier? constantValueDescription
- 	|	stubDescription leftToRightCorrespondenceOperator^ correspondenceOperatorModifier? memberNameExpr
-    |	memberNameExpr rightToLeftCorrespondenceOperator^ correspondenceOperatorModifier? stubDescription
+ 	|	stubDescription leftToRightCorrespondenceOperator^ correspondenceOperatorModifier? memberNameExpr reinterpretation?
+    |	memberNameExpr reinterpretation? rightToLeftCorrespondenceOperator^ stubDescription*/
     ;
+
+valueCorrespondenceSide	: memberNameExpr reinterpretation? 
+						| 'const'! constantValueDescription 
+                        | 'void'
+                        | stubDescription
+                        ;
 
 /*valuePattern ('<-->'|'-->'|'<--')^ valuePattern
 						;*/
+
+correspondenceOperator 	: bidirectionalCorrespondenceOperator
+						| leftToRightCorrespondenceOperator
+                        | rightToLeftCorrespondenceOperator
+						;
                             
 bidirectionalCorrespondenceOperator	:	'<-->'^
 									;
@@ -363,7 +382,8 @@ rightToLeftCorrespondenceOperator	: '<--'^
 									| '<--?'^
                                     ;
                                     
-correspondenceOperatorModifier	:	'['  ']'
+correspondenceOperatorModifier	:	'{'! stubDescription '}'!
+								|	'['!  ']'!
 								;
                     
 valueCorrespondenceRefinement	:	'{'! valueCorrespondence* '}'!
@@ -383,7 +403,7 @@ NEWLINE:'\r'? '\n' {antlr_m4_skip_action} ;
 WS  :   (' '|'\t')+ {antlr_m4_skip_action} ;
 LINECOMMENT : '/' '/'( ~ '\n' )* {antlr_m4_skip_action} ;
 BLOCKCOMMENT : '/' '*' ( ~ '/' | ( ~ '*' ) '/' )* '*' '/' {antlr_m4_skip_action} ;
-STRING_LIT : '\"' ( ~'\"'|'\\\"' )+ '\"' ;
+STRING_LIT : '\"' ( ~'\"'|'\\\"' )* '\"' ;
 IDENT  :   ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9') /* begin with a-zA-Z or non-terminal '_' */
 (
 	('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'-'|'.'/*'0'..'9'*/)*('a'..'z'|'A'..'Z'|'0'..'9'|'_')
