@@ -404,9 +404,9 @@ WS  :   (' '|'\t')+ {antlr_m4_skip_action} ;
 LINECOMMENT : '/' '/'( ~ '\n' )* {antlr_m4_skip_action} ;
 BLOCKCOMMENT : '/' '*' ( ~ '/' | ( ~ '*' ) '/' )* '*' '/' {antlr_m4_skip_action} ;
 STRING_LIT : '\"' ( ~'\"'|'\\\"' )* '\"' ;
-IDENT  :   ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9') /* begin with a-zA-Z or non-terminal '_' */
+IDENT  :   ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9'|'\\'.) /* begin with a-zA-Z or non-terminal '_' */
 (
-	('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'-'|'.'/*'0'..'9'*/)*('a'..'z'|'A'..'Z'|'0'..'9'|'_')
+	('a'..'z'|'A'..'Z'|'0'..'9'|'\\'.|'_'|'-'|'.'/*'0'..'9'*/)*('a'..'z'|'A'..'Z'|'0'..'9'|'\\'.|'_')
    /*|('.''0'..'9') /* ending with dot-digit is okay */
 )? ;
 METAVAR	: '@'('a'..'z'|'A'..'Z')('a'..'z'|'A'..'Z'|'0'..'9'|'_')* ;
@@ -421,4 +421,4 @@ METAVAR	: '@'('a'..'z'|'A'..'Z')('a'..'z'|'A'..'Z'|'0'..'9'|'_')* ;
  * FIXME: at the moment, to support the allow-digits-after-dots rule, 
  * we require extra spaces in a name.name.name expression. Fix ANTLR's lexing 
  * behaviour so that we don't need this (i.e. that blah.blah.blah works as expected). */
-// FIXME: permit reserved words as identifiers, somehow
+/* FIXME: semantic action to process backslash-escapes within IDENT? */
