@@ -7,6 +7,7 @@
 #include <org/antlr/runtime/CommonTokenStream.h>
 #undef EOF
 #include <org/antlr/runtime/CharStream.h>
+#include <org/antlr/runtime/IntStream.h>
 #include "cake.hpp"
 #include "parser.hpp"
 
@@ -25,9 +26,11 @@ namespace cake
 		try
 		{
 			org::antlr::runtime::ANTLRInputStream *stream = new org::antlr::runtime::ANTLRInputStream(in_file);
-			cakeJavaLexer *lexer = new cakeJavaLexer(
-				jcast<org::antlr::runtime::CharStream>(stream));
-			/*cakeJavaLexer *lexer = new cakeJavaLexer((org::antlr::runtime::CharStream*) stream);
+			/*JvInitClass(&::org::antlr::runtime::IntStream::class$);
+			JvInitClass(&::org::antlr::runtime::CharStream::class$);
+			/*cakeJavaLexer *lexer = new cakeJavaLexer(
+				jcast<org::antlr::runtime::CharStream>(stream));*/
+			cakeJavaLexer *lexer = new cakeJavaLexer((org::antlr::runtime::CharStream*) stream);
         	/*org::antlr::runtime::CommonTokenStream *tokenStream = new org::antlr::runtime::CommonTokenStream((org::antlr::runtime::TokenSource*) lexer);
         	cakeJavaParser *parser = new cakeJavaParser((org::antlr::runtime::TokenStream*) tokenStream);
         	parser->toplevel();*/

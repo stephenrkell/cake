@@ -24,7 +24,8 @@ antlr-headers:
 		org.antlr.runtime.CommonTokenStream \
 		org.antlr.runtime.ANTLRReaderStream \
 		org.antlr.runtime.ANTLRStringStream \
-		org.antlr.runtime.CharStream
+		org.antlr.runtime.CharStream \
+		org.antlr.runtime.IntStream
 
 %.jar.so: %.jar
 	gcj $(JFLAGS) -shared -fPIC -Wl,-Bsymbolic "$<" -o "$@"
