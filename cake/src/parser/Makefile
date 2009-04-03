@@ -1,5 +1,9 @@
 JFLAGS := -fPIC -g
 
+CLASSPATH ?= .:
+
+ANTLR ?= java -classpath $(CLASSPATH) org.antlr.Tool
+
 .PHONY: default
 default: cakeJavaLexer.java cakeJavaParser.java cakeJavaLexer.class cakeJavaParser.class cakeJavaLexer.o cakeJavaParser.o cakeJavaLexer.h cakeJavaParser.h
 # cakePyLexer.py cakePyParser.py 
@@ -14,19 +18,19 @@ test: default
 	m4 -Dantlr_m4_include_file=antlr-m4-py.inc "$<" > "$@"
 
 %PyLexer.py %PyParser.py: %Py.g
-	antlr "$<"
+	$(ANTLR) "$<"
 
 %Cpp.g: %.g.m4
 	m4 -Dantlr_m4_include_file=antlr-m4-cpp.inc "$<" > "$@"
 	
 %CppLexer.c %CppParser.c: %Cpp.g
-	antlr "$<"
+	$(ANTLR) "$<"
 
 %Java.g: %.g.m4
 	m4 -Dantlr_m4_include_file=antlr-m4-java.inc "$<" > "$@"
 	
 %JavaLexer.java %JavaParser.java: %Java.g
-	antlr "$<"
+	$(ANTLR) "$<"
 
 %.class: %.java
 	gcj -MD -C -Wno-unused "$<"

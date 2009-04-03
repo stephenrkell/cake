@@ -36,8 +36,9 @@ int main(int argc, char **argv)
 	
 	/* FIXME: this should automatically be added to the ELF .inits, rather than
 	 * embedded here. */
-	assert(JvCreateJavaVM(NULL) == 0);
-	assert(JvAttachCurrentThread(NULL, NULL) != NULL);
+	JvCreateJavaVM(NULL);
+	JvAttachCurrentThread(NULL, NULL);
+	JvInitClass(&java::lang::System::class$);
 	
 	const char *cakefile = argv[optind];
 	if (cakefile == NULL) 

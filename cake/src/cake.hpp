@@ -1,4 +1,5 @@
 #include <gcj/cni.h>
+#include <java/lang/System.h>
 #include <java/io/File.h>
 #include <java/io/FileInputStream.h>
 #include <java/lang/ClassCastException.h>
