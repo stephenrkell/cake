@@ -6,9 +6,10 @@ options {
     ASTLabelType=CommonTree; // type of $statement.tree ref etc...
 }
 tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; VALUE_PATTERN; 
-EVENT_CONTEXT; SET_CONST; CONDITIONAL; }
+EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; }
 /* The whole input */
-toplevel:   declaration* /*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
+toplevel:   declaration* //-> ^( TOPLEVEL<ToplevelNode> declaration* )
+			/*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
         ;
 
 declaration		: existsDeclaration
@@ -18,11 +19,11 @@ declaration		: existsDeclaration
                 | deriveDeclaration 
 				;
 
-aliasDeclaration	: 'alias'^ aliasDescription IDENT ';'!
+aliasDeclaration	: KEYWORD_ALIAS^ aliasDescription IDENT ';'!
 					;
                     
 aliasDescription	: IDENT^
-					| 'any'^ identList
+					| KEYWORD_ANY^ identList
                     ;
                     
 identList			: '[' IDENT ( ',' IDENT )*  ','? ']' -> ^( IDENT_LIST IDENT* )
@@ -34,21 +35,21 @@ supplementaryDeclaration 	: IDENT '{' claimGroup* '}' -> ^( SUPPLEMENTARY IDENT 
 objectConstructor	: IDENT^ ( '('! STRING_LIT ')'! )?
 							;
 
-objectSpec			: objectConstructor^ ( IDENT | 'deriving' objectConstructor IDENT )
+objectSpec			: objectConstructor^ ( IDENT | KEYWORD_DERIVING objectConstructor IDENT )
 					;
 
-existsDeclaration	: 'exists'^ objectSpec existsBody
+existsDeclaration	: KEYWORD_EXISTS^ objectSpec existsBody
 					;
 existsBody			: '{'! ( claimGroup | globalRewrite )* '}'!
 					| ';'!
 					;
                     
-globalRewrite		: 'static'? valueDescriptionExpr '-->'^ valueDescriptionExpr ';'!
+globalRewrite		: KEYWORD_STATIC? valueDescriptionExpr '-->'^ valueDescriptionExpr ';'!
 					;
 
-claimGroup			: 'check'^ '{'! claim* '}'!
-					| 'declare'^ '{'! claim* '}'!
-                    | 'override'^ '{'! claim* '}'!
+claimGroup			: KEYWORD_CHECK^ '{'! claim* '}'!
+					| KEYWORD_DECLARE^ '{'! claim* '}'!
+                    | KEYWORD_OVERRIDE^ '{'! claim* '}'!
 					;
                     
 claim				: memberNameExpr ':' valueDescriptionExpr ';'
@@ -79,20 +80,20 @@ valueDescriptionExpr		: primitiveOrFunctionValueDescription
                             ;
 
 primitiveValueDescription	: unannotatedValueDescription^
-							| 'const'^ constantValueDescription
-                            | 'opaque'^ unannotatedValueDescription
-                            | 'ignored'^ unannotatedValueDescription
+							| KEYWORD_CONST^ constantValueDescription
+                            | KEYWORD_OPAQUE^ unannotatedValueDescription
+                            | KEYWORD_IGNORED^ unannotatedValueDescription
                         	;
 unannotatedValueDescription : /*unspecifiedValueDescription^
 							|*/ simpleOrObjectOrPointerValueDescription^
                             ;
 
 constantOrVoidValueDescription	:	constantValueDescription^
-								|	'void'^
+								|	KEYWORD_VOID^
                                 ;
 
 constantValueDescription	: STRING_LIT^
-                            | 'null'^
+                            | KEYWORD_NULL^
                             | constantSetExpression
 							| constantIntegerArithmeticExpression
                             ;
@@ -101,19 +102,19 @@ constantSetExpression	: '{' ( IDENT ( ',' IDENT* )* )? '}' -> ^( SET_CONST IDENT
 						;
 
 primitiveOrFunctionValueDescription	: 
-	(primitiveValueDescription '->')=> 
-    	primitiveValueDescription '->' primitiveOrFunctionValueDescription 
-			-> ^('->' primitiveValueDescription ^( primitiveOrFunctionValueDescription ) )
+	(primitiveValueDescription LR_SINGLE_ARROW)=> 
+    	primitiveValueDescription LR_SINGLE_ARROW primitiveOrFunctionValueDescription 
+			-> ^(LR_SINGLE_ARROW primitiveValueDescription ^( primitiveOrFunctionValueDescription ) )
 	| primitiveValueDescription
 	; 
 							                            
-structuredValueDescription	: 'object' '{' claim* '}'
-								-> ^('object' claim* )
+structuredValueDescription	: KEYWORD_OBJECT '{' claim* '}'
+								-> ^(KEYWORD_OBJECT claim* )
                             ;
                             
-simpleOrObjectOrPointerValueDescription : structuredValueDescription^ ( 'ptr'^ )*
-									    | simpleValueDescription^ ( 'ptr'^ )*
-                                        | enumValueDescription^ ( 'ptr'^ )*
+simpleOrObjectOrPointerValueDescription : structuredValueDescription^ ( KEYWORD_PTR^ )*
+									    | simpleValueDescription^ ( KEYWORD_PTR^ )*
+                                        | enumValueDescription^ ( KEYWORD_PTR^ )*
 									    ;
 
 simpleValueDescription		: dwarfBaseTypeDescription^
@@ -127,13 +128,13 @@ byteSizeParameter			: '<'! INT '>'!
 dwarfBaseTypeDescription	: IDENT^ ( byteSizeParameter ( '{'! ( IDENT '=' ( IDENT | INT ) ';' )* '}'! )? )?
 							;
 
-enumValueDescription	: 'enum'^ ( ( ( IDENT | '_' ) byteSizeParameter? enumDefinition? ) | ( byteSizeParameter? enumDefinition ) )
+enumValueDescription	: KEYWORD_ENUM^ ( ( ( IDENT | '_' ) byteSizeParameter? enumDefinition? ) | ( byteSizeParameter? enumDefinition ) )
 						;
                            
 enumDefinition	: '{'! enumElement* '}'!
 				;
 
-enumElement : 'enumerator'^ IDENT '==' constantIntegerArithmeticExpression ';'!
+enumElement : KEYWORD_ENUMERATOR^ IDENT '==' constantIntegerArithmeticExpression ';'!
 			;
             
 constantIntegerArithmeticExpression	: constantShiftingExpression^
@@ -143,13 +144,13 @@ primitiveIntegerArithmeticExpression	: INT^
 										| '('! constantIntegerArithmeticExpression^ ')'!
                                         ;
                                         
-constantShiftingExpression	: primitiveIntegerArithmeticExpression ( ( '<<'^ | '>>'^ ) primitiveIntegerArithmeticExpression )* 
+constantShiftingExpression	: primitiveIntegerArithmeticExpression ( ( SHIFT_LEFT^ | SHIFT_RIGHT^ ) primitiveIntegerArithmeticExpression )* 
 					;
                            
 functionValueDescription	: 
-	(functionArgumentDescriptionExpr '->')=> 
-    	functionArgumentDescriptionExpr '->' functionResultDescriptionExpr
-        	-> ^('->' functionArgumentDescriptionExpr functionResultDescriptionExpr )
+	(functionArgumentDescriptionExpr LR_SINGLE_ARROW)=> 
+    	functionArgumentDescriptionExpr LR_SINGLE_ARROW functionResultDescriptionExpr
+        	-> ^(LR_SINGLE_ARROW functionArgumentDescriptionExpr functionResultDescriptionExpr )
 	| valueDescriptionExpr^ 
 							;
 
@@ -165,17 +166,17 @@ multiValueDescriptionExpr	: '<' primitiveValueDescription (',' primitiveValueDes
 	-> ^( MULTIVALUE primitiveValueDescription )
 	;
 
-deriveDeclaration	: 'derive'^ objectConstructor IDENT '=' derivedObjectExpression
+deriveDeclaration	: KEYWORD_DERIVE^ objectConstructor IDENT '=' derivedObjectExpression
 					;
                     
 derivedObjectExpression	: IDENT^ '('! derivedObjectExpression ')'!
-						| 'link'^ identList linkRefinement
+						| KEYWORD_LINK^ identList linkRefinement
 						;
 
 linkRefinement	: '{'! pairwiseCorrespondenceBlock^ '}'!
 				| ;
                 
-pairwiseCorrespondenceBlock	:	IDENT ( '<-->'^ | '<--'^ | '-->'^ ) IDENT pairwiseCorrespondenceBody
+pairwiseCorrespondenceBlock	:	IDENT ( BI_DOUBLE_ARROW^ | RL_DOUBLE_ARROW^ | LR_DOUBLE_ARROW^ ) IDENT pairwiseCorrespondenceBody
 							;
                             
 pairwiseCorrespondenceBody	: '{' pairwiseCorrespondenceElement* '}' -> ^( CORRESP pairwiseCorrespondenceElement* )
@@ -185,12 +186,12 @@ pairwiseCorrespondenceElement	:	eventCorrespondence^
 								|	valueCorrespondenceBlock^
                                 ;
                                 
-eventCorrespondence	:	(eventPattern '-->')=> 	eventPattern	'-->'^ eventPatternRewriteExpr ';'!
-					|					eventPatternRewriteExpr '<--'^ eventPattern ';'!
+eventCorrespondence	:	(eventPattern LR_DOUBLE_ARROW)=> 	eventPattern	LR_DOUBLE_ARROW^ eventPatternRewriteExpr ';'!
+					|					eventPatternRewriteExpr RL_DOUBLE_ARROW^ eventPattern ';'!
                     /*|	eventPattern	'<-->' eventPattern*/
 					;
 
-eventContext	: ( '(' ( stackFramePattern '::' )+ ')' )? -> ^( EVENT_CONTEXT stackFramePattern* )
+eventContext	: ( '(' ( stackFramePattern SCOPE_RESOLUTION )+ ')' )? -> ^( EVENT_CONTEXT stackFramePattern* )
 				;
                 
 stackFramePattern 	: IDENT^
@@ -199,15 +200,15 @@ stackFramePattern 	: IDENT^
 eventPattern	:	atomicEventPattern
 				; /* TODO: add composite (sequence) event patterns */
            
-atomicEventPattern	: eventContext memberNameExpr '(' ( ( annotatedValuePattern ( ',' annotatedValuePattern )* ) | '...' )? ')'
+atomicEventPattern	: eventContext memberNameExpr '(' ( ( annotatedValuePattern ( ',' annotatedValuePattern )* ) | ELLIPSIS )? ')'
 						-> ^( EVENT_PATTERN eventContext memberNameExpr annotatedValuePattern* )
 					;
 
 annotatedValuePattern 	: valuePattern valuePatternAnnotation? -> ^( VALUE_PATTERN valuePattern valuePatternAnnotation? )
 						;
 
-valuePatternAnnotation	: 'as'^ memberNameExpr 
-						| '{'! 'names'^ memberNameExpr '}'!
+valuePatternAnnotation	: KEYWORD_AS^ memberNameExpr 
+						| '{'! KEYWORD_NAMES^ memberNameExpr '}'!
 						;
 
 valuePattern		: memberNameExpr^ /* matches a named constant value -- also matches '_' */
@@ -225,7 +226,7 @@ stubDescription		: '(' stubStatementBody ( ';' stubStatementBody )* ')' -> ^( ST
 stubStatementBody	:	assignment
 					|	emitStatement
                 	| 	stubLangExpression
-                    |	'skip'
+                    |	KEYWORD_SKIP
                 	;
                 
 stubLangExpression	/*: constantOrVoidValueDescription^
@@ -239,10 +240,10 @@ stubLangExpression	/*: constantOrVoidValueDescription^
 
 stubLiteralExpression	: STRING_LIT
 						| INT
-                        | 'void'
-                        | 'null'
-                        | 'true'
-                        | 'false'
+                        | KEYWORD_VOID
+                        | KEYWORD_NULL
+                        | KEYWORD_TRUE
+                        | KEYWORD_FALSE
                         ;
             
 stubPrimitiveExpression	: stubLiteralExpression
@@ -272,13 +273,13 @@ multiplicativeOperatorExpression	: castExpression ( ( '*'^ | '/'^ | '%'^ ) castE
 additiveOperatorExpression 	: multiplicativeOperatorExpression ( ( '+'^ | '-'^ ) multiplicativeOperatorExpression )*
 							;
                             
-shiftingExpression	: additiveOperatorExpression ( ( '<<'^ | '>>'^ )  additiveOperatorExpression )*
+shiftingExpression	: additiveOperatorExpression ( (SHIFT_LEFT^ | SHIFT_RIGHT^ )  additiveOperatorExpression )*
 					;
                     
-magnitudeComparisonExpression 	: shiftingExpression ( ( '<'^ | '>'^ | '<='^ | '>='^ ) shiftingExpression )?
+magnitudeComparisonExpression 	: shiftingExpression ( ( '<'^ | '>'^ | LE^ | GE^ ) shiftingExpression )?
 								;
                                 
-equalityComparisonExpression	: magnitudeComparisonExpression ( ( '=='^ | '!='^ ) magnitudeComparisonExpression )*
+equalityComparisonExpression	: magnitudeComparisonExpression ( ( EQ^ | NEQ^ ) magnitudeComparisonExpression )*
 								;
                                 
 bitwiseAndExpression	: equalityComparisonExpression ( '&'^ equalityComparisonExpression )*
@@ -290,14 +291,14 @@ bitwiseXorExpression	: bitwiseAndExpression ( '^'^ bitwiseAndExpression )*
 bitwiseOrExpression	: bitwiseXorExpression ( '|'^ bitwiseXorExpression )*
 					;
                     
-logicalAndExpression 	: bitwiseOrExpression ( '&&'^ bitwiseOrExpression )*
+logicalAndExpression 	: bitwiseOrExpression ( LOGICAL_AND^ bitwiseOrExpression )*
 						;
                         
-logicalOrExpression	: logicalAndExpression ( '||'^ logicalAndExpression )*
+logicalOrExpression	: logicalAndExpression ( LOGICAL_OR^ logicalAndExpression )*
 					;
                     
 conditionalExpression	: logicalOrExpression
-						| 'if' cond=conditionalExpression 'then' caseTrue=conditionalExpression 'else' caseFalse=conditionalExpression
+						| KEYWORD_IF cond=conditionalExpression KEYWORD_THEN caseTrue=conditionalExpression KEYWORD_ELSE caseFalse=conditionalExpression
                         	-> ^( CONDITIONAL $cond $caseTrue $caseFalse )
                         ;
                         
@@ -334,19 +335,19 @@ runtimeValueIdentExpr	: memberNameExpr^
 ifThenElseExpression	:	'if'^ stubLangExpression 'then'! stubLangExpression 'else'! stubLangExpression
 						;  
 */
-assignment 	: 'let'^ IDENT '='! stubLangExpression
+assignment 	: KEYWORD_LET^ IDENT '='! stubLangExpression
 			;
             
-emitStatement	:	'emit'^ stubLangExpression
+emitStatement	:	KEYWORD_EMIT^ stubLangExpression
 				;
             
-valueCorrespondenceBlock	: 'values'^ '{'! valueCorrespondence* '}'!
+valueCorrespondenceBlock	: KEYWORD_VALUES^ '{'! valueCorrespondence* '}'!
 							;
                             
 valueCorrespondence	: valueCorrespondenceBase^ ( ';'! | valueCorrespondenceRefinement )
 					;
 
-reinterpretation 	: 'as' memberNameExpr
+reinterpretation 	: KEYWORD_AS memberNameExpr
 					;
                         
 valueCorrespondenceBase	: 
@@ -358,8 +359,8 @@ valueCorrespondenceBase	:
     ;
 
 valueCorrespondenceSide	: memberNameExpr reinterpretation? 
-						| 'const'! constantValueDescription 
-                        | 'void'
+						| KEYWORD_CONST! constantValueDescription 
+                        | KEYWORD_VOID
                         | stubDescription
                         ;
 
@@ -371,15 +372,15 @@ correspondenceOperator 	: bidirectionalCorrespondenceOperator
                         | rightToLeftCorrespondenceOperator
 						;
                             
-bidirectionalCorrespondenceOperator	:	'<-->'^
+bidirectionalCorrespondenceOperator	:	BI_DOUBLE_ARROW^
 									;
                             
-leftToRightCorrespondenceOperator	: '-->'^
-                            		| '-->?'^
+leftToRightCorrespondenceOperator	: LR_DOUBLE_ARROW^
+                            		| LR_DOUBLE_ARROW_Q^
                                     ;
                                     
-rightToLeftCorrespondenceOperator	: '<--'^
-									| '<--?'^
+rightToLeftCorrespondenceOperator	: RL_DOUBLE_ARROW^
+									| RL_DOUBLE_ARROW_Q^
                                     ;
                                     
 correspondenceOperatorModifier	:	'{'! stubDescription '}'!
@@ -392,12 +393,63 @@ valueCorrespondenceRefinement	:	'{'! valueCorrespondence* '}'!
 /*valueCorrespondenceRefinementElement	: */
                     
 
-inlineDeclaration			:	'inline'^ objectSpec wellNestedTokenBlock
+inlineDeclaration			:	KEYWORD_INLINE^ objectSpec wellNestedTokenBlock
 							;
                             
 wellNestedTokenBlock : '{' ( INT | STRING_LIT | IDENT | 'alias' | 'any' | ';' | '[' | ',' | ']' | 'exists' | 'check' | 'declare' | 'override' | ':' | '.' | '_' | '->' | 'object' | 'ptr' | '<' | '>' | '=' | 'enum' | 'enumerator' | '==' | '<<' | '>>' | wellNestedTokenBlock | '<-->' | '<--' | '-->' | '#' | '::' | '?' | '+' | '-' | '/' | '|' | '(' | ')' | 'let' )* '}';
 
 /* Lexer */
+
+/* boilerplate tokens */
+KEYWORD_ALIAS : 'alias';
+KEYWORD_ANY : 'any';
+KEYWORD_DERIVING : 'deriving';
+KEYWORD_EXISTS : 'exists';
+KEYWORD_STATIC : 'static' ;
+KEYWORD_CHECK : 'check';
+KEYWORD_DECLARE : 'declare';
+KEYWORD_OVERRIDE : 'override';
+KEYWORD_CONST : 'const';
+KEYWORD_OPAQUE : 'opaque';
+KEYWORD_IGNORED : 'ignored';
+KEYWORD_VOID : 'void';
+KEYWORD_NULL : 'null';
+LR_SINGLE_ARROW : '->';
+KEYWORD_OBJECT : 'object';
+KEYWORD_PTR : 'ptr';
+KEYWORD_ENUM : 'enum';
+KEYWORD_ENUMERATOR : 'enumerator';
+SHIFT_LEFT : '<<';
+SHIFT_RIGHT : '>>';
+KEYWORD_LINK : 'link';
+KEYWORD_DERIVE : 'derive';
+BI_DOUBLE_ARROW : '<-->';
+RL_DOUBLE_ARROW : '<--';
+LR_DOUBLE_ARROW : '-->';
+SCOPE_RESOLUTION : '::';
+ELLIPSIS : '...';
+KEYWORD_AS : 'as';
+KEYWORD_NAMES : 'names';
+KEYWORD_SKIP : 'skip';
+KEYWORD_TRUE : 'true';
+KEYWORD_FALSE : 'false';
+LE : '<=';
+GE : '>=';
+EQ : '==';
+NEQ : '!=';
+LOGICAL_AND : '&&';
+LOGICAL_OR : '||';
+KEYWORD_IF : 'if';
+KEYWORD_THEN : 'then';
+KEYWORD_LET : 'let';
+KEYWORD_EMIT : 'emit';
+KEYWORD_VALUES : 'values';
+KEYWORD_ELSE : 'else';
+LR_DOUBLE_ARROW_Q : '-->?' ;
+RL_DOUBLE_ARROW_Q : '<--?' ;
+KEYWORD_INLINE : 'inline';
+
+/* Fallback (interesting) tokens */
 INT :   '0'..'9'+ ;
 NEWLINE:'\r'? '\n' {antlr_m4_skip_action} ;
 WS  :   (' '|'\t')+ {antlr_m4_skip_action} ;

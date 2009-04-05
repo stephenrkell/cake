@@ -1,5 +1,5 @@
 # FIXME: for this to build, you must copy or symlink the following JAR files into
-# the toplevel build directory (i.e. the one containing this Makefile).
+# the directory containing this Makefile.
 #
 # antlr-runtime-3.1.jar
 # stringtemplate-3.2.jar
@@ -18,16 +18,16 @@ default: cake
 %.o: %.cpp
 	g++ -c -o "$@" ${CXXFLAGS} "$<"
 
-main.o: main.cpp parser-recursive Makefile antlr-headers
+main.o: main.cpp parser-recursive.stamp Makefile gcjh_generated
 	g++ -c -o "$@" ${CXXFLAGS} "$<"
 
-cake: main.o $(OBJS) antlr-runtime-3.1.jar.so stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so
-	gcj $(GCJFLAGS) -Wl,-R. -o "$@" $(OBJS) "$<" -lstdc++ parser/cakeJava{Parser,Lexer}*.o antlr-runtime-3.1.jar.so stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so
+cake: main.o $(OBJS) stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so
+	gcj $(GCJFLAGS) -Wl,-R. -o "$@" $(OBJS) "$<" -lstdc++ parser/cakeJava{Parser,Lexer}*.o stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so
 
 # FIXME: to build, change the following .jar paths
 
-.PHONY: antlr-headers
-antlr-headers: 
+#.PHONY: antlr-headers
+gcjh_generated: Makefile
 	gcjh -d gcjh_generated -classpath $(CLASSPATH) \
 		org.antlr.runtime.Lexer \
 		org.antlr.runtime.Parser \
@@ -38,17 +38,27 @@ antlr-headers:
 		org.antlr.runtime.ANTLRReaderStream \
 		org.antlr.runtime.ANTLRStringStream \
 		org.antlr.runtime.CharStream \
-		org.antlr.runtime.IntStream 
+		org.antlr.runtime.IntStream \
+		org.antlr.runtime.ParserRuleReturnScope \
+		org.antlr.runtime.RuleReturnScope \
+		org.antlr.runtime.tree.CommonTree \
+		org.antlr.runtime.tree.BaseTree \
+		org.antlr.runtime.tree.Tree
+		
+#antlr-headers.stamp: antlr-headers
+#	touch antlr-headers.stamp
 
 %.jar.so: %.jar
-	gcj $(GCJFLAGS) -shared -fPIC -Wl,-Bsymbolic "$<" -o "$@"
+	gcj $(GCJFLAGS) -shared -Wl,-Bsymbolic "$<" -o "$@"
 
 #java-headers:
 #	gcjh -d gcjh_generated -classpath .:$(CLASSPATH) java.io.File java.io.FileInputStream
-
-.PHONY: parser-recursive
-parser-recursive:
-	$(MAKE) -C parser
+	
+parser-recursive.stamp: parser/stamp
+	touch parser-recursive.stamp
+	
+parser/stamp:
+	$(MAKE) -C parser CLASSPATH=$(CLASSPATH)
 
 .PHONY: clean
 clean:

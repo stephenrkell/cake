@@ -48,7 +48,7 @@ int main(int argc, char **argv)
 	}
 	else
 	{		
-		cake::request req(JvNewStringUTF(cakefile));
+		cake::request req(cakefile);
 		return req.process();
 	}
 }

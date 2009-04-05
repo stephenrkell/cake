@@ -1,0 +1,6 @@
+tree grammar cakeCTree;
+options {
+	language=C;
+	tokenVocab=cakeC;
+}
+
