@@ -90,7 +90,24 @@ namespace cake
 				/* with children of objectSpec */
 				{
 					INIT;
-					BIND3(objectSpec, module_constructor_name, IDENT);
+					switch (objectSpec.getType())
+					{
+						case cakeJavaParser::OBJECT_SPEC_DIRECT:
+							BIND3(objectSpec, objectConstructor, OBJECT_CONSTRUCTOR);
+							BIND3(objectSpec, id, IDENT);
+							break;
+						case cakeJavaParser::OBJECT_SPEC_DERIVING:
+							BIND3(objectSpec, existingObjectConstructor, OBJECT_CONSTRUCTOR);
+							BIND3(objectSpec, derivedObjectConstructor, OBJECT_CONSTRUCTOR);
+							std::pair<std::string, std::string> eocStrings =
+								read_object_constructor(existingObjectConstructor);
+							std::pair<std::string, std::string> docStrings =
+								read_object_constructor(derivedObjectConstructor);
+							BIND3(objectSpec, derivedIdent, IDENT);
+							break;
+						default: SEMANTIC_ERROR(n);
+					}
+					ALIAS2(objectSpec, module_constructor_name);
 					BIND3(objectSpec, filename, STRING_LIT);
 						/* Absence of filename is allowed by the gramamr,
 						 * but it's *not* okay here. */
@@ -113,7 +130,7 @@ namespace cake
 							switch (lit_or_ident->getType())
 							{
 								case cakeJavaParser::STRING_LIT: {
-									BIND3(objectSpec, derived_filename, STRING_LIT);
+									ALIAS3(objectSpec, derived_filename, STRING_LIT);
 									derived_filename_text = CCP(derived_filename->getText());
 									BIND3(objectSpec, derived_ident, IDENT);
 									add_derive_rewrite(
@@ -122,7 +139,7 @@ namespace cake
 										existsBody);
 								} break;
 								case cakeJavaParser::IDENT: {
-									BIND3(objectSpec, derived_ident, IDENT);
+									ALIAS3(objectSpec, derived_ident, IDENT);
 									derived_filename_text = new_tmp_filename(
 										jtocstring_safe(derived_constructor_ident->getText()));
 									add_derive_rewrite(CCP(derived_ident->getText()), 
@@ -133,6 +150,11 @@ namespace cake
 							}
 						} break;
 						case cakeJavaParser::IDENT: {
+							java::lang::System::err->println(JvNewStringUTF(
+								"DEBUG: to Java, filename is ")->concat(filename->getText()));
+							std::cerr << "DEBUG: to C++, filename is " 
+								<< CCP(filename->getText()) << std::endl;
+							
 							add_exists(CCP(module_constructor_name->getText()),
 								CCP(filename->getText()),
 								std::string(CCP(deriving_or_ident->getText())));						

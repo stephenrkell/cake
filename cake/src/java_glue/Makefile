@@ -1,6 +1,6 @@
 GCJFLAGS := -fPIC -g
 
-default: cake/SemanticError.o
+default: cake/SemanticError.o cake/SemanticError.class
 
 %.class: %.java
 	gcj -MD -C -Wno-unused "$<"

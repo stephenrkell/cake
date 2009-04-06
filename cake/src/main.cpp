@@ -64,10 +64,17 @@ int main(int argc, char **argv)
 			/* Let's hope the node is from a CommonTree */
 			org::antlr::runtime::tree::CommonTree *ct = 
 				jcast<org::antlr::runtime::tree::CommonTree *>(e->t);
-			int test = (int) ct->getToken()->getLine();
-			std::cout 	<< "Semantic error at line " << (int) ct->getToken()->getLine() //<< ":"
-						/*<< (int) ct->getToken()->getCharPositionInLine()*/ << ": " 
-						<< jtocstring_safe(e->msg) << std::endl;
+			std::cout 	<< "Semantic error";
+			if (ct != 0)
+			{
+				org::antlr::runtime::Token *token = ct->getToken();				
+				std::cout	<< " at line ";
+				std::cout	<< (int) token->getLine();
+				std::cout	<< ":";
+				std::cout	<< (int) token->getCharPositionInLine();
+			}
+			std::cout	<< ": " << jtocstring_safe(e->msg);
+			std::cout	<< std::endl;
 			return 1;
 		}
 		catch (java::lang::Exception *e)

@@ -54,7 +54,7 @@ namespace cake
 		
 		/* processing exists declarations */
 		void add_exists(const char *module_constructor_name,
-			const char *filename,
+			std::string quoted_filename,
 			std::string module_ident);
 			
 		/* processing derive declarations */
@@ -107,9 +107,9 @@ inline const char *jtocstring_safe(java::lang::String *s)
 
 template<class T>
 inline T jcast (java::lang::Object *o)
-{       
+{  
         BOOST_STATIC_ASSERT ((::boost::is_pointer<T>::value));
-
+		if (o == 0) return 0;
         if (::boost::remove_pointer<T>::type::class$.isAssignableFrom (o->getClass ()))
                 return reinterpret_cast<T>(o);
         else

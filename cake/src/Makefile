@@ -8,6 +8,7 @@
 
 OBJS := cake.o java_glue/cake/SemanticError.o alias.o util.o module.o exists.o derive.o
 INCLUDES += -Iparser -Igcjh_generated
+HDRS += $(wildcard *.hpp)
 CXXFLAGS += -fPIC -g $(INCLUDES) -Wall
 CLASSPATH := .:$(shell ( echo ./java_glue; ls -1 *.jar ) | while read line; do readlink -f "$$line"; done | tr '\n' ':' | sed 's/:+$$/:/' )
 GCJFLAGS += -classpath $(CLASSPATH) -fPIC -Wall
@@ -17,7 +18,7 @@ default: cake
 
 cake.o:: treewalk_helpers.hpp cake.hpp parser.hpp util.hpp
 
-%.o: %.cpp
+%.o: %.cpp $(HDRS)
 	g++ -c -o "$@" ${CXXFLAGS} "$<"
 
 main.o: main.cpp parser-recursive.stamp Makefile gcjh_generated
@@ -29,7 +30,7 @@ cake: main.o $(OBJS) stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.ja
 # FIXME: to build, change the following .jar paths
 
 #.PHONY: antlr-headers
-gcjh_generated: Makefile
+gcjh_generated: Makefile java_glue-recursive.stamp
 	gcjh -d gcjh_generated -classpath $(CLASSPATH) \
 		org.antlr.runtime.Lexer \
 		org.antlr.runtime.Parser \

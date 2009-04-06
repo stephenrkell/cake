@@ -17,6 +17,6 @@ namespace cake
 		org::antlr::runtime::tree::Tree *derive_body) 
 	{
 		std::cout << "Asked to derive a module name " << derived_ident
-			<< "with filename " << filename_text << " defined by tree at " << derive_body << std::endl;
+			<< " with filename " << filename_text << " defined by tree at " << derive_body << std::endl;
 	}
 }

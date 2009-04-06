@@ -6,7 +6,7 @@ options {
     ASTLabelType=CommonTree; // type of $statement.tree ref etc...
 }
 tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; VALUE_PATTERN; 
-EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; }
+EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; OBJECT_SPEC_DERIVING; }
 /* The whole input */
 toplevel:   declaration* //-> ^( TOPLEVEL<ToplevelNode> declaration* )
 			/*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
@@ -32,10 +32,14 @@ identList			: '[' IDENT ( ',' IDENT )*  ','? ']' -> ^( IDENT_LIST IDENT* )
 supplementaryDeclaration 	: IDENT '{' claimGroup* '}' -> ^( SUPPLEMENTARY IDENT claimGroup* )
 							;
 
-objectConstructor	: IDENT^ ( '('! STRING_LIT ')'! )?
-							;
+objectConstructor	: IDENT ( '(' STRING_LIT ')' )?
+						-> ^( OBJECT_CONSTRUCTOR IDENT STRING_LIT? )
+					;
 
-objectSpec			: objectConstructor^ ( IDENT | KEYWORD_DERIVING objectConstructor IDENT )
+objectSpec			: (objectConstructor IDENT)=> objectConstructor IDENT 
+						-> ^( OBJECT_SPEC_DIRECT objectConstructor IDENT )
+					| (objectConstructor KEYWORD_DERIVING)=> objectConstructor KEYWORD_DERIVING objectConstructor IDENT
+						-> ^( OBJECT_SPEC_DERIVING objectConstructor objectConstructor IDENT )
 					;
 
 existsDeclaration	: KEYWORD_EXISTS^ objectSpec existsBody

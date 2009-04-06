@@ -1,7 +1,5 @@
 #include <sstream>
 
-extern std::ostringstream exception_msg_stream;
-
 /* Since antlr doesn't provide us with named tree elements, or a convenient way of
  * querying for subtrees (except using tree grammars), let's define some nasty
  * macros which avoid much of the pain. */
@@ -24,11 +22,19 @@ extern std::ostringstream exception_msg_stream;
 
 /* Before binding a sequence of children, do INIT. 
  * Don't do INIT more than once in the same scope -- start another scope instead. */
-#define INIT int next_child_to_bind = 0
+#define INIT int next_child_to_bind __attribute__(( unused )) = 0 
 #define BIND2(node, name) org::antlr::runtime::tree::Tree *(name) = (node)->getChild(next_child_to_bind++);
 #define BIND3(node, name, token) org::antlr::runtime::tree::Tree *(name) = (node)->getChild(next_child_to_bind++); \
+	if ((name) == 0) throw new ::cake::SemanticError( \
+		(name), \
+		JvNewStringUTF("no child node!")); \
 	if (!((name)->getType() == cakeJavaParser::token)) throw new ::cake::SemanticError((name), \
-		JvNewStringUTF(((exception_msg_stream << __FILE__ << ":" << __LINE__ << " expected a token of class " #token), exception_msg_stream.str().c_str()) ));
+		JvNewStringUTF(((cake::exception_msg_stream << "expected a token of class " #token \
+		" (" __FILE__ ":" << __LINE__ << "); found token " << CCP((name)->getText()) \
+		<< " class id " << (int) (name)->getType()) \
+		, exception_msg_stream.str().c_str()) )); \
+	std::cerr << "DEBUG: " __FILE__ ":" << __LINE__ << " bound a token of type " << (int) ((name)->getType()) << "(" #token ") to name " #name \
+		<< ", text " << CCP((name)->getText()) << std::endl
 
 /* Skip over tokens we're not interested in. */
 #define SELECT_NOT(token) if (n->getType() == (cakeJavaParser::token)) continue
@@ -41,3 +47,12 @@ extern std::ostringstream exception_msg_stream;
 #define SEMANTIC_ERROR(n) throw new ::cake::SemanticError( \
 							(n), JvNewStringUTF("Malformed AST: found an unexpected token: ")->concat( \
 								(n)->getText()))
+
+#define ALIAS2(node, name) org::antlr::runtime::tree::Tree *& name = (node)
+#define ALIAS3(node, name, token) \
+	org::antlr::runtime::tree::Tree *& name = (node); \
+	if (!((name)->getType() == cakeJavaParser::token)) throw new ::cake::SemanticError((name), \
+	JvNewStringUTF(((cake::exception_msg_stream << "expected a token of class " #token \
+	" (" __FILE__ ":" << __LINE__ << "); found token " << CCP((name)->getText()) \
+	<< " class id " << (int) (name)->getType()) \
+	, exception_msg_stream.str().c_str()) ));

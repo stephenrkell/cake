@@ -13,10 +13,11 @@
 namespace cake
 {
 	void request::add_exists(const char *module_constructor_name,
-		const char *filename,
+		std::string filename,
 		std::string module_ident) 
 	{
 		std::cout << "Told that exists a module, constructor name " << module_constructor_name
-			<< " with filename " << filename << " and module identifier " << module_ident << std::endl;
+			<< " with quoted filename " << filename 
+			<< " and module identifier " << module_ident << std::endl;
 	}
 }
