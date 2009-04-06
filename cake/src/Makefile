@@ -6,14 +6,16 @@
 # antlr-3.1.2.jar 
 # junit-3.8.2.jar
 
-OBJS := cake.o
+OBJS := cake.o java_glue/cake/SemanticError.o alias.o util.o module.o exists.o derive.o
 INCLUDES += -Iparser -Igcjh_generated
 CXXFLAGS += -fPIC -g $(INCLUDES) -Wall
-CLASSPATH := .:$(shell ls -1 *.jar | while read line; do readlink -f "$$line"; done | tr '\n' ':' | sed 's/:+$$/:/' )
+CLASSPATH := .:$(shell ( echo ./java_glue; ls -1 *.jar ) | while read line; do readlink -f "$$line"; done | tr '\n' ':' | sed 's/:+$$/:/' )
 GCJFLAGS += -classpath $(CLASSPATH) -fPIC -Wall
 
 .PHONY: default
 default: cake
+
+cake.o:: treewalk_helpers.hpp cake.hpp parser.hpp util.hpp
 
 %.o: %.cpp
 	g++ -c -o "$@" ${CXXFLAGS} "$<"
@@ -43,7 +45,9 @@ gcjh_generated: Makefile
 		org.antlr.runtime.RuleReturnScope \
 		org.antlr.runtime.tree.CommonTree \
 		org.antlr.runtime.tree.BaseTree \
-		org.antlr.runtime.tree.Tree
+		org.antlr.runtime.tree.Tree \
+		org.antlr.runtime.Token \
+		cake.SemanticError
 		
 #antlr-headers.stamp: antlr-headers
 #	touch antlr-headers.stamp
@@ -56,9 +60,18 @@ gcjh_generated: Makefile
 	
 parser-recursive.stamp: parser/stamp
 	touch parser-recursive.stamp
-	
+
+.PHONY:	parser/stamp
 parser/stamp:
 	$(MAKE) -C parser CLASSPATH=$(CLASSPATH)
+
+java_glue-recursive.stamp: java_glue/stamp
+	touch java_glue-recursive.stamp
+	
+java_glue/stamp:
+	$(MAKE) -C java_glue CLASSPATH=$(CLASSPATH)
+
+java_glue/%.o: java_glue-recursive.stamp
 
 .PHONY: clean
 clean:

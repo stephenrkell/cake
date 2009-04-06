@@ -1,13 +1,10 @@
 #include <string>
 #include <iostream>
 #include <cassert>
+#include <cstring>
 #include <java/lang/Exception.h>
 #include <java/lang/System.h>
 #include <java/io/PrintStream.h>
-#include <org/antlr/runtime/ANTLRInputStream.h>
-#include <org/antlr/runtime/ANTLRStringStream.h>
-#include <org/antlr/runtime/CommonTokenStream.h>
-#include <org/antlr/runtime/TokenStream.h>
 #include <org/antlr/runtime/tree/BaseTree.h>
 #include <org/antlr/runtime/tree/CommonTree.h>
 #undef EOF
@@ -15,6 +12,8 @@
 #include <org/antlr/runtime/IntStream.h>
 #include "cake.hpp"
 #include "parser.hpp"
+#include "util.hpp"
+#include "treewalk_helpers.hpp"
 
 namespace cake
 {
@@ -33,20 +32,12 @@ namespace cake
 		using namespace org::antlr::runtime;
 		using namespace java::lang;
 		// invoke the parser
-		try
-		{
-			ANTLRInputStream *stream = new ANTLRInputStream(in_file);
-			::cakeJavaLexer *lexer = new ::cakeJavaLexer((CharStream*) stream);
-        	CommonTokenStream *tokenStream = new CommonTokenStream((TokenSource*) lexer);
-        	::cakeJavaParser *parser = new ::cakeJavaParser((TokenStream*) tokenStream);
-        	tree::CommonTree *tree = jcast<tree::CommonTree*>(parser->toplevel()->getTree());
-			System::out->print(JvNewStringUTF("Beginning depth-first traversal of AST:\n"));
-			toplevel((tree::Tree*) tree);			
-		}
-		catch (Exception *ex)
-		{
-			System::out->print(ex->toString());
-		}
+		stream = new ANTLRInputStream(in_file);
+		lexer = new ::cakeJavaLexer((CharStream*) stream);
+        tokenStream = new CommonTokenStream((TokenSource*) lexer);
+        parser = new ::cakeJavaParser((TokenStream*) tokenStream);
+        tree::CommonTree *tree = jcast<tree::CommonTree*>(parser->toplevel()->getTree());
+		toplevel((tree::Tree*) tree);			
 		
 		return 0;
 	}
@@ -65,111 +56,98 @@ namespace cake
 		std::cout 	<< "text: " << jtocstring_safe (t->getText()) << std::endl;
 		
 	}
-	
-#define ASSIGN_AS_COND(name, value) \
-	(((name) = (value)) == (name))
-	
-#define FOR_ALL_CHILDREN(t) jint i; jint childcount; \
-	const char *text; org::antlr::runtime::tree::Tree *n; \
-	for (i = 0, childcount = (t)->getChildCount(), \
-		n = ((childcount > 0) ? (t)->getChild(0) : 0), \
-		text = (n != 0) ? jtocstring_safe(n->getText()) : "(null)"; \
-	i < childcount && ASSIGN_AS_COND(n, (t)->getChild(i)) && \
-		ASSIGN_AS_COND(text, (n != 0) ? jtocstring_safe(n->getText()) : "(null)"); \
-	i++)
 
-#define INIT int next_child_to_bind = 0
-#define BIND1(name) org::antlr::runtime::tree::Tree *(name) = t->getChild(next_child_to_bind++);
-#define BIND2(name, token) org::antlr::runtime::tree::Tree *(name) = t->getChild(next_child_to_bind++); \
-	assert((name)->getType() == cakeJavaParser::token)
-
-#define SELECT_NOT(token) if (n->getType() == (cakeJavaParser::token)) continue
-#define SELECT_ONLY(token) if (n->getType() != (cakeJavaParser::token)) continue
-
-#define CCP(p) jtocstring_safe((p))
 	
 	/* FIXME: what's the right way to do this? tree parsers? Visitors? hand-crafted? */
 	void request::toplevel(org::antlr::runtime::tree::Tree *t)
 	{	
-		INIT;
-		FOR_ALL_CHILDREN(t)
-		{
-			SELECT_ONLY(KEYWORD_ALIAS);
-			module_alias_tbl.insert(std::make_pair(
- 				std::string(text),
- 				std::vector<std::string>()
- 				)
- 			);
-			pass1_visit_alias_declaration(n);
-
-// 			assert(n->getChildCount() == 2); /* aliasDescription, IDENT */				
-// 			module_alias_tbl.insert(std::make_pair(
-// 				std::string(text),
-// 				std::vector<std::string>()
-// 				)
-// 			);
-// 			populate_alias_list(module_alias_tbl[text], n->getChild(1));
+		{	/* Process aliases */
+			INIT;
+			FOR_ALL_CHILDREN(t)
+			{	/* Find all the toplevel alias definitions */
+				SELECT_ONLY(KEYWORD_ALIAS);
+				/* Create an alias record for this alias. */
+				module_alias_tbl.insert(std::make_pair(
+ 					std::string(text),
+ 					std::vector<std::string>()
+ 					)
+ 				);
+				/* Process the alias definition body. */
+				pass1_visit_alias_declaration(n);
+			}
+			/* FIXME: check for cycles in the alias graph */
 		}
-// 		switch (tok)
-// 		{
-// 			case cakeJavaParser::KEYWORD_EXISTS:
-// 				std::cout << "Found an 'exists' block." << std::endl;
-// 
-// 				break;
-// 			default:
-// 				std::cout << "Ignoring unknown token " << token_name(tok) << "." << std::endl;
-// 				break; 
-// 
-// 
-// 			/*case cakeParser::*/
-// 
-// 		}
-	}
-	
-	void request::pass1_visit_alias_declaration(org::antlr::runtime::tree::Tree *t)
-	{
-		INIT;
-		BIND1(aliasDescription);
-		BIND2(aliasName, IDENT);
-		{ FOR_ALL_CHILDREN(aliasDescription)
-		{
-			SELECT_ONLY(KEYWORD_ANY);
-			{ INIT; FOR_ALL_CHILDREN(n)
-			{
-				BIND2(ident, IDENT);
-				module_alias_tbl[CCP(aliasName->getText())].push_back(CCP(ident->getText()));			
-			} }
-			return;
-		} }
 		
+		{	/* Process 'exists' */
+			INIT;
+			FOR_ALL_CHILDREN(t)
+			{	/* Find all toplevel exists definition */
+				SELECT_ONLY(KEYWORD_EXISTS);
+				INIT;
+				BIND3(n, objectSpec, IDENT);
+				BIND2(n, existsBody);
 
-		{ FOR_ALL_CHILDREN(aliasDescription)
-		{
-			SELECT_ONLY(IDENT);
-			module_alias_tbl[CCP(aliasName->getText())].push_back(CCP(n->getText()));
-			return;
-		} }		
-	}
-	
-	void request::populate_alias_list(std::vector<std::string>& list,
-		org::antlr::runtime::tree::Tree *t)
-	{
-		switch (t->getType())
-		{
-			case cakeJavaParser::KEYWORD_ANY:
-				assert(t->getChildCount() == 1); /* identList */
-				
-				for (int i = 0; i < t->getChild(0)->getChildCount(); i++)
+				/* with children of objectSpec */
 				{
-					list.push_back(jtocstring_safe(t->getChild(0)->getChild(i)->getText()));
-				}
-				break;
-			case cakeJavaParser::IDENT:
-				list.push_back(jtocstring_safe(t->getText()));
-				break;
-			default:
-				assert(false);
-				break;
-		}		
-	}	
+					INIT;
+					BIND3(objectSpec, module_constructor_name, IDENT);
+					BIND3(objectSpec, filename, STRING_LIT);
+						/* Absence of filename is allowed by the gramamr,
+						 * but it's *not* okay here. */
+					BIND2(objectSpec, deriving_or_ident);
+					
+					switch(deriving_or_ident->getType())
+					{
+						case cakeJavaParser::KEYWORD_DERIVING: {
+							/* Add the raw exists to the database first, then 
+							 * deal with the derive. */
+							std::string anon = new_anon_ident();
+							add_exists(CCP(module_constructor_name->getText()),
+								CCP(filename->getText()),
+								anon);
+								
+							/* Now bind the remaining siblings to create the derive. */ 
+							BIND3(objectSpec, derived_constructor_ident, IDENT);
+							BIND2(objectSpec, lit_or_ident);
+							std::string derived_filename_text;
+							switch (lit_or_ident->getType())
+							{
+								case cakeJavaParser::STRING_LIT: {
+									BIND3(objectSpec, derived_filename, STRING_LIT);
+									derived_filename_text = CCP(derived_filename->getText());
+									BIND3(objectSpec, derived_ident, IDENT);
+									add_derive_rewrite(
+										CCP(derived_ident->getText()), 
+										derived_filename_text, 
+										existsBody);
+								} break;
+								case cakeJavaParser::IDENT: {
+									BIND3(objectSpec, derived_ident, IDENT);
+									derived_filename_text = new_tmp_filename(
+										jtocstring_safe(derived_constructor_ident->getText()));
+									add_derive_rewrite(CCP(derived_ident->getText()), 
+										derived_filename_text, 
+										existsBody);
+								} break;
+								default: SEMANTIC_ERROR(lit_or_ident);								
+							}
+						} break;
+						case cakeJavaParser::IDENT: {
+							add_exists(CCP(module_constructor_name->getText()),
+								CCP(filename->getText()),
+								std::string(CCP(deriving_or_ident->getText())));						
+						} break;
+						default: SEMANTIC_ERROR(n);
+					}
+				}				
+				/* Create an exists record for this definition.
+				 * If it also contains a 'deriving', create a vanilla
+				 * 'exists' with a new name, then create the 'derive'
+				 * block separately. */
+				//exists_tbl.insert(std::make_pair(
+					
+			
+			}
+		}
+	}
 }

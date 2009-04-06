@@ -3,6 +3,12 @@
 #include <cstring>
 #include <cassert>
 
+#include <java/lang/System.h>
+#include <java/io/PrintStream.h>
+#include <org/antlr/runtime/tree/CommonTree.h>
+#undef EOF
+#include <org/antlr/runtime/Token.h>
+
 #include "cake.hpp"
 #include "main.hpp"
 
@@ -48,8 +54,27 @@ int main(int argc, char **argv)
 	}
 	else
 	{		
-		cake::request req(cakefile);
-		return req.process();
+		try
+		{
+			cake::request req(cakefile);
+			return req.process();
+		}
+		catch (cake::SemanticError *e)
+		{
+			/* Let's hope the node is from a CommonTree */
+			org::antlr::runtime::tree::CommonTree *ct = 
+				jcast<org::antlr::runtime::tree::CommonTree *>(e->t);
+			int test = (int) ct->getToken()->getLine();
+			std::cout 	<< "Semantic error at line " << (int) ct->getToken()->getLine() //<< ":"
+						/*<< (int) ct->getToken()->getCharPositionInLine()*/ << ": " 
+						<< jtocstring_safe(e->msg) << std::endl;
+			return 1;
+		}
+		catch (java::lang::Exception *e)
+		{
+			java::lang::System::out->print(e->toString());
+			return 1;
+		}				
 	}
 }
 
@@ -57,3 +82,4 @@ void usage()
 {
 	std::cout << "Usage: cake <file>\n";
 }
+

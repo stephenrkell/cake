@@ -451,7 +451,7 @@ KEYWORD_INLINE : 'inline';
 
 /* Fallback (interesting) tokens */
 INT :   '0'..'9'+ ;
-NEWLINE:'\r'? '\n' {antlr_m4_skip_action} ;
+NEWLINE:'\r'? '\n' {antlr_m4_newline_action} ;
 WS  :   (' '|'\t')+ {antlr_m4_skip_action} ;
 LINECOMMENT : '/' '/'( ~ '\n' )* {antlr_m4_skip_action} ;
 BLOCKCOMMENT : '/' '*' ( ~ '/' | ( ~ '*' ) '/' )* '*' '/' {antlr_m4_skip_action} ;

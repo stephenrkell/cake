@@ -7,8 +7,16 @@
 #include <java/io/File.h>
 #include <java/io/FileInputStream.h>
 #include <java/lang/ClassCastException.h>
+#include <org/antlr/runtime/ANTLRInputStream.h>
+#include <org/antlr/runtime/ANTLRStringStream.h>
+#include <org/antlr/runtime/CommonTokenStream.h>
+#include <org/antlr/runtime/TokenStream.h>
 #include <org/antlr/runtime/tree/Tree.h>
 #include <org/antlr/runtime/tree/CommonTree.h>
+#undef EOF
+#include <cakeJavaLexer.h>
+#include <cakeJavaParser.h>
+#include <cake/SemanticError.h>
 #include <vector>
 #include <map>
 
@@ -20,13 +28,20 @@ namespace cake
 		jstring in_filename;
 		java::io::File *in_fileobj;
 		java::io::FileInputStream *in_file;
+
+		/* Parsing apparatus */		
+		org::antlr::runtime::ANTLRInputStream *stream;
+		::cakeJavaLexer *lexer;
+		org::antlr::runtime::CommonTokenStream *tokenStream;
+		::cakeJavaParser *parser;
 		
 		/* AST */
 		org::antlr::runtime::tree::CommonTree *ast;
 		
-		/* */
-		
+		/* */		
 		void depthFirst(org::antlr::runtime::tree::Tree *t);
+		
+		/* */
 		void toplevel(org::antlr::runtime::tree::Tree *t);
 		
 		class module {};
@@ -34,14 +49,33 @@ namespace cake
 		std::map<std::string, module> module_tbl;		
 		std::map<std::string, std::vector<std::string> > module_alias_tbl;
 		
+		/* processing alias declarations */
 		void pass1_visit_alias_declaration(org::antlr::runtime::tree::Tree *t);
 		
-		void populate_alias_list(std::vector<std::string>& list,
-			org::antlr::runtime::tree::Tree *t);
+		/* processing exists declarations */
+		void add_exists(const char *module_constructor_name,
+			const char *filename,
+			std::string module_ident);
 			
+		/* processing derive declarations */
+		void add_derive_rewrite(const char *derived_ident,
+			std::string filename_text,
+			org::antlr::runtime::tree::Tree *derive_body);
+		
+					
 	public:
 		request(const char *filename);
 		int process();
+		
+		/*class SemanticError : public ::java::lang::Exception
+		{
+		public:
+			org::antlr::runtime::tree::Tree *t;
+			java::lang::String *msg;
+			SemanticError(org::antlr::runtime::tree::Tree *t, java::lang::String *msg)
+				: t(t), msg(msg) {}
+			static ::java::lang::Class class$;
+		};*/
 	};
 	
 	const char *token_name(jint t);
@@ -81,15 +115,3 @@ inline T jcast (java::lang::Object *o)
         else
                 throw new java::lang::ClassCastException;
 }
-
-/*
-template<class T>
-inline T *jcast (java::lang::Object *o)
-{
-        if (T::class$.isAssignableFrom (o->getClass ()))
-                return reinterpret_cast<T*>(o);
-        else
-                throw new java::lang::ClassCastException;
-}
-*/
-

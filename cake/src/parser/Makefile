@@ -3,6 +3,8 @@ CFLAGS += -I$(HOME)/opt/include
 
 GCJFLAGS := -fPIC -g
 
+INCS := $(wildcard *.inc)
+
 CLASSPATH ?= .:
 
 ANTLR ?= java -classpath $(CLASSPATH) org.antlr.Tool
@@ -18,25 +20,25 @@ test: cakePyParser.py
 		eval python cakePyParser.py $$line || break; \
 	done < cake.g.tests
 
-%Py.g: %.g.m4
+%Py.g: %.g.m4 $(INCS)
 	m4 -Dantlr_m4_include_file=antlr-m4-py.inc "$<" > "$@"
 
 %PyLexer.py %PyParser.py: %Py.g
 	$(ANTLR) "$<"
 
-%C.g: %.g.m4
+%C.g: %.g.m4 $(INCS)
 	m4 -Dantlr_m4_include_file=antlr-m4-c.inc "$<" > "$@"
 	
 %CLexer.c %CParser.c: %C.g
 	$(ANTLR) "$<"
 
-%Cpp.g: %.g.m4
+%Cpp.g: %.g.m4 $(INCS)
 	m4 -Dantlr_m4_include_file=antlr-m4-cpp.inc "$<" > "$@"
 	
 %CppLexer.c %CppParser.c: %Cpp.g
 	$(ANTLR) "$<"
 
-%Java.g: %.g.m4
+%Java.g: %.g.m4 $(INCS)
 	m4 -Dantlr_m4_include_file=antlr-m4-java.inc "$<" > "$@"
 	
 %JavaLexer.java %JavaParser.java: %Java.g
@@ -62,4 +64,4 @@ test: cakePyParser.py
 	gcjh -classpath .:$(CLASSPATH) $**.class
 
 clean:
-	rm -f *.class *.h *.o *.pyc *.d *{Py,Java,Cpp}.g *{Parser,Lexer}.*
+	rm -f *.class *.h *.o *.pyc *.d *{Py,Java,Cpp,C}.g *{Parser,Lexer}.*
