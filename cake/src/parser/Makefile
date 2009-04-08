@@ -61,7 +61,7 @@ test: cakePyParser.py
 
 .PHONY: headers
 %.h: %.class
-	gcjh -classpath .:$(CLASSPATH) $**.class
+	gcjh -force -d . -classpath .:$(CLASSPATH) $**.class
 
 clean:
 	rm -f *.class *.h *.o *.pyc *.d *{Py,Java,Cpp,C}.g *{Parser,Lexer}.*

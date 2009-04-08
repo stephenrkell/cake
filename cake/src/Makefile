@@ -7,11 +7,13 @@
 # junit-3.8.2.jar
 
 OBJS := cake.o java_glue/cake/SemanticError.o alias.o util.o module.o exists.o derive.o
-INCLUDES += -Iparser -Igcjh_generated
+LIBS := -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
+INCLUDES += -Iparser -Igcjh_generated -I../../dwarf/libdwarfpp -I$(HOME)/opt/include -I../../c++-fileno/include
 HDRS += $(wildcard *.hpp)
-CXXFLAGS += -fPIC -g $(INCLUDES) -Wall
+CXXFLAGS += -fPIC -g $(INCLUDES) -Wall #-D_STREAM_COMPAT
 CLASSPATH := .:$(shell ( echo ./java_glue; ls -1 *.jar ) | while read line; do readlink -f "$$line"; done | tr '\n' ':' | sed 's/:+$$/:/' )
 GCJFLAGS += -classpath $(CLASSPATH) -fPIC -Wall
+LIBPATHS += -L../../dwarf/libdwarfpp -L$(HOME)/opt/lib -L../../c++-fileno/lib
 
 .PHONY: default
 default: cake
@@ -25,13 +27,13 @@ main.o: main.cpp parser-recursive.stamp Makefile gcjh_generated
 	g++ -c -o "$@" ${CXXFLAGS} "$<"
 
 cake: main.o $(OBJS) stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so
-	gcj $(GCJFLAGS) -Wl,-R. -o "$@" $(OBJS) "$<" -lstdc++ parser/cakeJava{Parser,Lexer}*.o stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so
+	gcj $(GCJFLAGS) $(LIBPATHS) -Wl,-R. -o "$@" $(OBJS) $(LIBS) "$<" -lstdc++ parser/cakeJava{Parser,Lexer}*.o stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so
 
 # FIXME: to build, change the following .jar paths
 
 #.PHONY: antlr-headers
-gcjh_generated: Makefile java_glue-recursive.stamp
-	gcjh -d gcjh_generated -classpath $(CLASSPATH) \
+gcjh_generated: Makefile java_glue-recursive.stamp parser-recursive.stamp
+	gcjh -force -d gcjh_generated -classpath $(CLASSPATH) \
 		org.antlr.runtime.Lexer \
 		org.antlr.runtime.Parser \
 		org.antlr.runtime.BaseRecognizer \
@@ -82,4 +84,4 @@ clean:
 
 .PHONY: test
 test: cake
-	gdb --eval-command run --args ./cake ../switch-simple.cake
+	cd ..; gdb --eval-command run --args src/cake switch-simple.cake

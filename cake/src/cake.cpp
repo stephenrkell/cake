@@ -84,19 +84,25 @@ namespace cake
 			{	/* Find all toplevel exists definition */
 				SELECT_ONLY(KEYWORD_EXISTS);
 				INIT;
-				BIND3(n, objectSpec, IDENT);
+				BIND2(n, objectSpec);
 				BIND2(n, existsBody);
 
 				/* with children of objectSpec */
 				{
 					INIT;
-					switch (objectSpec.getType())
+					switch (objectSpec->getType())
 					{
-						case cakeJavaParser::OBJECT_SPEC_DIRECT:
+						case cakeJavaParser::OBJECT_SPEC_DIRECT: {
 							BIND3(objectSpec, objectConstructor, OBJECT_CONSTRUCTOR);
 							BIND3(objectSpec, id, IDENT);
-							break;
-						case cakeJavaParser::OBJECT_SPEC_DERIVING:
+							std::pair<std::string, std::string> ocStrings =
+								read_object_constructor(objectConstructor);
+							std::string ident(CCP(id->getText()));							
+							add_exists(ocStrings.first,
+								ocStrings.second,
+								ident);
+							} break;
+						case cakeJavaParser::OBJECT_SPEC_DERIVING: {
 							BIND3(objectSpec, existingObjectConstructor, OBJECT_CONSTRUCTOR);
 							BIND3(objectSpec, derivedObjectConstructor, OBJECT_CONSTRUCTOR);
 							std::pair<std::string, std::string> eocStrings =
@@ -104,63 +110,73 @@ namespace cake
 							std::pair<std::string, std::string> docStrings =
 								read_object_constructor(derivedObjectConstructor);
 							BIND3(objectSpec, derivedIdent, IDENT);
-							break;
-						default: SEMANTIC_ERROR(n);
-					}
-					ALIAS2(objectSpec, module_constructor_name);
-					BIND3(objectSpec, filename, STRING_LIT);
-						/* Absence of filename is allowed by the gramamr,
-						 * but it's *not* okay here. */
-					BIND2(objectSpec, deriving_or_ident);
-					
-					switch(deriving_or_ident->getType())
-					{
-						case cakeJavaParser::KEYWORD_DERIVING: {
-							/* Add the raw exists to the database first, then 
-							 * deal with the derive. */
-							std::string anon = new_anon_ident();
-							add_exists(CCP(module_constructor_name->getText()),
-								CCP(filename->getText()),
-								anon);
-								
-							/* Now bind the remaining siblings to create the derive. */ 
-							BIND3(objectSpec, derived_constructor_ident, IDENT);
-							BIND2(objectSpec, lit_or_ident);
-							std::string derived_filename_text;
-							switch (lit_or_ident->getType())
-							{
-								case cakeJavaParser::STRING_LIT: {
-									ALIAS3(objectSpec, derived_filename, STRING_LIT);
-									derived_filename_text = CCP(derived_filename->getText());
-									BIND3(objectSpec, derived_ident, IDENT);
-									add_derive_rewrite(
-										CCP(derived_ident->getText()), 
-										derived_filename_text, 
-										existsBody);
-								} break;
-								case cakeJavaParser::IDENT: {
-									ALIAS3(objectSpec, derived_ident, IDENT);
-									derived_filename_text = new_tmp_filename(
-										jtocstring_safe(derived_constructor_ident->getText()));
-									add_derive_rewrite(CCP(derived_ident->getText()), 
-										derived_filename_text, 
-										existsBody);
-								} break;
-								default: SEMANTIC_ERROR(lit_or_ident);								
-							}
-						} break;
-						case cakeJavaParser::IDENT: {
-							java::lang::System::err->println(JvNewStringUTF(
-								"DEBUG: to Java, filename is ")->concat(filename->getText()));
-							std::cerr << "DEBUG: to C++, filename is " 
-								<< CCP(filename->getText()) << std::endl;
 							
-							add_exists(CCP(module_constructor_name->getText()),
-								CCP(filename->getText()),
-								std::string(CCP(deriving_or_ident->getText())));						
-						} break;
+							/* Add the raw exists to the database first... */ 
+							std::string anon = new_anon_ident();
+							add_exists(eocStrings.first,
+								eocStrings.second,
+								anon);		
+							/* ... then deal with the derive. */
+							std::string filename = 
+								docStrings.second.empty() ? 
+									new_tmp_filename(docStrings.first) 
+									: docStrings.second;
+							add_derive_rewrite(docStrings.first, 
+								filename, 
+								existsBody);							
+							} break;
 						default: SEMANTIC_ERROR(n);
 					}
+// 					ALIAS2(objectSpec, module_constructor_name);
+// 					BIND3(objectSpec, filename, STRING_LIT);
+// 						/* Absence of filename is allowed by the gramamr,
+// 						 * but it's *not* okay here. */
+// 					BIND2(objectSpec, deriving_or_ident);
+// 					
+// 					switch(deriving_or_ident->getType())
+// 					{
+// 						case cakeJavaParser::KEYWORD_DERIVING: {
+// 							/* Add the raw exists to the database first, then 
+// 							 * deal with the derive. */
+// 							std::string anon = new_anon_ident();
+// 							add_exists(CCP(module_constructor_name->getText()),
+// 								CCP(filename->getText()),
+// 								anon);
+// 								
+// 							/* Now bind the remaining siblings to create the derive. */ 
+// 							BIND3(objectSpec, derived_constructor_ident, IDENT);
+// 							BIND2(objectSpec, lit_or_ident);
+// 							std::string derived_filename_text;
+// 							switch (lit_or_ident->getType())
+// 							{
+// 								case cakeJavaParser::STRING_LIT: {
+// 									ALIAS3(objectSpec, derived_filename, STRING_LIT);
+// 									derived_filename_text = CCP(derived_filename->getText());
+// 									BIND3(objectSpec, derived_ident, IDENT);
+// 									add_derive_rewrite(
+// 										CCP(derived_ident->getText()), 
+// 										derived_filename_text, 
+// 										existsBody);
+// 								} break;
+// 								case cakeJavaParser::IDENT: {
+// 									ALIAS3(objectSpec, derived_ident, IDENT);
+// 									derived_filename_text = 
+// 								} break;
+// 								default: SEMANTIC_ERROR(lit_or_ident);								
+// 							}
+// 						} break;
+// 						case cakeJavaParser::IDENT: {
+// 							java::lang::System::err->println(JvNewStringUTF(
+// 								"DEBUG: to Java, filename is ")->concat(filename->getText()));
+// 							std::cerr << "DEBUG: to C++, filename is " 
+// 								<< CCP(filename->getText()) << std::endl;
+// 							
+// 							add_exists(CCP(module_constructor_name->getText()),
+// 								CCP(filename->getText()),
+// 								std::string(CCP(deriving_or_ident->getText())));						
+// 						} break;
+// 						default: SEMANTIC_ERROR(n);
+// 					}
 				}				
 				/* Create an exists record for this definition.
 				 * If it also contains a 'deriving', create a vanilla

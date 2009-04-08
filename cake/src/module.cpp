@@ -5,15 +5,15 @@
 
 namespace cake
 {
-	/* define static members */	
-	std::pair<const std::string, const char *> module::known_constructor_extensions[] = {
-			make_pair(std::string("elf_reloc"), "o"),
-			make_pair(std::string("elf_external_sharedlib"), "so")
+	/* define static members */
+	module::constructor_map_entry module::known_constructor_extensions[] = {
+			make_pair(std::string("elf_reloc"), std::string("o")),
+			make_pair(std::string("elf_external_sharedlib"), std::string("so"))
 	};	
-	std::map<std::string, const char *> module::known_constructors(
+	std::map<std::string, std::string> module::known_constructors(
 		&module::known_constructor_extensions[0],
 		&known_constructor_extensions[(sizeof known_constructor_extensions) 
-			/ sizeof (std::pair<const std::string, const char *>)
+			/ sizeof (module::constructor_map_entry)
 		]
 	);
 }

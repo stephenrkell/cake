@@ -12,8 +12,8 @@
 
 namespace cake
 {
-	void request::add_derive_rewrite(const char *derived_ident,
-		std::string filename_text,
+	void request::add_derive_rewrite(std::string& derived_ident,
+		std::string& filename_text,
 		org::antlr::runtime::tree::Tree *derive_body) 
 	{
 		std::cout << "Asked to derive a module name " << derived_ident

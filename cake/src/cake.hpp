@@ -53,13 +53,13 @@ namespace cake
 		void pass1_visit_alias_declaration(org::antlr::runtime::tree::Tree *t);
 		
 		/* processing exists declarations */
-		void add_exists(const char *module_constructor_name,
-			std::string quoted_filename,
-			std::string module_ident);
+		void add_exists(std::string& module_constructor_name,
+			std::string& quoted_filename,
+			std::string& module_ident);
 			
 		/* processing derive declarations */
-		void add_derive_rewrite(const char *derived_ident,
-			std::string filename_text,
+		void add_derive_rewrite(std::string& derived_ident,
+			std::string& filename_text,
 			org::antlr::runtime::tree::Tree *derive_body);
 		
 					
