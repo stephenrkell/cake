@@ -84,4 +84,4 @@ clean:
 
 .PHONY: test
 test: cake
-	cd ..; gdb --eval-command run --args src/cake switch-simple.cake
+	cd ../examples; LD_LIBRARY_PATH=../src:$(LD_LIBRARY_PATH) gdb --eval-command run --args ../src/cake switch-simple.cake

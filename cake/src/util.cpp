@@ -1,6 +1,8 @@
 #include <string>
+#include <fstream>
 #include <iostream>
 #include <sstream>
+#include <cstdlib>
 #include "cake.hpp"
 #include "util.hpp"
 #include "module.hpp"
@@ -63,7 +65,7 @@ namespace cake
 			return lit;
 		}
 		std::ostringstream o;
-		enum state { BEGIN, ESCAPE, OCTAL, HEX } state;
+		enum state { BEGIN, ESCAPE, OCTAL, HEX } state = BEGIN;
 		std::string::iterator octal_begin;
 		std::string::iterator octal_end;
 		std::string::iterator hex_begin;
@@ -185,4 +187,34 @@ namespace cake
 		}
 		return std::make_pair(fst, snd);
 	}
+	
+	std::string lookup_shared_lib(std::string const&  basename)
+	{
+		const char *ld_library_path = getenv("LD_LIBRARY_PATH");
+		if (ld_library_path == NULL) ld_library_path = guessed_system_library_path;
+		
+		std::string lib_path_str = std::string(ld_library_path);
+		std::string::size_type i = 0;
+		while (i < lib_path_str.length()) 
+		{
+			int colon_index = lib_path_str.find(':', i);
+			std::string test_path = lib_path_str.substr(i,
+				colon_index - i);
+			i = colon_index + 1;
+		
+			std::string lib_filepath = test_path + "/" + guessed_system_library_prefix
+				+ basename + "." + module::extension_for_constructor(shared_lib_constructor);
+			std::ifstream lib(lib_filepath.c_str(), std::ios::in);
+			if (lib)
+			{
+				std::cerr << "Found library at " << lib_filepath << std::endl;
+				return lib_filepath;
+			}
+		}
+		return std::string("");
+	}
+	
+	std::string shared_lib_constructor = std::string("elf_external_sharedlib");
+	const char *guessed_system_library_path = "/usr/lib:/lib";
+	const char *guessed_system_library_prefix = "lib";	
 }
