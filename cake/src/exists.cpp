@@ -48,16 +48,23 @@ namespace cake
 		//dwarf::file f(fileno(file));
 		dwarf::abi_information info(f);
 		std::cerr << "Got ABI information for file " << unescaped_filename << ", " 
-			<< info.get_funcs().size() << " function entries, " 
-			<< info.get_toplevel_vars().size() << " toplevel variable entries, "
-			<< info.get_types().size() << " type entries" << std::endl;
+			<< info.func_offsets().size() << " function entries, " 
+			<< info.toplevel_var_offsets().size() << " toplevel variable entries, "
+			<< info.type_offsets().size() << " type entries" << std::endl;
 			
-		for (std::map<Dwarf_Off, dwarf::encap::die>::iterator i = info.get_funcs().begin();
-			i != info.get_funcs().end();
+		for (std::vector<Dwarf_Off>::iterator i = info.func_ptr()->first.begin();
+			i != info.func_ptr()->first.end();
 			i++)
 		{
-			std::cerr << "offset: " << std::hex << i->first << std::dec 
-				<< ", name: " << i->second.get_attrs()[DW_AT_name].get_string() << std::endl;
+			std::cerr << "offset: " << std::hex << *i << std::dec;
+			if (info.func_ptr()->second[*i][DW_AT_name] != dwarf::encap::attribute_value::DOES_NOT_EXIST())
+			{
+				std::cerr << ", name: " << *(info.func_ptr()->second[*i][DW_AT_name].get_string()) << std::endl;
+			}
+			else
+			{
+				std::cerr << ", no DW_AT_name attribute" << std::endl;
+			}
 		}
 	}
 }

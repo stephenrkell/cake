@@ -9,10 +9,10 @@
 OBJS := cake.o java_glue/cake/SemanticError.o alias.o util.o module.o exists.o derive.o
 LIBS := -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
 INCLUDES += -Iparser -Igcjh_generated -I../../dwarf/libdwarfpp -I$(HOME)/opt/include -I../../c++-fileno/include
-HDRS += $(wildcard *.hpp)
+HDRS += $(wildcard *.hpp) ../../dwarf/libdwarfpp/dwarfpp.h ../dwarf/libdwarfpp/dwarfpp.h
 CXXFLAGS += -fPIC -g $(INCLUDES) -Wall #-D_STREAM_COMPAT
 CLASSPATH := .:$(shell ( echo ./java_glue; ls -1 *.jar ) | while read line; do readlink -f "$$line"; done | tr '\n' ':' | sed 's/:+$$/:/' )
-GCJFLAGS += -classpath $(CLASSPATH) -fPIC -Wall
+GCJFLAGS += -g -classpath $(CLASSPATH) -fPIC -Wall
 LIBPATHS += -L../../dwarf/libdwarfpp -L$(HOME)/opt/lib -L../../c++-fileno/lib
 
 .PHONY: default
@@ -84,4 +84,4 @@ clean:
 
 .PHONY: test
 test: cake
-	cd ../examples; LD_LIBRARY_PATH=../src:$(LD_LIBRARY_PATH) gdb --eval-command run --args ../src/cake switch-simple.cake
+	cd ../examples; MALLOC_CHECK_=1 LD_LIBRARY_PATH=../src:$(LD_LIBRARY_PATH) gdb --eval-command run --args ../src/cake switch-simple.cake
