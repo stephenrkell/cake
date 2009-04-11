@@ -31,13 +31,17 @@ namespace cake
 	{
 		using namespace org::antlr::runtime;
 		using namespace java::lang;
+		
 		// invoke the parser
 		stream = new ANTLRInputStream(in_file);
 		lexer = new ::cakeJavaLexer((CharStream*) stream);
         tokenStream = new CommonTokenStream((TokenSource*) lexer);
         parser = new ::cakeJavaParser((TokenStream*) tokenStream);
         tree::CommonTree *tree = jcast<tree::CommonTree*>(parser->toplevel()->getTree());
-		toplevel((tree::Tree*) tree);			
+		
+		// process the file
+		this->ast = tree;
+		toplevel();			
 		
 		return 0;
 	}
@@ -59,133 +63,41 @@ namespace cake
 
 	
 	/* FIXME: what's the right way to do this? tree parsers? Visitors? hand-crafted? */
-	void request::toplevel(org::antlr::runtime::tree::Tree *t)
-	{	
-		{	/* Process aliases */
-			INIT;
-			FOR_ALL_CHILDREN(t)
-			{	/* Find all the toplevel alias definitions */
-				SELECT_ONLY(KEYWORD_ALIAS);
-				/* Create an alias record for this alias. */
-				module_alias_tbl.insert(std::make_pair(
- 					std::string(text),
- 					std::vector<std::string>()
- 					)
- 				);
-				/* Process the alias definition body. */
-				pass1_visit_alias_declaration(n);
-			}
-			/* FIXME: check for cycles in the alias graph */
-		}
+	void request::toplevel()
+	{
+		extract_aliases();	
+		//extract_inlines();
+		//build_inlines();
+		extract_exists();
+		extract_supplementary();
+		extract_derivations();
 		
-		{	/* Process 'exists' */
-			INIT;
-			FOR_ALL_CHILDREN(t)
-			{	/* Find all toplevel exists definition */
-				SELECT_ONLY(KEYWORD_EXISTS);
-				INIT;
-				BIND2(n, objectSpec);
-				BIND2(n, existsBody);
-
-				/* with children of objectSpec */
-				{
-					INIT;
-					switch (objectSpec->getType())
-					{
-						case cakeJavaParser::OBJECT_SPEC_DIRECT: {
-							BIND3(objectSpec, objectConstructor, OBJECT_CONSTRUCTOR);
-							BIND3(objectSpec, id, IDENT);
-							std::pair<std::string, std::string> ocStrings =
-								read_object_constructor(objectConstructor);
-							std::string ident(CCP(id->getText()));							
-							add_exists(ocStrings.first,
-								ocStrings.second,
-								ident);
-							} break;
-						case cakeJavaParser::OBJECT_SPEC_DERIVING: {
-							BIND3(objectSpec, existingObjectConstructor, OBJECT_CONSTRUCTOR);
-							BIND3(objectSpec, derivedObjectConstructor, OBJECT_CONSTRUCTOR);
-							std::pair<std::string, std::string> eocStrings =
-								read_object_constructor(existingObjectConstructor);
-							std::pair<std::string, std::string> docStrings =
-								read_object_constructor(derivedObjectConstructor);
-							BIND3(objectSpec, derivedIdent, IDENT);
-							
-							/* Add the raw exists to the database first... */ 
-							std::string anon = new_anon_ident();
-							add_exists(eocStrings.first,
-								eocStrings.second,
-								anon);		
-							/* ... then deal with the derive. */
-							std::string filename = 
-								docStrings.second.empty() ? 
-									new_tmp_filename(docStrings.first) 
-									: docStrings.second;
-							add_derive_rewrite(docStrings.first, 
-								filename, 
-								existsBody);							
-							} break;
-						default: SEMANTIC_ERROR(n);
-					}
-// 					ALIAS2(objectSpec, module_constructor_name);
-// 					BIND3(objectSpec, filename, STRING_LIT);
-// 						/* Absence of filename is allowed by the gramamr,
-// 						 * but it's *not* okay here. */
-// 					BIND2(objectSpec, deriving_or_ident);
-// 					
-// 					switch(deriving_or_ident->getType())
-// 					{
-// 						case cakeJavaParser::KEYWORD_DERIVING: {
-// 							/* Add the raw exists to the database first, then 
-// 							 * deal with the derive. */
-// 							std::string anon = new_anon_ident();
-// 							add_exists(CCP(module_constructor_name->getText()),
-// 								CCP(filename->getText()),
-// 								anon);
-// 								
-// 							/* Now bind the remaining siblings to create the derive. */ 
-// 							BIND3(objectSpec, derived_constructor_ident, IDENT);
-// 							BIND2(objectSpec, lit_or_ident);
-// 							std::string derived_filename_text;
-// 							switch (lit_or_ident->getType())
-// 							{
-// 								case cakeJavaParser::STRING_LIT: {
-// 									ALIAS3(objectSpec, derived_filename, STRING_LIT);
-// 									derived_filename_text = CCP(derived_filename->getText());
-// 									BIND3(objectSpec, derived_ident, IDENT);
-// 									add_derive_rewrite(
-// 										CCP(derived_ident->getText()), 
-// 										derived_filename_text, 
-// 										existsBody);
-// 								} break;
-// 								case cakeJavaParser::IDENT: {
-// 									ALIAS3(objectSpec, derived_ident, IDENT);
-// 									derived_filename_text = 
-// 								} break;
-// 								default: SEMANTIC_ERROR(lit_or_ident);								
-// 							}
-// 						} break;
-// 						case cakeJavaParser::IDENT: {
-// 							java::lang::System::err->println(JvNewStringUTF(
-// 								"DEBUG: to Java, filename is ")->concat(filename->getText()));
-// 							std::cerr << "DEBUG: to C++, filename is " 
-// 								<< CCP(filename->getText()) << std::endl;
-// 							
-// 							add_exists(CCP(module_constructor_name->getText()),
-// 								CCP(filename->getText()),
-// 								std::string(CCP(deriving_or_ident->getText())));						
-// 						} break;
-// 						default: SEMANTIC_ERROR(n);
-// 					}
-				}				
-				/* Create an exists record for this definition.
-				 * If it also contains a 'deriving', create a vanilla
-				 * 'exists' with a new name, then create the 'derive'
-				 * block separately. */
-				//exists_tbl.insert(std::make_pair(
-					
-			
-			}
+		// derivations may have to happen in some order -- that doesn't mean
+		// we have to process them in that order, although it might if we
+		// end up supporting a derivation algebra (see below) since we might
+		// have to compute an "exists" block for intermediate results.
+		compute_derivation_dependencies();
+		
+		for (//each derive request...
+		/// ... output the Make rules that will build it
+		derivation *pd = 0; pd != 0; )
+		{
+			pd->write_makerules(std::cout);
 		}
 	}
+		
+	// there are three kinds of derivation (derivation function) at the moment:
+	// make_exec builds an executable out of an object file
+	// link builds an object file out of a list of object files
+	// rewrite performs substitutions on a single object file
+	// ... and they do *not* form a general derivation algebra (yet).
+	
+	void request::extract_derivations() {}
+		
+		// derivations may have to happen in some order -- that doesn't mean
+		// we have to process them in that order, although it might if we
+		// end up supporting a derivation algebra (see below) since we might
+		// have to compute an "exists" block for intermediate results.
+	void request::compute_derivation_dependencies() {}
+
 }

@@ -17,6 +17,26 @@
 
 namespace cake
 {
+	void request::extract_aliases()
+	{	
+		antlr::tree::Tree *t = (antlr::tree::Tree *) ast;
+		/* Process aliases */
+		INIT;
+		FOR_ALL_CHILDREN(t)
+		{	/* Find all the toplevel alias definitions */
+			SELECT_ONLY(KEYWORD_ALIAS);
+			/* Create an alias record for this alias. */
+			module_alias_tbl.insert(std::make_pair(
+ 				std::string(text),
+ 				std::vector<std::string>()
+ 				)
+ 			);
+			/* Process the alias definition body. */
+			pass1_visit_alias_declaration(n);
+		}
+		/* FIXME: check for cycles in the alias graph */
+	}
+
 	void request::pass1_visit_alias_declaration(org::antlr::runtime::tree::Tree *t)
 	{
 		INIT;

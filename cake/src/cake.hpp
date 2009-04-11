@@ -1,12 +1,6 @@
-#include <gcj/cni.h>
-#include <boost/static_assert.hpp>
-#include <boost/type_traits/is_pointer.hpp>
-#include <boost/type_traits/remove_pointer.hpp>
 #include <java/lang/System.h>
-#include <java/lang/String.h>
 #include <java/io/File.h>
 #include <java/io/FileInputStream.h>
-#include <java/lang/ClassCastException.h>
 #include <org/antlr/runtime/ANTLRInputStream.h>
 #include <org/antlr/runtime/ANTLRStringStream.h>
 #include <org/antlr/runtime/CommonTokenStream.h>
@@ -14,43 +8,55 @@
 #include <org/antlr/runtime/tree/Tree.h>
 #include <org/antlr/runtime/tree/CommonTree.h>
 #undef EOF
-#include <cakeJavaLexer.h>
-#include <cakeJavaParser.h>
-#include <cake/SemanticError.h>
+#include "cakeJavaLexer.h"
+#include "cakeJavaParser.h"
+#include "cake/SemanticError.h"
 #include <vector>
 #include <map>
+#include <memory>
+#include <boost/shared_ptr.hpp>
+#include "dwarfpp_simple.hpp"
+#include "module.hpp"
+
+namespace antlr = ::org::antlr::runtime;
 
 namespace cake
 {
 	class request
 	{
+		friend class derivation;
+		friend class link_derivation;
+		friend class rewrite_derivation;
+		friend class make_exec_derivation;
+		
 		/* Source file */
 		jstring in_filename;
 		java::io::File *in_fileobj;
 		java::io::FileInputStream *in_file;
 
 		/* Parsing apparatus */		
-		org::antlr::runtime::ANTLRInputStream *stream;
-		::cakeJavaLexer *lexer;
-		org::antlr::runtime::CommonTokenStream *tokenStream;
-		::cakeJavaParser *parser;
+		antlr::ANTLRInputStream *stream;
+		cakeJavaLexer *lexer;
+		antlr::CommonTokenStream *tokenStream;
+		cakeJavaParser *parser;
 		
 		/* AST */
-		org::antlr::runtime::tree::CommonTree *ast;
+		antlr::tree::CommonTree *ast;
 		
-		/* */		
-		void depthFirst(org::antlr::runtime::tree::Tree *t);
-		
-		/* */
-		void toplevel(org::antlr::runtime::tree::Tree *t);
-		
-		class module {};
-		
-		std::map<std::string, module> module_tbl;		
+		/* AST traversal */		
+		void depthFirst(antlr::tree::Tree *t);
+		void toplevel();
+				
+		/* data structure instances */
+		std::map<std::string, boost::shared_ptr<module> > module_tbl;	
+			// we use a shared ptr because otherwise, to do module_tbl[i] = blah,
+			// (or indeed any insertion into the map)
+			// we'd implicitly be constructing our module locally as a temporary
+			// and then copying it -- but it's very large, so we don't want that!
 		std::map<std::string, std::vector<std::string> > module_alias_tbl;
 		
 		/* processing alias declarations */
-		void pass1_visit_alias_declaration(org::antlr::runtime::tree::Tree *t);
+		void pass1_visit_alias_declaration(antlr::tree::Tree *t);
 		
 		/* processing exists declarations */
 		void add_exists(std::string& module_constructor_name,
@@ -60,58 +66,84 @@ namespace cake
 		/* processing derive declarations */
 		void add_derive_rewrite(std::string& derived_ident,
 			std::string& filename_text,
-			org::antlr::runtime::tree::Tree *derive_body);
+			antlr::tree::Tree *derive_body);
+			
+		void extract_aliases();	
+		void extract_inlines();
+		void build_inlines();
+		void extract_exists();
+		void extract_supplementary();
+		void extract_derivations();
+		
+		// derivations may have to happen in some order -- that doesn't mean
+		// we have to process them in that order, although it might if we
+		// end up supporting a derivation algebra (see below) since we might
+		// have to compute an "exists" block for intermediate results.
+		void compute_derivation_dependencies();
 		
 					
 	public:
 		request(const char *filename);
 		int process();
 		
-		/*class SemanticError : public ::java::lang::Exception
-		{
-		public:
-			org::antlr::runtime::tree::Tree *t;
-			java::lang::String *msg;
-			SemanticError(org::antlr::runtime::tree::Tree *t, java::lang::String *msg)
-				: t(t), msg(msg) {}
-			static ::java::lang::Class class$;
-		};*/
+		//static void print_abi_info(dwarf::abi_information& info, std::string& unescaped_filename);
 	};
 	
-	const char *token_name(jint t);
-}
-
-inline const char *jtocstring(java::lang::String *s)
-{
-	static char *buf;
-	static jsize buf_len;
+	class derivation
+	{	
+	protected:
+		request *r;
+		antlr::tree::Tree *t;		
+		
+	public:
+		derivation(request *r, antlr::tree::Tree *t) : r(r), t(t) {}
+		virtual void extract_definition() = 0;
+		virtual void write_makerules(std::ostream& out) = 0;
+		virtual std::vector<std::string> dependencies() = 0;
+	};
 	
-	if (buf == 0 || (jsize) s->length() < buf_len)
+	class link_derivation : public derivation
 	{
-		if (buf != 0) delete[] buf;
-		buf = new char[s->length() + 1];
-	}
-	jsize len = JvGetStringUTFRegion(s, 0, (jsize) s->length(), buf);
-	buf[len] = '\0';
-	return buf;
-}
+		void extract_event_correspondences();		
+		void extract_value_correspondences();
+	
+		void compute_function_bindings();
+		void compute_form_value_correspondences(); 
 
-inline const char *jtocstring_safe(java::lang::String *s)
-{
-	if (s == 0) return "(null)";
-	return jtocstring(s);
-}
+		void compute_static_value_correspondences();		
+		void compute_dwarf_type_compatibility(); 
 
-/* Gratefully stolen from Waba
- * http://www.waba.be/page/java-integration-through-cni-1.xhtml */
+		void compute_rep_domains();
+		void output_rep_conversions();
+		
+		void compute_interposition_points();
+		void output_symbol_renaming_rules();
+		
+		void output_formgens();		
+		void output_wrappergens();
+		
+		void output_static_co_objects(); 
+		
+	protected:
+		void extract_definition();
 
-template<class T>
-inline T jcast (java::lang::Object *o)
-{  
-        BOOST_STATIC_ASSERT ((::boost::is_pointer<T>::value));
-		if (o == 0) return 0;
-        if (::boost::remove_pointer<T>::type::class$.isAssignableFrom (o->getClass ()))
-                return reinterpret_cast<T>(o);
-        else
-                throw new java::lang::ClassCastException;
+	public:
+		void write_makerules(std::ostream& out);	
+	};
+	
+	class rewrite_derivation : public derivation
+	{
+	
+	public:
+		void write_makerules(std::ostream& out);	
+	};
+	
+	class make_exec_derivation : public derivation
+	{
+	
+	public:
+		void write_makerules(std::ostream& out);	
+	};
+	
+	//const char *token_name(jint t);
 }

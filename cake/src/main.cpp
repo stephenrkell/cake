@@ -10,6 +10,7 @@
 #include <org/antlr/runtime/Token.h>
 
 #include "cake.hpp"
+#include "util.hpp"
 #include "main.hpp"
 
 const struct option opts[] = {
@@ -18,6 +19,7 @@ const struct option opts[] = {
 
 int main(int argc, char **argv)
 {
+	using namespace cake;
 	int getopt_retval = 0;
 	int longindex;
 	

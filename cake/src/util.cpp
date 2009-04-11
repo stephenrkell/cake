@@ -5,7 +5,6 @@
 #include <cstdlib>
 #include "cake.hpp"
 #include "util.hpp"
-#include "module.hpp"
 #include "treewalk_helpers.hpp"
 
 namespace cake
@@ -64,6 +63,7 @@ namespace cake
 			// string is not quoted, so just return it
 			return lit;
 		}
+
 		std::ostringstream o;
 		enum state { BEGIN, ESCAPE, OCTAL, HEX } state = BEGIN;
 		std::string::iterator octal_begin;
@@ -188,7 +188,7 @@ namespace cake
 		return std::make_pair(fst, snd);
 	}
 	
-	std::string lookup_shared_lib(std::string const&  basename)
+	std::string lookup_solib(std::string const&  basename)
 	{
 		const char *ld_library_path = getenv("LD_LIBRARY_PATH");
 		if (ld_library_path == NULL) ld_library_path = guessed_system_library_path;
@@ -202,8 +202,9 @@ namespace cake
 				colon_index - i);
 			i = colon_index + 1;
 		
+			// FIXME: highly platform-dependent logic follows
 			std::string lib_filepath = test_path + "/" + guessed_system_library_prefix
-				+ basename + "." + module::extension_for_constructor(shared_lib_constructor);
+				+ basename + "." + module::extension_for_constructor(solib_constructor);
 			std::ifstream lib(lib_filepath.c_str(), std::ios::in);
 			if (lib)
 			{
@@ -214,7 +215,7 @@ namespace cake
 		return std::string("");
 	}
 	
-	std::string shared_lib_constructor = std::string("elf_external_sharedlib");
+	std::string solib_constructor = std::string("elf_external_sharedlib");
 	const char *guessed_system_library_path = "/usr/lib:/lib";
-	const char *guessed_system_library_prefix = "lib";	
+	const char *guessed_system_library_prefix = "lib";
 }
