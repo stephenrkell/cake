@@ -5,6 +5,7 @@
 #include <java/lang/ClassCastException.h>
 #include <java/lang/String.h>
 #include <string>
+#include <vector>
 #include <sstream>
 
 namespace cake
@@ -16,9 +17,12 @@ namespace cake
 	extern std::ostringstream exception_msg_stream;
 	std::string unescape_ident(std::string& ident);
 	std::string unescape_string_lit(std::string& lit);
-	std::pair<std::string, std::string> read_object_constructor(org::antlr::runtime::tree::Tree *t);
+	std::pair<std::string, std::string> read_object_constructor(antlr::tree::Tree *t);
 	std::string lookup_solib(std::string const& basename);
 	extern std::string solib_constructor;
+
+	typedef std::vector<std::string> definite_member_name;
+	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName);
 
 	inline const char *jtocstring(java::lang::String *s)	
 	{

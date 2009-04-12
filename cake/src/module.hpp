@@ -1,3 +1,5 @@
+// note: this file is included by cake.hpp
+
 #include <gcj/cni.h>
 #include <string>
 #include <map>
@@ -21,8 +23,12 @@ namespace cake
 		static std::map<std::string, std::string> known_constructors;
 				
 	public:
+		enum claim_strength { CHECK, DECLARE, OVERRIDE };
 		module(std::string& filename) : filename(filename) {}
 		std::string& get_filename() { return filename; }
+		void process_exists_claims(antlr::tree::Tree *existsBody);
+		void process_claimgroup(antlr::tree::Tree *claimGroup);			
+		virtual void process_claim_list(claim_strength s, antlr::tree::Tree *claimGroup) = 0;
 		
 		static std::string extension_for_constructor(std::string& module_constructor_name)
 		{ return known_constructors[module_constructor_name]; }		
@@ -62,8 +68,9 @@ namespace cake
 			dwarf::file(fileno()),
 			info(*this)
 		{
-			print_abi_info();
+			//print_abi_info();
 		}
+		void process_claim_list(claim_strength s, antlr::tree::Tree *claimGroup);
 		
 		void print_abi_info();
 	};

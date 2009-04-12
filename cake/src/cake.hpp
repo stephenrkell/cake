@@ -11,14 +11,16 @@
 #include "cakeJavaLexer.h"
 #include "cakeJavaParser.h"
 #include "cake/SemanticError.h"
+#include "cake/InternalError.h"
 #include <vector>
 #include <map>
 #include <memory>
 #include <boost/shared_ptr.hpp>
+
+// our headers are too lazy to use the fully-qualified antlr namespace
+namespace antlr = ::org::antlr::runtime;
 #include "dwarfpp_simple.hpp"
 #include "module.hpp"
-
-namespace antlr = ::org::antlr::runtime;
 
 namespace cake
 {

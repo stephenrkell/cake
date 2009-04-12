@@ -1,9 +1,13 @@
 GCJFLAGS := -fPIC -g
 
-default: cake/SemanticError.o cake/SemanticError.class
+JAVA_SRC := $(wildcard cake/*.java)
+CLASSFILES := $(patsubst %.java,%.class,$(JAVA_SRC))
+OBJS := $(patsubst %.java,%.o,$(JAVA_SRC))
 
-%.class: %.java
-	gcj -MD -C -Wno-unused "$<"
+default:  $(CLASSFILES) $(OBJS)
+
+$(CLASSFILES): $(JAVA_SRC)
+	gcj -MD -C -Wno-unused $(JAVA_SRC)
 
 %.o: %.class
 	gcj $(GCJFLAGS) -MD -Wno-unused -c -o "$@" "$<"

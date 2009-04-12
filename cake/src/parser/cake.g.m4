@@ -5,8 +5,9 @@ options {
     language=antlr_m4_language;
     ASTLabelType=CommonTree; // type of $statement.tree ref etc...
 }
-tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; VALUE_PATTERN; 
-EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; OBJECT_SPEC_DERIVING; }
+tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; 
+VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; 
+OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; }
 /* The whole input */
 toplevel:   declaration* //-> ^( TOPLEVEL<ToplevelNode> declaration* )
 			/*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
@@ -44,11 +45,11 @@ objectSpec			: (objectConstructor IDENT)=> objectConstructor IDENT
 
 existsDeclaration	: KEYWORD_EXISTS^ objectSpec existsBody
 					;
-existsBody			: '{'! ( claimGroup | globalRewrite )* '}'!
-					| ';'!
+existsBody			: '{' ( claimGroup | globalRewrite )* '}' -> ^( EXISTS_BODY claimGroup* globalRewrite* )
+					| ';' -> ^( EXISTS_BODY )
 					;
                     
-globalRewrite		: KEYWORD_STATIC? valueDescriptionExpr '-->'^ valueDescriptionExpr ';'!
+globalRewrite		: KEYWORD_STATIC? valueDescriptionExpr LR_DOUBLE_ARROW^ valueDescriptionExpr ';'!
 					;
 
 claimGroup			: KEYWORD_CHECK^ '{'! claim* '}'!
@@ -57,10 +58,10 @@ claimGroup			: KEYWORD_CHECK^ '{'! claim* '}'!
 					;
                     
 claim				: memberNameExpr ':' valueDescriptionExpr ';'
-						-> ^( memberNameExpr ^( valueDescriptionExpr ) )
+						-> ^( memberNameExpr valueDescriptionExpr )
 					;
                     
-memberNameExpr		: '.'!? IDENT ( '.'^ IDENT )*
+memberNameExpr		: '.'? IDENT ( '.' IDENT )* -> ^( DEFINITE_MEMBER_NAME IDENT* )
 					| '_'^ 
                     ;
 
@@ -138,7 +139,7 @@ enumValueDescription	: KEYWORD_ENUM^ ( ( ( IDENT | '_' ) byteSizeParameter? enum
 enumDefinition	: '{'! enumElement* '}'!
 				;
 
-enumElement : KEYWORD_ENUMERATOR^ IDENT '==' constantIntegerArithmeticExpression ';'!
+enumElement : KEYWORD_ENUMERATOR^ IDENT EQ constantIntegerArithmeticExpression ';'!
 			;
             
 constantIntegerArithmeticExpression	: constantShiftingExpression^

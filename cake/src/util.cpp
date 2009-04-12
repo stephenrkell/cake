@@ -174,7 +174,7 @@ namespace cake
 		return o.str();
 	}
 	
-	std::pair<std::string, std::string> read_object_constructor(org::antlr::runtime::tree::Tree *t)
+	std::pair<std::string, std::string> read_object_constructor(antlr::tree::Tree *t)
 	{
 		INIT;
 		BIND3(t, id, IDENT);
@@ -186,6 +186,34 @@ namespace cake
 			snd = std::string(CCP(quoted_lit->getText()));
 		}
 		return std::make_pair(fst, snd);
+	}
+	
+	// FIXME: lots of copying here, along with other functions which return complex objects
+	// as their return values. Consider a widespread adoption of heap-returning these, using
+	// auto_ptr<> in the callers, or smarted shared pointers if copying happens.
+	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName)
+	{
+		definite_member_name name;
+		switch(memberName->getType())
+		{
+			case '_':
+				RAISE_INTERNAL(memberName, "expecting a definite memberName, found indefinite `_'");
+			// no break
+			case cakeJavaParser::DEFINITE_MEMBER_NAME: {
+				definite_member_name vec(memberName->getChildCount());
+				definite_member_name::iterator iter = vec.begin();
+				FOR_ALL_CHILDREN(memberName)
+				{
+					*iter = std::string(CCP(n->getText()));
+					iter++;
+				}
+				return vec;
+			}
+			// no break
+			default: RAISE_INTERNAL(memberName, "bad syntax tree for memberName");			
+			// no break
+		}
+		
 	}
 	
 	std::string lookup_solib(std::string const&  basename)

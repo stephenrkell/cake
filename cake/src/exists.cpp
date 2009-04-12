@@ -29,7 +29,7 @@ namespace cake
 			SELECT_ONLY(KEYWORD_EXISTS);
 			INIT;
 			BIND2(n, objectSpec);
-			BIND2(n, existsBody);
+			BIND3(n, existsBody, EXISTS_BODY);
 
 			/* with children of objectSpec */
 			{
@@ -45,6 +45,8 @@ namespace cake
 						add_exists(ocStrings.first,
 							ocStrings.second,
 							ident);
+						// now process the claim group
+						module_tbl[ident]->process_exists_claims(existsBody);
 						} break;
 					case cakeJavaParser::OBJECT_SPEC_DERIVING: {
 						BIND3(objectSpec, existingObjectConstructor, OBJECT_CONSTRUCTOR);
@@ -59,7 +61,10 @@ namespace cake
 						std::string anon = new_anon_ident();
 						add_exists(eocStrings.first,
 							eocStrings.second,
-							anon);		
+							anon);
+						// now process any claims about that object
+						// FIXME: do claims get processed *before* or *after* rewrites? before.
+						module_tbl[anon]->process_exists_claims(existsBody);
 						/* ... then deal with the derive. */
 						std::string filename = 
 							docStrings.second.empty() ? 
@@ -91,20 +96,10 @@ namespace cake
 		:	CASE(elf_reloc, unescape_string_lit(filename))
 		:	0);
 		#undef CASE
-		
-// 		//std::ifstream file(unescaped_filename.c_str());
-// 		FILE *c_file = fopen(unescaped_filename.c_str(), "r");
-// 		if (c_file == NULL) throw new SemanticError(0, JvNewStringUTF("file does not exist! ")->concat(JvNewStringUTF(filename.c_str())));
-// 		__gnu_cxx::stdio_filebuf<char> file(c_file, std::ios::in);
-// 		int fd = fileno(c_file);
-// 		//int fd = fileno(file);
-// 		if (fd == -1) throw new SemanticError(0, JvNewStringUTF("file does not exist! ")->concat(JvNewStringUTF(filename.c_str())));
-// 		dwarf::file f(fd);
-// 		//dwarf::file f(fileno(file));
-// 		dwarf::abi_information info(f);		
-		
-		//print_abi_info(info, module_tbl[module_ident]->get_filename());
-		
+		// the code above appears to be exception-safe, because the only possibly-throwing thing
+		// we do, no matter which arm of the conditional we take, is the new() -- we don't have to
+		// worry about interleaving of different (sub)expressions.
+
 		/* Now process overrides and so on */
 	}	
 }

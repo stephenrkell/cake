@@ -11,9 +11,17 @@
 /* For-loop over all children of a node, binding some useful variable names
  * globally: childcount
  * per-iteration: i (child index), n (child tree), text (text) */	
-#define FOR_ALL_CHILDREN(t) jint i; jint childcount; \
-	const char *text; org::antlr::runtime::tree::Tree *n; \
-	for (i = 0, childcount = (t)->getChildCount(), \
+#define FOR_ALL_CHILDREN(t) jint i = 0; \
+	FOR_BODY(t)	
+
+#define FOR_REMAINING_CHILDREN(t) jint i = next_child_to_bind; \
+	FOR_BODY(t)
+	
+#define FOR_BODY(t) \
+	jint childcount; \
+	const char *text; \
+	org::antlr::runtime::tree::Tree *n; \
+	for (childcount = (t)->getChildCount(), \
 		n = ((childcount > 0) ? (t)->getChild(0) : 0), \
 		text = (n != 0) ? jtocstring_safe(n->getText()) : "(null)"; \
 	i < childcount && ASSIGN_AS_COND(n, (t)->getChild(i)) && \
@@ -56,3 +64,11 @@
 	" (" __FILE__ ":" << __LINE__ << "); found token " << CCP((name)->getText()) \
 	<< " class id " << (int) (name)->getType()) \
 	, exception_msg_stream.str().c_str()) ));
+
+#define RAISE(node, msg) throw new SemanticError((node), JvNewStringUTF( \
+					msg ": ") \
+						->concat((node)->getText()))
+
+#define RAISE_INTERNAL(node, msg) throw new InternalError((node), JvNewStringUTF( \
+					msg ": ") \
+						->concat((node)->getText()))

@@ -61,27 +61,28 @@ int main(int argc, char **argv)
 			cake::request req(cakefile);
 			return req.process();
 		}
-		catch (cake::SemanticError *e)
+		catch (cake::TreewalkError *e)
 		{
 			/* Let's hope the node is from a CommonTree */
 			org::antlr::runtime::tree::CommonTree *ct = 
 				jcast<org::antlr::runtime::tree::CommonTree *>(e->t);
-			std::cout 	<< "Semantic error";
-			if (ct != 0)
-			{
-				org::antlr::runtime::Token *token = ct->getToken();				
-				std::cout	<< " at line ";
-				std::cout	<< (int) token->getLine();
-				std::cout	<< ":";
-				std::cout	<< (int) token->getCharPositionInLine();
-			}
-			std::cout	<< ": " << jtocstring_safe(e->msg);
-			std::cout	<< std::endl;
-			return 1;
+			std::cerr 	<< jtocstring_safe(e->toString()) << std::endl;
+// 			//"Semantic error";
+// 			if (ct != 0)
+// 			{
+// 				org::antlr::runtime::Token *token = ct->getToken();				
+// 				std::cerr	<< " at line ";
+// 				std::cerr	<< (int) token->getLine();
+// 				std::cerr	<< ":";
+// 				std::cerr	<< (int) token->getCharPositionInLine();
+// 			}
+// 			std::cerr	<< ": " << jtocstring_safe(e->msg);
+// 			std::cerr	<< std::endl;
+// 			return 1;
 		}
 		catch (java::lang::Exception *e)
 		{
-			java::lang::System::out->print(e->toString());
+			java::lang::System::err->print(e->toString());
 			return 1;
 		}				
 	}
@@ -89,6 +90,6 @@ int main(int argc, char **argv)
 
 void usage()
 {
-	std::cout << "Usage: cake <file>\n";
+	std::cerr << "Usage: cake <file>\n";
 }
 

@@ -1,6 +1,10 @@
+#include <gcj/cni.h>
 #include <string>
+#include <cassert>
 #include <iostream>
-#include "cake.hpp"
+#include "cake.hpp" // includes module.hpp
+#include "util.hpp"
+#include "treewalk_helpers.hpp"
 
 namespace cake
 {
@@ -15,6 +19,77 @@ namespace cake
 			/ sizeof (module::constructor_map_entry)
 		]
 	);
+	
+	void module::process_exists_claims(antlr::tree::Tree *existsBody)
+	{
+		FOR_ALL_CHILDREN(existsBody)
+		{
+			INIT;
+			SELECT_NOT(LR_DOUBLE_ARROW); // we don't want rewrites, only claimGroups
+			process_claimgroup(n);
+		}
+	}
+	
+	void module::process_claimgroup(antlr::tree::Tree *claimGroup)
+	{
+		INIT;
+		module::claim_strength str;
+		switch(claimGroup->getType())
+		{
+			case cakeJavaParser::KEYWORD_CHECK:
+				str = CHECK;
+				goto call_process_claim;
+			case cakeJavaParser::KEYWORD_DECLARE:
+				str = DECLARE;
+				goto call_process_claim;
+			case cakeJavaParser::KEYWORD_OVERRIDE:
+				str = OVERRIDE;
+				goto call_process_claim;
+			call_process_claim: {
+				process_claim_list(str, claimGroup);
+			} break;
+			default: RAISE_INTERNAL(claimGroup, "bad claim strength (expected `check', `declare' or `override')");
+		}			
+	}
+	
+	void elf_module::process_claim_list(claim_strength s, antlr::tree::Tree *claimGroup)
+	{
+		std::cerr << "Presented with a claim list of strength " << (
+				(s == CHECK) ? "CHECK"
+			:	(s == DECLARE) ? "DECLARE"
+			:	(s == OVERRIDE) ? "OVERRIDE"
+			:	"(unrecognised)") << std::endl;
+		assert(claimGroup->getType() == cakeJavaParser::KEYWORD_CHECK
+		|| claimGroup->getType() == cakeJavaParser::KEYWORD_DECLARE
+		|| claimGroup->getType() == cakeJavaParser::KEYWORD_OVERRIDE);
+		
+		FOR_ALL_CHILDREN(claimGroup)
+		{
+			INIT;
+			ALIAS2(n, memberName);
+			definite_member_name name;
+			switch(memberName->getType())
+			{
+				case '_':
+					std::cerr << "Claim concerns all remaining members" << std::endl;
+				break;
+				case cakeJavaParser::DEFINITE_MEMBER_NAME: {
+					definite_member_name list = read_definite_member_name(memberName);
+					std::cerr << "Claim concerns member ";
+					for (definite_member_name::iterator i = list.begin(); i != list.end(); i++)
+					{
+						std::cerr << *i;
+						if (i + 1 != list.end()) std::cerr << " :: ";
+					}
+					std::cerr << std::endl;
+				
+				} break;
+				default: RAISE_INTERNAL(memberName, "bad syntax tree for memberName");			
+			}
+			BIND2(n, claim);
+		
+		}
+	}	
 
 	void elf_module::print_abi_info()
 	{
