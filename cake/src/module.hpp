@@ -60,6 +60,16 @@ namespace cake
 	{
 		dwarf::abi_information info;
 		boost::shared_ptr<std::ifstream> input_stream;
+		typedef bool (*eval_event_handler_t)(antlr::tree::Tree *, Dwarf_Off);
+		
+		static bool check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+		static bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+		static bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+		
+		eval_event_handler_t handler_for_claim_strength(claim_strength s);
+	
+		bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
+			Dwarf_Off current_die);
 	
 	public:
 		elf_module(std::string filename) :
