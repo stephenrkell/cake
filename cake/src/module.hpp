@@ -23,13 +23,22 @@ namespace cake
 		static std::map<std::string, std::string> known_constructors;
 				
 	public:
-		enum claim_strength { CHECK, DECLARE, OVERRIDE };
+		typedef bool (cake::module::* eval_event_handler_t)(antlr::tree::Tree *, Dwarf_Off);
+		virtual bool do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
+		virtual bool check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
+		virtual bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
+		virtual bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
+		//virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
+			// FIXME: build_value_description_handler doesn't really belong here, but pointer-to-member
+			// type-checking rules demand that it is here. Work out a more satisfactory solution.
+		
 		module(std::string& filename) : filename(filename) {}
 		std::string& get_filename() { return filename; }
 		void process_exists_claims(antlr::tree::Tree *existsBody);
-		void process_claimgroup(antlr::tree::Tree *claimGroup);			
-		virtual void process_claim_list(claim_strength s, antlr::tree::Tree *claimGroup) = 0;
-		
+		void process_claimgroup(antlr::tree::Tree *claimGroup);
+		virtual eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength) = 0;
+		virtual bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
+			unsigned long long current_position) = 0;
 		static std::string extension_for_constructor(std::string& module_constructor_name)
 		{ return known_constructors[module_constructor_name]; }		
 	};
@@ -60,13 +69,18 @@ namespace cake
 	{
 		dwarf::abi_information info;
 		boost::shared_ptr<std::ifstream> input_stream;
-		typedef bool (*eval_event_handler_t)(antlr::tree::Tree *, Dwarf_Off);
 		
-		static bool check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
-		static bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
-		static bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+		static const Dwarf_Off private_offsets_begin = 1<<30; // 1GB of original DWARF information should be enough
+		Dwarf_Off private_offsets_next;
+		Dwarf_Off next_private_offset() { return private_offsets_next++; }
 		
-		eval_event_handler_t handler_for_claim_strength(claim_strength s);
+		bool do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+		bool check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+		bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+		bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+		virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+		
+		eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength);
 	
 		bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
 			Dwarf_Off current_die);
@@ -76,12 +90,14 @@ namespace cake
 			ifstream_holder(filename),
 			module(filename),
 			dwarf::file(fileno()),
-			info(*this)
+			info(*this),
+			private_offsets_next(private_offsets_begin)
 		{
 			//print_abi_info();
 		}
-		void process_claim_list(claim_strength s, antlr::tree::Tree *claimGroup);
-		
+	
+		virtual void make_default_subprogram(dwarf::encap::die &die_to_modify);
+	
 		void print_abi_info();
 	};
 	

@@ -63,9 +63,9 @@ int main(int argc, char **argv)
 		}
 		catch (cake::TreewalkError *e)
 		{
-			/* Let's hope the node is from a CommonTree */
-			org::antlr::runtime::tree::CommonTree *ct = 
-				jcast<org::antlr::runtime::tree::CommonTree *>(e->t);
+// 			/* Let's hope the node is from a CommonTree */
+// 			org::antlr::runtime::tree::CommonTree *ct = 
+// 				jcast<org::antlr::runtime::tree::CommonTree *>(e->t);
 			std::cerr 	<< jtocstring_safe(e->toString()) << std::endl;
 // 			//"Semantic error";
 // 			if (ct != 0)

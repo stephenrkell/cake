@@ -21,7 +21,7 @@ namespace cake
 		: in_filename(JvNewStringUTF(filename)), 
 		  in_fileobj(new java::io::File(in_filename)), 
 		  in_file(new java::io::FileInputStream(in_fileobj))/*,
-		  ast(build_ast(in_file))/*,
+		  ast(build_ast(in_file)),
 		  alias(*/
 	{
 		
