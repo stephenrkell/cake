@@ -7,7 +7,8 @@ options {
 }
 tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; 
 VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; 
-OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; CLAIM; VALUE_DESCRIPTION; }
+OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; CLAIM; VALUE_DESCRIPTION; DWARF_BASE_TYPE; 
+DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; }
 /* The whole input */
 toplevel:   declaration* //-> ^( TOPLEVEL<ToplevelNode> declaration* )
 			/*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
@@ -131,8 +132,17 @@ simpleValueDescription		: dwarfBaseTypeDescription^
 byteSizeParameter			: '<'! INT '>'!
 							;
                 
-dwarfBaseTypeDescription	: IDENT^ ( byteSizeParameter ( '{'! ( IDENT '=' ( IDENT | INT ) ';' )* '}'! )? )?
+dwarfBaseTypeDescription	: encoding=IDENT byteSizeParameter? dwarfBaseTypeAttributeList
+							-> ^( DWARF_BASE_TYPE $encoding dwarfBaseTypeAttributeList byteSizeParameter?  )
 							;
+
+dwarfBaseTypeAttributeList : ( '{' ( dwarfBaseTypeAttributeDefinition )* '}' )?
+								-> ^( DWARF_BASE_TYPE_ATTRIBUTE_LIST dwarfBaseTypeAttributeDefinition* )
+                              ;
+
+dwarfBaseTypeAttributeDefinition 	: attr=IDENT '=' ( value=IDENT | value=INT ) ';'
+									-> ^( DWARF_BASE_TYPE_ATTRIBUTE $attr $value )
+									;
 
 enumValueDescription	: KEYWORD_ENUM^ ( ( ( IDENT | '_' ) byteSizeParameter? enumDefinition? ) | ( byteSizeParameter? enumDefinition ) )
 						;
