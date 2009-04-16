@@ -35,7 +35,9 @@ CLASSES := 	org.antlr.runtime.Lexer \
 		org.antlr.runtime.Token \
 		cake.SemanticError \
 		cake.InternalError \
-		cake.TreewalkError
+		cake.TreewalkError \
+		cakeJavaParser \
+		cakeJavaLexer
 
 .PHONY: default
 default: cake
@@ -59,7 +61,7 @@ cake: $(OBJS) stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so
 
 #.PHONY: antlr-headers
 gcjh_generated: java_glue-recursive.stamp parser-recursive.stamp
-	gcjh -force -d gcjh_generated -classpath $(CLASSPATH) $(CLASSES)
+	gcjh -force -d gcjh_generated -classpath ./parser:$(CLASSPATH) $(CLASSES)
 		
 #antlr-headers.stamp: antlr-headers
 #	touch antlr-headers.stamp

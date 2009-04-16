@@ -79,6 +79,12 @@ namespace cake
 		bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+
+		Dwarf_Off ensure_dwarf_type(antlr::tree::Tree *description);
+		dwarf::die_off_list *find_dwarf_types_satisfying(antlr::tree::Tree *description,
+			dwarf::die_off_list& list_to_search);
+		bool dwarf_type_satisfies_description(Dwarf_Off type_offset, antlr::tree::Tree *description);
+		Dwarf_Off find_dwarf_type_named(antlr::tree::Tree *ident, Dwarf_Off context);
 		
 		eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength);
 	
