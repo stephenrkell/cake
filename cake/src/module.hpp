@@ -68,6 +68,7 @@ namespace cake
 	class elf_module : private ifstream_holder, public module, private dwarf::file
 	{
 		dwarf::abi_information info;
+		dwarf::dieset& dies; // = info.get_dies();
 		boost::shared_ptr<std::ifstream> input_stream;
 		
 		static const Dwarf_Off private_offsets_begin = 1<<30; // 1GB of original DWARF information should be enough
@@ -84,7 +85,7 @@ namespace cake
 		dwarf::die_off_list *find_dwarf_types_satisfying(antlr::tree::Tree *description,
 			dwarf::die_off_list& list_to_search);
 		bool dwarf_type_satisfies_description(Dwarf_Off type_offset, antlr::tree::Tree *description);
-		Dwarf_Off find_dwarf_type_named(antlr::tree::Tree *ident, Dwarf_Off context);
+		dwarf::die_off_list *find_dwarf_type_named(antlr::tree::Tree *ident, Dwarf_Off context);
 		
 		eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength);
 	
@@ -97,6 +98,7 @@ namespace cake
 			module(filename),
 			dwarf::file(fileno()),
 			info(*this),
+			dies(info.get_dies()),
 			private_offsets_next(private_offsets_begin)
 		{
 			//print_abi_info();

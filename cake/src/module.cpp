@@ -77,7 +77,7 @@ namespace cake
 		
 		// We want to alter the DWARF info to make the predicate true, destructively if necessary
 		if (falsifiable->getType() == cakeJavaParser::DEFINITE_MEMBER_NAME
-		&&  info.get_dies()[falsifier].tag() == DW_TAG_compile_unit)
+		&&  dies[falsifier].tag() == DW_TAG_compile_unit)
 		{
 			// add a child DIE to the CU DIE, corresponding to the member
 			Dwarf_Off cu_member_off = next_private_offset();
@@ -95,8 +95,8 @@ namespace cake
 				)
 			);
 			
-			info.get_dies().insert(new_entry);
-			info.get_dies()[falsifier].children().push_back(cu_member_off);
+			dies.insert(new_entry);
+			dies[falsifier].children().push_back(cu_member_off);
 			
 			// build and merge a set of DIEs corresponding to the missing member
 			antlr::tree::Tree *valueDescriptionExpr = falsifiable->getParent()->getChild(1); // HACK to get sibling
@@ -134,7 +134,7 @@ namespace cake
 		
 	}	
 	
-	Dwarf_Off elf_module::find_dwarf_type_named(antlr::tree::Tree *ident, Dwarf_Off context)
+	dwarf::die_off_list *elf_module::find_dwarf_type_named(antlr::tree::Tree *ident, Dwarf_Off context)
 	{
 		/* From an identifier, find the DWARF type to which that identifier resolves.
 		 * We need this because the Cake programmer can just name a type from within a value
@@ -142,8 +142,74 @@ namespace cake
 		 * FIXME: we should warn if more than one type of the given name is reachable from
 		 * the given context (i.e. by traversing up to parent DWARF entries). 
 		 * For now we can just print something to stderr. */
-		assert(false);
-		return 0;	
+		
+		/* Context could be anything, but it's part of some DWARF tree whose structure corresponds
+		 * to lexical scoping. So say we have (in some fictitious language)
+		 
+		 compilation_unit {
+		 	namespace {
+				module {
+					class {
+						inner_class {
+							typedef {
+								IDENT // <-- the ident we care about
+							} name;
+						}
+					}
+				}
+			}
+		 }
+		 
+		 * then our context will be the typedef, and we're looking for anything that is
+		 * - a sibling of the typedef
+		 * - a sibling of the inner_class (but *not* something *inside* such a sibling
+		 * - a sibling of class (but not inside such a sibling)
+		 * ... and so on.
+		 */
+		dwarf::encap::die& context_die = dies[context];
+		Dwarf_Off parent_off  = dies[context].parent();
+		dwarf::encap::die& parent_die = dies[parent_off];
+		
+		if (parent_off == 0UL)
+		{
+			// the termination case -- we *shouldn't* return the empty list, because there may be
+			// siblings that are type definitions. But actually all top-level nodes are
+			// compile_units, so they won't be. So for now (FIXME) we can just return the empty list.
+			return new dwarf::die_off_list(); // return empty list
+		}
+		else
+		{
+			dwarf::die_off_list *p_results_list = new dwarf::die_off_list();
+			dwarf::die_off_list &results_list = *p_results_list;
+			
+			// look through our current level
+			for (dwarf::die_off_list::iterator iter = parent_die.children().begin();
+				iter != parent_die.children().end();
+				iter++)
+			{
+				// if (*iter != context) { // *DON'T* skip over current
+				if (dwarf::tag_is_type(dies[*iter].get_tag())
+					&& dies[*iter][DW_AT_name].get_string() == CCP(ident->getText())) // FIXME: allow qualified names
+				{
+					// we've found a match -- add it to the list
+					results_list.push_back(*iter);
+				}
+				
+				// }
+			}
+			
+			// recursively search through our parent's siblings
+			std::auto_ptr<dwarf::die_off_list> parent_results_list(
+				find_dwarf_type_named(ident, parent_off));
+			for (dwarf::die_off_list::iterator iter = parent_results_list->begin();
+				iter != parent_results_list->end();
+				iter++)
+			{
+				results_list.push_back(*iter); // FIXME: we can do better than copying here
+			}
+			
+			return p_results_list;				
+		}		
 	}
 	
 	bool elf_module::dwarf_type_satisfies_description(Dwarf_Off type_offset, antlr::tree::Tree *description)
@@ -180,12 +246,12 @@ namespace cake
 			switch(description->getType())
 			{
 				case cakeJavaParser::KEYWORD_PTR: // look for a pointer type
-					if (info.get_dies()[*type_iter].tag() == DW_TAG_pointer_type)
+					if (dies[*type_iter].tag() == DW_TAG_pointer_type)
 					{
 						// merge any
 						BIND2(description, pointed_to_type);
 						if (dwarf_type_satisfies_description(
-							info.get_dies()[*type_iter][DW_AT_type].get_unsigned(),
+							dies[*type_iter][DW_AT_type].get_unsigned(),
 							pointed_to_type))
 						{
 							// success!
@@ -195,10 +261,10 @@ namespace cake
 					// either way we'll continue looking with the next iteration of the for loop	
 					break;
 				case cakeJavaParser::KEYWORD_OBJECT: // look for a structure/union/class/... type
-					if (info.get_dies()[*type_iter].tag() == DW_TAG_structure_type
-						|| info.get_dies()[*type_iter].tag() == DW_TAG_union_type
-						|| info.get_dies()[*type_iter].tag() == DW_TAG_interface_type
-						|| info.get_dies()[*type_iter].tag() == DW_TAG_class_type)
+					if (dies[*type_iter].tag() == DW_TAG_structure_type
+						|| dies[*type_iter].tag() == DW_TAG_union_type
+						|| dies[*type_iter].tag() == DW_TAG_interface_type
+						|| dies[*type_iter].tag() == DW_TAG_class_type)
 					{
 						// look for a type that satisfies *all* member requirements
 						// that is, it has a member of the required name, 
@@ -213,16 +279,16 @@ namespace cake
 								ALIAS3(memberNameOrUnderscore, memberName, IDENT);
 								// find member
 								for(
-								dwarf::die_off_list::iterator iter = info.get_dies()[*type_iter].children().begin();
-								iter != info.get_dies()[*type_iter].children().end();
+								dwarf::die_off_list::iterator iter = dies[*type_iter].children().begin();
+								iter != dies[*type_iter].children().end();
 								i++)
 								{
 									// skip over DIEs that aren't member definitions (data or function)
-									if (info.get_dies()[*iter].tag() != DW_TAG_member
-									&& info.get_dies()[*iter].tag() != DW_TAG_subprogram) continue;
+									if (dies[*iter].tag() != DW_TAG_member
+									&& dies[*iter].tag() != DW_TAG_subprogram) continue;
 									
 									// now we have either a member definition or a subprogram
-									if (info.get_dies()[*iter][DW_AT_name].get_string() == CCP(memberName->getText()))
+									if (dies[*iter][DW_AT_name].get_string() == CCP(memberName->getText()))
 									{
 										// found it -- now check its type
 										if (dwarf_type_satisfies_description(*iter, memberValueDescription))
@@ -244,13 +310,13 @@ namespace cake
 								// test the condition for all as-yet-untouched members of the type
 								// find member
 								for(
-								dwarf::die_off_list::iterator iter = info.get_dies()[*type_iter].children().begin();
-								iter != info.get_dies()[*type_iter].children().end();
+								dwarf::die_off_list::iterator iter = dies[*type_iter].children().begin();
+								iter != dies[*type_iter].children().end();
 								i++)
 								{
 									// skip over names we've already seen
 									if (std::find(processed_names.begin(), processed_names.end(),
-										info.get_dies()[*iter][DW_AT_name].get_string()) !=  processed_names.end())
+										dies[*iter][DW_AT_name].get_string()) !=  processed_names.end())
 										continue;
 									// now we have a name we *haven't* seen, so check whether it
 									// satisfies the catch-all
@@ -266,12 +332,12 @@ namespace cake
 					} // end if tag denotes a known structured type				
 					break;				
 				case cakeJavaParser::DWARF_BASE_TYPE: // look for a named base type satisfying this description
-					if (info.get_dies()[*type_iter].tag() == DW_TAG_base_type)
+					if (dies[*type_iter].tag() == DW_TAG_base_type)
 					{
 						INIT;
 						BIND3(description, encoding, IDENT);
 						// check the encoding
-						if (info.get_dies()[*type_iter][DW_AT_encoding].get_string().substr(
+						if (dies[*type_iter][DW_AT_encoding].get_string().substr(
 							(std::string("DW_ATE_").size())) != CCP(encoding->getText())) break;
 						// else encoding matches...
 						
@@ -293,7 +359,7 @@ namespace cake
 								std::istringstream istr(CCP(value->getText()));
 								signed valueAsInt; istr >> valueAsInt;
 								
-								if (info.get_dies()[*type_iter][found->second].get_signed() != valueAsInt) 
+								if (dies[*type_iter][found->second].get_signed() != valueAsInt) 
 								{								
 									// attribute is known, but value not equal
 									goto next_toplevel_type;
@@ -308,7 +374,7 @@ namespace cake
 							std::istringstream istr(CCP(byteSizeParameter->getText()));
 							unsigned byteSize;
 							istr >> byteSize;
-							if (info.get_dies()[*type_iter][DW_AT_byte_size].get_unsigned() 
+							if (dies[*type_iter][DW_AT_byte_size].get_unsigned() 
 								!= byteSize) break; // FIXME: get_unsigned might return spurious value here
 						}
 						// if we got here, the byte size matched if there was one
@@ -321,7 +387,13 @@ namespace cake
 					// -- what to do about this? It just means that...
 					// ...TODO: we might want to have explicit syntax for checking/declaring/overriding
 					// the existence and structure of types. For now, just ensure existence.
-					break;
+					{
+						std::auto_ptr<dwarf::die_off_list> results(
+							find_dwarf_type_named(description, *type_iter)
+						);
+						// FIXME: we take the head; is this correct? I think so; it's the nearest match
+						if (results.get() != 0 && results->size() > 0) retval.push_back(*results->begin());
+					} break;
 								
 				default: 
 					std::cerr << "Looking for a DWARF type satisfying unrecognised constructor: " <<
@@ -343,7 +415,7 @@ namespace cake
 		if (plist->size() >= 1) return *(plist->begin());
 		else
 		{
-			
+			assert(false);
 			// there is no type, so make one
 		}
 	}
@@ -357,25 +429,50 @@ namespace cake
 			case cakeJavaParser::LR_SINGLE_ARROW: 
 				{
 				// fill in default values for various attributes
-				make_default_subprogram(info.get_dies()[falsifier]);
+				make_default_subprogram(dies[falsifier]);
 				// and return value (attribite of DW_AT_type, pointing to return type)
 				INIT;
 				BIND2(falsifiable, functionArgumentDescriptionExpr);
 				BIND2(falsifiable, functionResultDescriptionExpr);
 
-				// find a DWARF type that satisfies the return value description expression
-				
-				
-				info.get_dies()[falsifier].attrs().insert(std::make_pair(DW_AT_type,
+				// find or create a DWARF type that satisfies the return value description expression
+				// and add it to the dieset				
+				dies[falsifier].attrs().insert(std::make_pair(DW_AT_type,
 					dwarf::encap::attribute_value(dwarf::encap::attribute_value::ref(ensure_dwarf_type(
 						functionResultDescriptionExpr
 					), false))));
 
 				// now process arguments (children of DW_TAG_formal_parameter) 
-				// FIXME: info.get_dies()[falsifier].children().
+				if (functionArgumentDescriptionExpr->getType() == cakeJavaParser::MULTIVALUE)
+				{
+					dwarf::die_off_list::iterator iter = dies[falsifier].children().begin();
+					FOR_ALL_CHILDREN(functionArgumentDescriptionExpr)
+					{
+						// find the next formal_parameter die
+// 						while (
+// 							iter != dies[falsifier].children().end() 
+// 								&& dies[*iter].tag() != DW_TAG_formal_parameter) iter++;
+// 						if (iter == dies[falsifier].children().end())
+// 						{
+// 							// this isn't good -- we ran out of formal_parameter dies
+// 						}
+// 						else
+// 						{
+// 							assert(dies[*iter].tag() == DW_TAG_formal_parameter);
+// 							
+// 							//							
+// 						}
+
+						// *build* a formal_parameter die
+						dies[falsifier].children().insert(
+							dwarf::encap::die(
+						
+					}
 				}
 				
-				return true;
+				else { assert(false); /* only support multivalues for now */ }
+				
+				} return true;
 			default:
 				std::cerr << "Asked to build a DWARF type from unsupported value description node: "
 					<< CCP(falsifiable->getText()) << std::endl;
@@ -383,6 +480,8 @@ namespace cake
 			break;
 		}		
 	}
+
+
 	
 	module::eval_event_handler_t elf_module::handler_for_claim_strength(antlr::tree::Tree *strength)
 	{
@@ -457,7 +556,7 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 								i_child != parent.children().end();
 								i_child++)
 							{	
-								dwarf::encap::die& child = info.get_dies()[*i_child];
+								dwarf::encap::die& child = dies[*i_child];
 								this_cu_sat |= ( // 1. child must be something we understand
 									(	child.tag() == DW_TAG_subprogram
 									|| 	child.tag() == DW_TAG_variable )
@@ -493,7 +592,7 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 					assert(claim->getType() == cakeJavaParser::KEYWORD_OBJECT && current_die != 0);
 					
 					// check the current die: it must be something that has members
-					switch (info.get_dies().find(current_die)->second.get_tag())
+					switch (dies.find(current_die)->second.get_tag())
 					{
 						case DW_TAG_compile_unit:
 						case DW_TAG_structure_type:
