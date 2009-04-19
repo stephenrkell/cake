@@ -60,4 +60,6 @@ namespace cake
         	else
                 	throw new java::lang::ClassCastException;
 	}
+	
+	template<class T, size_t s> size_t array_len(T (&arg)[s]) { return s; }
 }

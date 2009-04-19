@@ -132,7 +132,12 @@ namespace cake
 		
 
 		
-	}	
+	}
+	
+	Dwarf_Unsigned elf_module::make_default_dwarf_location_expression_for_arg(int argn)
+	{
+		return 0U; // FIXME: understand location expressions
+	}
 	
 	dwarf::die_off_list *elf_module::find_dwarf_type_named(antlr::tree::Tree *ident, Dwarf_Off context)
 	{
@@ -409,14 +414,15 @@ namespace cake
 		return p_retval;
 	}
 	
-	Dwarf_Off elf_module::ensure_dwarf_type(antlr::tree::Tree *description)	
+	Dwarf_Off elf_module::ensure_dwarf_type(antlr::tree::Tree *description, Dwarf_Off context)	
 	{
 		std::auto_ptr<dwarf::die_off_list> plist(find_dwarf_types_satisfying(description, info.type_offsets()));
 		if (plist->size() >= 1) return *(plist->begin());
 		else
 		{
-			assert(false);
+			assert(build_value_description_handler(description, context));
 			// there is no type, so make one
+			// FIXME: factor the type-building function out of the handler
 		}
 	}
 	
@@ -424,6 +430,8 @@ namespace cake
 	
 	bool elf_module::build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier)
 	{
+		// HACK: bypass root node
+		falsifiable = falsifiable->getChild(0);
 		switch(falsifiable->getType())
 		{
 			case cakeJavaParser::LR_SINGLE_ARROW: 
@@ -439,15 +447,18 @@ namespace cake
 				// and add it to the dieset				
 				dies[falsifier].attrs().insert(std::make_pair(DW_AT_type,
 					dwarf::encap::attribute_value(dwarf::encap::attribute_value::ref(ensure_dwarf_type(
-						functionResultDescriptionExpr
+						functionResultDescriptionExpr, falsifier
 					), false))));
 
 				// now process arguments (children of DW_TAG_formal_parameter) 
 				if (functionArgumentDescriptionExpr->getType() == cakeJavaParser::MULTIVALUE)
 				{
-					dwarf::die_off_list::iterator iter = dies[falsifier].children().begin();
+//					dwarf::die_off_list::iterator iter = dies[falsifier].children().begin();
+					int argn = -1;
 					FOR_ALL_CHILDREN(functionArgumentDescriptionExpr)
 					{
+						argn++;
+												
 						// find the next formal_parameter die
 // 						while (
 // 							iter != dies[falsifier].children().end() 
@@ -464,9 +475,41 @@ namespace cake
 // 						}
 
 						// *build* a formal_parameter die
-						dies[falsifier].children().insert(
-							dwarf::encap::die(
-						
+						Dwarf_Off new_off = next_private_offset();
+						dwarf::die_off_list new_child_list;
+						dwarf::encap::die::attribute_map::value_type attr_entries[] = {
+							//std::make_pair(DW_AT_name, dwarf::encap::attribute_value(CCP(
+							std::make_pair(DW_AT_type, ensure_dwarf_type(n, falsifier)),
+							std::make_pair(DW_AT_location, 
+								make_default_dwarf_location_expression_for_arg(argn))
+						};
+						dwarf::encap::die::attribute_map new_attribute_map(
+								&attr_entries[0], &attr_entries[array_len(attr_entries)]
+								);
+
+// 	boost::optional<Dwarf_Off> find_first_match(dwarf::dieset& dies, Dwarf_Off off,
+//		T match, W walker)
+						dwarf::tag_matcher matcher(DW_TAG_compile_unit);
+						dwarf::dieset::value_type new_entry(new_off, dwarf::encap::die(
+							*this, falsifier, (Dwarf_Half) DW_TAG_formal_parameter, new_off,
+							new_off - *dwarf::find_first_match(
+								dies, falsifier, matcher,
+								dwarf::walk_dwarf_tree_up_siblings<dwarf::tag_matcher, dwarf::capture_func<Dwarf_Off>, dwarf::func_true<dwarf::encap::die&> >), // compute cu_offset
+							new_attribute_map, // attributes are just type and location -- not even name, for now
+							new_child_list));
+						dies.insert(new_entry); // avoid need for copy-assignment operator=
+						dies[falsifier].children().push_back(new_off);
+
+//Dwarf_Off formal_param_offset = next_private_offset();
+//dwarf::dieset::value_type new_value(
+//formal_par(),
+//dwarf::encap::die(
+//info.f, falsifier, DW_TAG_formal_parameter,
+//die(file& f, Dwarf_Off parent, Dwarf_Half tag, Dwarf_Off offset, Dwarf_Off cu_offset, 
+//std::map<Dwarf_Half, attribute_value>& attrs, std::vector<Dwarf_Off>& children) :
+
+							
+													
 					}
 				}
 				

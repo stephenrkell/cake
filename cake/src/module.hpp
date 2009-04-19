@@ -10,6 +10,7 @@
 #include <dwarf.h>
 #include <dwarfpp.h>
 #include <dwarfpp_simple.hpp>
+#include <dwarfpp_util.hpp>
 
 namespace cake
 {
@@ -81,7 +82,8 @@ namespace cake
 		bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 
-		Dwarf_Off ensure_dwarf_type(antlr::tree::Tree *description);
+		Dwarf_Unsigned make_default_dwarf_location_expression_for_arg(int argn);
+		Dwarf_Off ensure_dwarf_type(antlr::tree::Tree *description, Dwarf_Off context);
 		dwarf::die_off_list *find_dwarf_types_satisfying(antlr::tree::Tree *description,
 			dwarf::die_off_list& list_to_search);
 		bool dwarf_type_satisfies_description(Dwarf_Off type_offset, antlr::tree::Tree *description);
