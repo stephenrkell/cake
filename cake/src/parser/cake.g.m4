@@ -124,13 +124,17 @@ simpleOrObjectOrPointerValueDescription : structuredValueDescription^ ( KEYWORD_
                                         | enumValueDescription^ ( KEYWORD_PTR^ )*
 									    ;
 
-simpleValueDescription		: dwarfBaseTypeDescription^
+simpleValueDescription		: namedDwarfTypeDescription^
                             | '_'
 							| '('! valueDescriptionExpr^ ')'! 
 							;
 
 byteSizeParameter			: '<'! INT '>'!
 							;
+
+namedDwarfTypeDescription	: KEYWORD_BASE^ dwarfBaseTypeDescription
+							| IDENT
+                            ;
                 
 dwarfBaseTypeDescription	: encoding=IDENT byteSizeParameter? dwarfBaseTypeAttributeList
 							-> ^( DWARF_BASE_TYPE $encoding dwarfBaseTypeAttributeList byteSizeParameter?  )
@@ -144,7 +148,8 @@ dwarfBaseTypeAttributeDefinition 	: attr=IDENT '=' ( value=IDENT | value=INT ) '
 									-> ^( DWARF_BASE_TYPE_ATTRIBUTE $attr $value )
 									;
 
-enumValueDescription	: KEYWORD_ENUM^ ( ( ( IDENT | '_' ) byteSizeParameter? enumDefinition? ) | ( byteSizeParameter? enumDefinition ) )
+/*enumValueDescription	: KEYWORD_ENUM^ ( ( ( IDENT | '_' ) byteSizeParameter? enumDefinition? ) | ( byteSizeParameter? enumDefinition ) )*/
+enumValueDescription	: KEYWORD_ENUM^ dwarfBaseTypeDescription enumDefinition 
 						;
                            
 enumDefinition	: '{'! enumElement* '}'!
@@ -431,6 +436,7 @@ KEYWORD_IGNORED : 'ignored';
 KEYWORD_VOID : 'void';
 KEYWORD_NULL : 'null';
 LR_SINGLE_ARROW : '->';
+KEYWORD_BASE : 'base' ;
 KEYWORD_OBJECT : 'object';
 KEYWORD_PTR : 'ptr';
 KEYWORD_ENUM : 'enum';

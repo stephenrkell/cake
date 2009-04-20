@@ -212,8 +212,19 @@ namespace cake
 			// no break
 			default: RAISE_INTERNAL(memberName, "bad syntax tree for memberName");			
 			// no break
+		}		
+	}
+	
+	std::ostream& operator<<(std::ostream& o, definite_member_name& n)
+	{
+		for (definite_member_name::iterator iter = n.begin();
+			iter != n.end();
+			iter++)
+		{
+			o << *iter;
+			if (iter + 1 != n.end()) o << " :: ";	
 		}
-		
+		return o;
 	}
 	
 	std::string lookup_solib(std::string const&  basename)

@@ -22,8 +22,8 @@ namespace cake
 		typedef std::pair<const std::string, const std::string> constructor_map_entry;
 		static constructor_map_entry known_constructor_extensions[];		
 		static std::map<std::string, std::string> known_constructors;
-				
-	public:
+						
+	public: // FIXME: make some of the below private
 		typedef bool (cake::module::* eval_event_handler_t)(antlr::tree::Tree *, Dwarf_Off);
 		virtual bool do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
 		virtual bool check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
@@ -32,7 +32,7 @@ namespace cake
 		//virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
 			// FIXME: build_value_description_handler doesn't really belong here, but pointer-to-member
 			// type-checking rules demand that it is here. Work out a more satisfactory solution.
-		
+				
 		module(std::string& filename) : filename(filename) {}
 		std::string& get_filename() { return filename; }
 		void process_exists_claims(antlr::tree::Tree *existsBody);
@@ -81,6 +81,13 @@ namespace cake
 		bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+
+		dwarf::encap::die::attribute_map default_subprogram_attributes();
+		Dwarf_Off find_containing_cu(Dwarf_Off context);
+		Dwarf_Off find_nearest_containing_die_having_tag(Dwarf_Off context, Dwarf_Half tag);		
+		Dwarf_Off create_new_die(Dwarf_Off parent, Dwarf_Half tag, dwarf::encap::die::attribute_map& attrs, dwarf::die_off_list& children);		
+		Dwarf_Off create_dwarf_type_from_value_description(antlr::tree::Tree *valueDescription, Dwarf_Off context);
+		void build_subprogram_die_children(antlr::tree::Tree *valueDescriptionExpr, Dwarf_Off subprogram_die_off);
 
 		Dwarf_Unsigned make_default_dwarf_location_expression_for_arg(int argn);
 		Dwarf_Off ensure_dwarf_type(antlr::tree::Tree *description, Dwarf_Off context);

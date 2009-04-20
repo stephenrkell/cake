@@ -21,7 +21,24 @@ namespace cake
 	std::string lookup_solib(std::string const& basename);
 	extern std::string solib_constructor;
 
-	typedef std::vector<std::string> definite_member_name;
+	//typedef std::vector<std::string> definite_member_name;
+	class definite_member_name : public std::vector<std::string>
+	{
+		typedef std::allocator<std::string> A;
+	public:
+		// repeat vector constructors
+		explicit definite_member_name(const A& a = A())
+			: std::vector<std::string>(a) {}
+		explicit definite_member_name(size_type n, const std::string& val = std::string(), const A& a = A())
+			: std::vector<std::string>(n, val, a) {}
+		template <class In> definite_member_name(In first, In last, const A& a = A())
+			: std::vector<std::string>(first, last, a) {}
+		definite_member_name(const definite_member_name& x)
+			: std::vector<std::string>(x) {}
+		
+		friend std::ostream& operator<<(std::ostream&, definite_member_name&);
+	};
+	std::ostream& operator<<(std::ostream&, definite_member_name&);
 	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName);
 
 	inline const char *jtocstring(java::lang::String *s)	
