@@ -87,15 +87,13 @@ namespace cake
 			 * ensure that the *type* of the value is present in the DWARF info. */
 			
 			antlr::tree::Tree *valueDescriptionExpr = falsifiable->getParent()->getChild(1); // HACK to get sibling
-			 
-			
 
 			// HACK to test for subprogram
 			if (valueDescriptionExpr->getChild(0)->getType() == cakeJavaParser::LR_SINGLE_ARROW)
 			{
 				Dwarf_Off subprogram_die_off;
-				dwarf::die_off_list empty_child_list;
-				dwarf::encap::die::attribute_map default_attrs = default_subprogram_attributes();	
+				//dwarf::die_off_list empty_child_list;
+				dwarf::encap::die::attribute_map default_attrs = default_subprogram_attributes;	
 				subprogram_die_off = create_new_die(
 					falsifier, DW_TAG_subprogram, default_attrs, 
 					empty_child_list);
@@ -104,8 +102,8 @@ namespace cake
 			else
 			{
 				Dwarf_Off type_off = ensure_dwarf_type(valueDescriptionExpr, falsifier);
-				dwarf::encap::die::attribute_map empty_attribute_map;
-				dwarf::die_off_list empty_child_list;
+				//dwarf::encap::die::attribute_map empty_attribute_map;
+				//dwarf::die_off_list empty_child_list;
 				Dwarf_Off variable_die_off = create_new_die(
 					falsifier, DW_TAG_variable, empty_attribute_map,
 					empty_child_list);
@@ -151,20 +149,7 @@ namespace cake
 			return false;	
 		}
 	}
-	
-	dwarf::encap::die::attribute_map elf_module::default_subprogram_attributes()
-	{
-		dwarf::encap::die::attribute_map::value_type attr_entries[] = {
-			//std::make_pair(DW_AT_name, dwarf::encap::attribute_value(CCP(
-			std::make_pair(DW_AT_frame_base, (Dwarf_Unsigned) 0UL)
-// 			// FIXME: write a meaningful DW_AT_frame_base here!
-		};
-		return 	dwarf::encap::die::attribute_map(
-				&attr_entries[0], &attr_entries[array_len(attr_entries)]
-			);
-	
-	}
-	
+		
 // 	void elf_module::make_default_subprogram(dwarf::encap::die &die_to_modify)
 // 	{
 // 		die_to_modify.set_tag(DW_TAG_subprogram);
@@ -246,6 +231,7 @@ namespace cake
 			{
 				// if (*iter != context) { // *DON'T* skip over current
 				if (dwarf::tag_is_type(dies[*iter].get_tag())
+					&& dies[*iter].has_attr(DW_AT_name)
 					&& dies[*iter][DW_AT_name].get_string() == CCP(ident->getText())) // FIXME: allow qualified names
 				{
 					// we've found a match -- add it to the list
@@ -370,7 +356,8 @@ namespace cake
 									&& dies[*iter].tag() != DW_TAG_subprogram) continue;
 									
 									// now we have either a member definition or a subprogram
-									if (dies[*iter][DW_AT_name].get_string() == CCP(memberName->getText()))
+									if (dies[*iter].has_attr(DW_AT_name)
+										&& dies[*iter][DW_AT_name].get_string() == CCP(memberName->getText()))
 									{
 										// found it -- now check its type
 										if (dwarf_type_satisfies_description(*iter, memberValueDescription))
@@ -509,30 +496,27 @@ namespace cake
 		}
 	}
 	
-	//build_dwarf_type -- again, recursive just like build_value_description_handler is
-	bool elf_module::build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier)
-	{
-		// First, see if it exists already
-		std::auto_ptr<dwarf::die_off_list> plist(
-			find_dwarf_types_satisfying(falsifiable, info.type_offsets()));
-		
-		if (plist->size() > 0)
-		{
-			return true;
-		}
-		else
-		{
-			Dwarf_Off new_type_off = create_dwarf_type_from_value_description(
-				falsifiable, falsifier);
-			
-			// DEBUG: now repeat the test, for self-checking
-			std::auto_ptr<dwarf::die_off_list> plist(find_dwarf_types_satisfying(falsifiable, info.type_offsets()));
-			assert(plist->size() > 0);
-		}
-		
-	
-	
-	}
+// 	//build_dwarf_type -- again, recursive just like build_value_description_handler is
+// 	bool elf_module::build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier)
+// 	{
+// 		// First, see if it exists already
+// 		std::auto_ptr<dwarf::die_off_list> plist(
+// 			find_dwarf_types_satisfying(falsifiable, info.type_offsets()));
+// 		
+// 		if (plist->size() > 0)
+// 		{
+// 			return true;
+// 		}
+// 		else
+// 		{
+// 			Dwarf_Off new_type_off = create_dwarf_type_from_value_description(
+// 				falsifiable, falsifier);
+// 			
+// 			// DEBUG: now repeat the test, for self-checking
+// 			std::auto_ptr<dwarf::die_off_list> plist(find_dwarf_types_satisfying(falsifiable, info.type_offsets()));
+// 			assert(plist->size() > 0);
+// 		}
+// 	}
 	
 	void elf_module::build_subprogram_die_children(
 		antlr::tree::Tree *valueDescriptionExpr, Dwarf_Off subprogram_die_off)
@@ -553,57 +537,40 @@ namespace cake
 				), false))));
 
 			// now process arguments (children of DW_TAG_formal_parameter) 
-			if (functionArgumentDescriptionExpr->getType() == cakeJavaParser::MULTIVALUE)
+			switch(functionArgumentDescriptionExpr->getType())
 			{
-//					dwarf::die_off_list::iterator iter = dies[falsifier].children().begin();
-				int argn = -1;
-				FOR_ALL_CHILDREN(functionArgumentDescriptionExpr)
-				{
-					argn++;
-
-					// find the next formal_parameter die
-// 						while (
-// 							iter != dies[falsifier].children().end() 
-// 								&& dies[*iter].tag() != DW_TAG_formal_parameter) iter++;
-// 						if (iter == dies[falsifier].children().end())
-// 						{
-// 							// this isn't good -- we ran out of formal_parameter dies
-// 						}
-// 						else
-// 						{
-// 							assert(dies[*iter].tag() == DW_TAG_formal_parameter);
-// 							
-// 							//							
-// 						}
-
-					// *build* a formal_parameter die
-
-					dwarf::encap::die::attribute_map::value_type attr_entries[] = {
-						//std::make_pair(DW_AT_name, dwarf::encap::attribute_value(CCP(
-						std::make_pair(DW_AT_type, ensure_dwarf_type(n, subprogram_die_off)),
-						std::make_pair(DW_AT_location, 
-							make_default_dwarf_location_expression_for_arg(argn))
-					};
-					dwarf::encap::die::attribute_map new_attribute_map(
-							&attr_entries[0], &attr_entries[array_len(attr_entries)]
-						);
-
-// 	boost::optional<Dwarf_Off> find_first_match(dwarf::dieset& dies, Dwarf_Off off,
-//		T match, W walker)
-
-					dwarf::die_off_list empty_child_list;
-					Dwarf_Off parameter_off = create_new_die(subprogram_die_off,  DW_TAG_formal_parameter,
-						new_attribute_map, empty_child_list);
-// 						dwarf::dieset::value_type new_entry(new_off, dwarf::encap::die(
-// 							*this, context, (Dwarf_Half) DW_TAG_formal_parameter, new_off,
-// 							new_off - find_containing_cu(context), // compute cu_offset
-// 							new_attribute_map, // attributes are just type and location -- not even name, for now
-// 							));
-// 						dies.insert(new_entry); // avoid need for copy-assignment operator=
-// 						dies[context].children().push_back(new_off);
-				} // end for
-			} // end if
-			else { assert(false); /* only support multivalues for now */ }
+				case cakeJavaParser::MULTIVALUE: {
+					int argn = -1;
+					FOR_ALL_CHILDREN(functionArgumentDescriptionExpr)
+					{
+						argn++;
+						// *build* a formal_parameter die
+						dwarf::encap::die::attribute_map::value_type attr_entries[] = {
+							//std::make_pair(DW_AT_name, dwarf::encap::attribute_value(CCP(
+							std::make_pair(DW_AT_type, ensure_dwarf_type(n, subprogram_die_off)),
+							std::make_pair(DW_AT_location, 
+								make_default_dwarf_location_expression_for_arg(argn))
+						};
+						dwarf::encap::die::attribute_map new_attribute_map(
+								&attr_entries[0], &attr_entries[array_len(attr_entries)]
+							);
+						//dwarf::die_off_list empty_child_list;
+						Dwarf_Off parameter_off = create_new_die(subprogram_die_off,  DW_TAG_formal_parameter,
+							new_attribute_map, empty_child_list);
+					} // end for
+				} break;
+				case '_': {
+					// arguments are "don't care" -- so create an "unspecified parameters" DIE
+					Dwarf_Off parameter_off = create_new_die(subprogram_die_off, DW_TAG_unspecified_parameters,
+							empty_attribute_map, empty_child_list);
+				} break;
+				default:
+					std::cerr << "Unrecognised function argument description head: " <<
+						CCP(functionArgumentDescriptionExpr->getText()) << ", char number " << 
+						(int) functionArgumentDescriptionExpr->getType() << " ('_' is " << (int) '_' << ")" << std::endl;
+					assert(false); /* only support multivalues and catch-all for now */
+					break;
+			} // end switch
 		} // end binding block	
 	} //end function
 	
@@ -628,7 +595,7 @@ namespace cake
 						&attr_entries[0], &attr_entries[array_len(attr_entries)]
 						);			
 				
-				dwarf::die_off_list empty_child_list;
+				//dwarf::die_off_list empty_child_list;
 				Dwarf_Off new_off = create_new_die(context, DW_TAG_pointer_type, new_attribute_map,
 					empty_child_list);
 			
@@ -637,8 +604,8 @@ namespace cake
 //			case cake
 			case cakeJavaParser::IDENT: {
 				// We've been asked to build a named type. Use DWARF's DW_TAG_unspecified_type
-				dwarf::encap::die::attribute_map empty_attribute_map;
-				dwarf::die_off_list empty_child_list;
+				//dwarf::encap::die::attribute_map empty_attribute_map;
+				//dwarf::die_off_list empty_child_list;
 				return create_new_die(context, DW_TAG_unspecified_type, empty_attribute_map,
 					empty_child_list);
 			} break;
@@ -650,8 +617,8 @@ namespace cake
 		}		
 	}
 	
-	Dwarf_Off elf_module::create_new_die(Dwarf_Off parent, Dwarf_Half tag, 
-		dwarf::encap::die::attribute_map& attrs, dwarf::die_off_list& children)	
+	Dwarf_Off elf_module::create_new_die(const Dwarf_Off parent, const Dwarf_Half tag, 
+		dwarf::encap::die::attribute_map const& attrs, dwarf::die_off_list const& children)	
 	{
 		Dwarf_Off new_off = next_private_offset();
 		std::cerr << "Warning: creating new DIE, tag " << dwarf::tag_lookup(tag)
@@ -666,6 +633,8 @@ namespace cake
 	
 	Dwarf_Off elf_module::find_nearest_containing_die_having_tag(Dwarf_Off context, Dwarf_Half tag)
 	{
+		//if (info[context].tag() == tag) return context; // try us first
+		// else try walking up the tree
 		dwarf::tag_matcher matcher(tag);
 		return *dwarf::find_first_match(
 			dies, context, matcher,
@@ -674,7 +643,7 @@ namespace cake
 
 	Dwarf_Off elf_module::find_containing_cu(Dwarf_Off context)
 	{
-		return find_nearest_containing_die_having_tag(DW_TAG_compile_unit, context);
+		return find_nearest_containing_die_having_tag(context, DW_TAG_compile_unit);
 	}
 	
 	module::eval_event_handler_t elf_module::handler_for_claim_strength(antlr::tree::Tree *strength)
@@ -745,7 +714,7 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 
 							std::cerr << "Trying claim about member " << mn 
 								<< " in compilation unit " 
-								<< info[*i_cu][DW_AT_name].get_string() 
+								<< (info[*i_cu].has_attr(DW_AT_name) ? info[*i_cu][DW_AT_name].get_string().c_str() : "(anonymous)")
 								<< std::endl;
 
 							dwarf::encap::die& parent = info[*i_cu];
@@ -759,7 +728,7 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 									(	child.tag() == DW_TAG_subprogram
 									|| 	child.tag() == DW_TAG_variable )
 								// 2. child must have the name given
-								&&  (	child[DW_AT_name].get_string() == mn[0]
+								&&  (	child.has_attr(DW_AT_name) && child[DW_AT_name].get_string() == mn[0]
 								/* FIXME: need proper n-deep finding of members, for multipart memberNames */
 									)
 								&& eval_claim_depthfirst(valueDescriptionExpr, handler, *i_child)
@@ -896,4 +865,18 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 			}
 		}
 	}
+	
+	const dwarf::die_off_list elf_module::empty_child_list;
+	const dwarf::encap::die::attribute_map elf_module::empty_attribute_map;
+		
+	const dwarf::encap::die::attribute_map::value_type elf_module::default_subprogram_attr_entries[] = {
+		//std::make_pair(DW_AT_name, dwarf::encap::attribute_value(CCP(
+		std::make_pair(DW_AT_frame_base, (Dwarf_Unsigned) 0UL)
+// 			// FIXME: write a meaningful DW_AT_frame_base here!
+	};
+	const dwarf::encap::die::attribute_map elf_module::default_subprogram_attributes(
+		&elf_module::default_subprogram_attr_entries[0], 
+		&elf_module::default_subprogram_attr_entries[array_len(elf_module::default_subprogram_attr_entries)]
+	);
+
 }

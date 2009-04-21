@@ -80,16 +80,17 @@ namespace cake
 		bool check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
-		virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+		//virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 
-		dwarf::encap::die::attribute_map default_subprogram_attributes();
+		//virtual dwarf::encap::die::attribute_map default_subprogram_attributes();
 		Dwarf_Off find_containing_cu(Dwarf_Off context);
 		Dwarf_Off find_nearest_containing_die_having_tag(Dwarf_Off context, Dwarf_Half tag);		
-		Dwarf_Off create_new_die(Dwarf_Off parent, Dwarf_Half tag, dwarf::encap::die::attribute_map& attrs, dwarf::die_off_list& children);		
+		Dwarf_Off create_new_die(const Dwarf_Off parent, const Dwarf_Half tag, 
+			const dwarf::encap::die::attribute_map& attrs, const dwarf::die_off_list& children);		
 		Dwarf_Off create_dwarf_type_from_value_description(antlr::tree::Tree *valueDescription, Dwarf_Off context);
 		void build_subprogram_die_children(antlr::tree::Tree *valueDescriptionExpr, Dwarf_Off subprogram_die_off);
 
-		Dwarf_Unsigned make_default_dwarf_location_expression_for_arg(int argn);
+		virtual Dwarf_Unsigned make_default_dwarf_location_expression_for_arg(int argn);
 		Dwarf_Off ensure_dwarf_type(antlr::tree::Tree *description, Dwarf_Off context);
 		dwarf::die_off_list *find_dwarf_types_satisfying(antlr::tree::Tree *description,
 			dwarf::die_off_list& list_to_search);
@@ -100,6 +101,13 @@ namespace cake
 	
 		bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
 			Dwarf_Off current_die);
+	
+	protected:
+		static const dwarf::die_off_list empty_child_list;
+		static const dwarf::encap::die::attribute_map empty_attribute_map;
+		
+		static const dwarf::encap::die::attribute_map::value_type default_subprogram_attr_entries[];
+		static const dwarf::encap::die::attribute_map default_subprogram_attributes;
 	
 	public:
 		elf_module(std::string filename) :
@@ -113,7 +121,7 @@ namespace cake
 			//print_abi_info();
 		}
 	
-		virtual void make_default_subprogram(dwarf::encap::die &die_to_modify);
+		//virtual void make_default_subprogram(dwarf::encap::die &die_to_modify);
 	
 		void print_abi_info();
 	};
