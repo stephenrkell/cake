@@ -14,6 +14,10 @@ default: cakeCLexer.c cakeCParser.c cakeJavaLexer.java cakeJavaParser.java cakeJ
 	touch stamp
 # cakePyLexer.py cakePyParser.py 
 
+#cake.tokens: Makefile
+## create a simple ASCII (32--127) token vocabulary for single-character tokens
+#	for num in `seq 32 127`; do printf "'\%o'=$$num\n" "$$num"; done > "$@"
+
 .PHONY: test
 test: cakePyParser.py
 	while read line; do \
@@ -23,19 +27,19 @@ test: cakePyParser.py
 %Py.g: %.g.m4 $(INCS)
 	m4 -Dantlr_m4_include_file=antlr-m4-py.inc "$<" > "$@"
 
-%PyLexer.py %PyParser.py: %Py.g
+%PyLexer.py %PyParser.py: %Py.g 
 	$(ANTLR) "$<"
 
 %C.g: %.g.m4 $(INCS)
 	m4 -Dantlr_m4_include_file=antlr-m4-c.inc "$<" > "$@"
 	
-%CLexer.c %CParser.c: %C.g
+%CLexer.c %CParser.c: %C.g 
 	$(ANTLR) "$<"
 
 %Cpp.g: %.g.m4 $(INCS)
 	m4 -Dantlr_m4_include_file=antlr-m4-cpp.inc "$<" > "$@"
 	
-%CppLexer.c %CppParser.c: %Cpp.g
+%CppLexer.c %CppParser.c: %Cpp.g 
 	$(ANTLR) "$<"
 
 %Java.g: %.g.m4 $(INCS)
@@ -64,4 +68,4 @@ test: cakePyParser.py
 	gcjh -force -d . -classpath .:$(CLASSPATH) $**.class
 
 clean:
-	rm -f *.class *.h *.o *.pyc *.d *{Py,Java,Cpp,C}.g *{Parser,Lexer}.*
+	rm -f *.class *.h *.o *.pyc *.d *{Py,Java,Cpp,C}.g *{Parser,Lexer}.* cake.tokens

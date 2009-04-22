@@ -342,7 +342,7 @@ namespace cake
 							BIND2(n, memberNameOrUnderscore);
 							BIND2(n, memberValueDescription);
 							std::vector<std::string> processed_names;
-							if (memberNameOrUnderscore->getType() != '_')
+							if (memberNameOrUnderscore->getType() != cakeJavaParser::UNDERSCORE)
 							{
 								ALIAS3(memberNameOrUnderscore, memberName, IDENT);
 								// find member
@@ -559,7 +559,7 @@ namespace cake
 							new_attribute_map, empty_child_list);
 					} // end for
 				} break;
-				case '_': {
+				case cakeJavaParser::UNDERSCORE: {
 					// arguments are "don't care" -- so create an "unspecified parameters" DIE
 					Dwarf_Off parameter_off = create_new_die(subprogram_die_off, DW_TAG_unspecified_parameters,
 							empty_attribute_map, empty_child_list);
@@ -603,7 +603,7 @@ namespace cake
 			} break;
 //			case cake
 			case cakeJavaParser::IDENT: {
-				// We've been asked to build a named type. Use DWARF's DW_TAG_unspecified_type
+				// We've been asked to build a named type. Usee DWARF's DW_TAG_unspecified_type
 				//dwarf::encap::die::attribute_map empty_attribute_map;
 				//dwarf::die_off_list empty_child_list;
 				return create_new_die(context, DW_TAG_unspecified_type, empty_attribute_map,
@@ -621,8 +621,9 @@ namespace cake
 		dwarf::encap::die::attribute_map const& attrs, dwarf::die_off_list const& children)	
 	{
 		Dwarf_Off new_off = next_private_offset();
-		std::cerr << "Warning: creating new DIE, tag " << dwarf::tag_lookup(tag)
-			<< " as child of unchecked parent DIE at "
+		std::cerr << "Warning: creating new DIE at offset 0x" << std::hex << new_off << std::dec 
+			<< ", tag " << dwarf::tag_lookup(tag)
+			<< " as child of unchecked parent DIE at 0x"
 			<< std::hex << parent << std::dec << ", tag " << dwarf::tag_lookup(dies[parent].tag())
 			<< std::endl;
 		dies.insert(std::make_pair(new_off, dwarf::encap::die(*this, parent, tag, new_off, 
@@ -678,13 +679,98 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 	bool elf_module::eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
 		Dwarf_Off current_die)
 	{
+		// for cases where we recursively AND subclaims together, which handler should we use?
+		eval_event_handler_t recursive_event_handler = handler;
+		INIT;
 		switch(claim->getType())
 		{
-			// separate out the cases where we have a list of claims about members
 			case cakeJavaParser::KEYWORD_CHECK:
 			case cakeJavaParser::KEYWORD_DECLARE:
 			case cakeJavaParser::KEYWORD_OVERRIDE:
+				/* We've hit a new handler specification, so:
+				 * 
+				 * claim heads a list of claims to be evaluated recursively;
+				 *
+				 * current_die could be anything, and is simply passed on. */
+				ALIAS2(claim, strength);
+				recursive_handler = handler_for_claim_strength(strength)
+				goto recursively_AND_subclaims;
+			
 			case cakeJavaParser::KEYWORD_OBJECT:
+				/* We hit a block of claims about named members of the current die. So:
+				 * 
+				 * claim heads a list of CLAIMs to be evaluated recursively;
+				 *
+				 * current_die is any DIE defining a *type* with named children. */
+				assert(dwarf::tag_is_type(current_die.tag()) 
+					&& dwarf::tag_has_named_children(current_die.tag()));
+				goto recursively_AND_subclaims;
+				
+			case cakeJavaParser::MEMBERSHIP_CLAIM:
+				/* We hit a claim about a named member of the current die. So:
+				 * 
+				 * claim heads a pair (memberNameExpr, valueDescription);
+				 
+				 * current_die is either the ultimate parent (0UL), or a compilation unit,
+				 * or anything else with named children. */
+				BIND2(claim, memberNameExpr);
+				BIND3(claim, valueDescription, VALUE_DESCRIPTION);
+				
+				/* If current_die == 0 and memberNameExpr is indefinite, 
+				 * we try the claim over *all definitions in all compilation units*
+				 * and return true if any definition satisfies the claim.
+				 *
+				 * If current_die != 0 and memberNameExpr is indefinite,
+				 * we try the claim over children of current_die only, and return
+				 * true if any satisfies the claim.
+				 *
+				 * If current_die == 0 and memberNameExpr is definite,
+				 * we try the claim over *all definitions in all compilation units*,
+				 * and return true when we find *some member* in *some compilation unit*
+				 * which satisfies the claim.
+				 *
+				 * If current_die != 0 and memberName is definite,
+				 * we try the claim over children of current_die only, and return
+				 * true if we find some child that satisfies the claim.
+				 *
+				 * For clarity, treat all these cases separately. */
+				
+				if (current_die == 0UL && memberNameExpr->getType() == cakeJavaParser::INDEFINITE_MEMBER_NAME)
+				{
+					//die_off_list candidates
+				
+				}
+				else if (current_die != 0UL && memberNameExpr->getType() == cakeJavaParser::INDEFINITE_MEMBER_NAME)
+				{
+				
+				}
+				else if (current_die == 0UL && memberNameExpr->getType() == cakeJavaParser::DEFINITE_MEMBER_NAME)
+				{
+				
+				}
+				else if (current_die != 0UL && memberNameExpr->getType() == cakeJavaParser::DEFINITE_MEMBER_NAME)
+				{
+				
+				}
+				else
+				{
+					RAISE_INTERNAL(memberNameExpr, "expected a memberNameExpr");
+				}
+				
+				bool success = false;
+				// build a list of candidate members;
+				dwarf::die_off_list candidate_members;
+				if (memberNameExpr->getType() == cakeJavaParser::INDEFINITE_MEMBER_NAME)
+				{
+					// the candidate list can have multiple entries
+				}
+				else
+				{
+					// there should be exactly one entry in the list
+				}
+
+					
+				
 				if (current_die == 0) // toplevel claim group
 				{
 					/* SPECIAL CASE: because we want to ignore information on compilation units, 
@@ -700,7 +786,7 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 						ALIAS3(n, claimHeader, cakeJavaParser::CLAIM); // skip over the CLAIM token
 						BIND2(n, memberName); // either `_' or a memberClaim
 						BIND2(n, valueDescriptionExpr);
-						if (memberName->getType() == '_') RAISE_INTERNAL(memberName, "`_' is not allowed at module level");
+						if (memberName->getType() == cakeJavaParser::UNDERSCORE) RAISE_INTERNAL(memberName, "`_' is not allowed at module level");
 						std::vector<Dwarf_Off>::iterator i_cu;
 						for (i_cu = info.compilation_unit_offsets().begin();
 							i_cu != info.compilation_unit_offsets().end();
@@ -774,7 +860,7 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 						definite_member_name name;
 						switch (memberName->getType())
 						{
-							case '_':
+							case cakeJavaParser::UNDERSCORE:
 								std::cerr << "Claim concerns all remaining members" << std::endl;
 								// FIXME: now do something
 								sat &= true;							
@@ -812,6 +898,15 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 			default: 
 				std::cerr << "Unsupported claim head node: " << CCP(claim->getText()) << std::endl;
 				return false;
+			recursively_AND_subclaims;
+				bool success = true;
+				FOR_ALL_CHILDREN(claim)
+				{
+					INIT;
+					ALIAS3(n, subclaim, cakeJavaParser::MEMBERSHIP_CLAIM);
+					success &= eval_claim_depthfirst(subclaim, current_die);
+				}
+				return success;
 		}	// end switch	
 	} // end function
 

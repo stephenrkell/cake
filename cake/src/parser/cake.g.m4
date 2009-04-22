@@ -7,7 +7,7 @@ options {
 }
 tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; 
 VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; 
-OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; CLAIM; VALUE_DESCRIPTION; DWARF_BASE_TYPE; 
+OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; MEMBERSHIP_CLAIM; VALUE_DESCRIPTION; DWARF_BASE_TYPE; 
 DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; }
 /* The whole input */
 toplevel:   declaration* //-> ^( TOPLEVEL<ToplevelNode> declaration* )
@@ -20,6 +20,10 @@ declaration		: existsDeclaration
                 | inlineDeclaration
                 | deriveDeclaration 
 				;
+
+/* Because ANTLR is *stupid*, I have taken care not to include any literals that
+ * would make their way into the AST. Since these are assigned an unpredictable
+ * token type, they are not testable-for at runtime. This is so annoying. */
 
 aliasDeclaration	: KEYWORD_ALIAS^ aliasDescription IDENT ';'!
 					;
@@ -57,13 +61,16 @@ claimGroup			: KEYWORD_CHECK^ '{'! claim* '}'!
 					| KEYWORD_DECLARE^ '{'! claim* '}'!
                     | KEYWORD_OVERRIDE^ '{'! claim* '}'!
 					;
+
+claim				: membershipClaim
+					;
                     
-claim				: memberNameExpr ':' valueDescriptionExpr ';'
-						-> ^( CLAIM memberNameExpr valueDescriptionExpr )
+membershipClaim		: memberNameExpr ':' valueDescriptionExpr ';'
+						-> ^( MEMBERSHIP_CLAIM memberNameExpr valueDescriptionExpr )
 					;
                     
 memberNameExpr		: '.'? IDENT ( '.' IDENT )* -> ^( DEFINITE_MEMBER_NAME IDENT* )
-					| '_'^ 
+					| INDEFINITE_MEMBER_NAME^ 
                     ;
 
       
@@ -115,8 +122,8 @@ primitiveOrFunctionValueDescription	:
 	| primitiveValueDescription
 	; 
 							                            
-structuredValueDescription	: KEYWORD_OBJECT '{' claim* '}'
-								-> ^(KEYWORD_OBJECT claim* )
+structuredValueDescription	: KEYWORD_OBJECT '{' membershipClaim* '}'
+								-> ^(KEYWORD_OBJECT membershipClaim* )
                             ;
                             
 simpleOrObjectOrPointerValueDescription : structuredValueDescription^ ( KEYWORD_PTR^ )*
@@ -125,7 +132,7 @@ simpleOrObjectOrPointerValueDescription : structuredValueDescription^ ( KEYWORD_
 									    ;
 
 simpleValueDescription		: namedDwarfTypeDescription^
-                            | '_'
+                            | INDEFINITE_MEMBER_NAME
 							| '('! valueDescriptionExpr^ ')'! 
 							;
 
@@ -273,7 +280,7 @@ stubPrimitiveExpression	: stubLiteralExpression
                         | '('! stubLangExpression ')'!
                         ;
 
-memberSelectionExpression	: stubPrimitiveExpression ('.'^ stubPrimitiveExpression )*
+memberSelectionExpression	: stubPrimitiveExpression (MEMBER_SELECT^ stubPrimitiveExpression )*
 							; /* left-associative 
                                * Note this subsumes memberNameExpr, so we don't need it. */
 
@@ -282,34 +289,34 @@ functionInvocationExpression	: (memberSelectionExpression '(') => memberSelectio
                                 | memberSelectionExpression
     							;
          
-unaryOperatorExpression	: ('~'^|'!'^|'-'^|'+'^|'&'^|'*'^)* functionInvocationExpression
+unaryOperatorExpression	: (COMPLEMENT^|NOT^|MINUS^|PLUS^)* functionInvocationExpression
 						;
                         
 castExpression	: unaryOperatorExpression reinterpretation?
 				;
                                         
-multiplicativeOperatorExpression	: castExpression ( ( '*'^ | '/'^ | '%'^ ) castExpression )*
+multiplicativeOperatorExpression	: castExpression ( ( MULTIPLY^ | DIVIDE^ | MODULO^ ) castExpression )*
 									;
                                     
-additiveOperatorExpression 	: multiplicativeOperatorExpression ( ( '+'^ | '-'^ ) multiplicativeOperatorExpression )*
+additiveOperatorExpression 	: multiplicativeOperatorExpression ( ( PLUS^ | MINUS^ ) multiplicativeOperatorExpression )*
 							;
                             
 shiftingExpression	: additiveOperatorExpression ( (SHIFT_LEFT^ | SHIFT_RIGHT^ )  additiveOperatorExpression )*
 					;
                     
-magnitudeComparisonExpression 	: shiftingExpression ( ( '<'^ | '>'^ | LE^ | GE^ ) shiftingExpression )?
+magnitudeComparisonExpression 	: shiftingExpression ( ( LT^ | GT^ | LE^ | GE^ ) shiftingExpression )?
 								;
                                 
 equalityComparisonExpression	: magnitudeComparisonExpression ( ( EQ^ | NEQ^ ) magnitudeComparisonExpression )*
 								;
                                 
-bitwiseAndExpression	: equalityComparisonExpression ( '&'^ equalityComparisonExpression )*
+bitwiseAndExpression	: equalityComparisonExpression ( BITWISE_AND^ equalityComparisonExpression )*
 						;
                         
-bitwiseXorExpression	: bitwiseAndExpression ( '^'^ bitwiseAndExpression )*
+bitwiseXorExpression	: bitwiseAndExpression ( BITWISE_XOR^ bitwiseAndExpression )*
 						;
                         
-bitwiseOrExpression	: bitwiseXorExpression ( '|'^ bitwiseXorExpression )*
+bitwiseOrExpression	: bitwiseXorExpression ( BITWISE_OR^ bitwiseXorExpression )*
 					;
                     
 logicalAndExpression 	: bitwiseOrExpression ( LOGICAL_AND^ bitwiseOrExpression )*
@@ -470,6 +477,30 @@ KEYWORD_ELSE : 'else';
 LR_DOUBLE_ARROW_Q : '-->?' ;
 RL_DOUBLE_ARROW_Q : '<--?' ;
 KEYWORD_INLINE : 'inline';
+//UNDERSCORE : '_';
+INDEFINITE_MEMBER_NAME : '_';
+// DOT : '.';
+MEMBER_SELECT : '.';
+//TILDE : '~';
+COMPLEMENT : '~';
+//EXCLAMATION : '!';
+NOT : '!';
+MINUS : '-';
+PLUS : '+';
+//AMPERSAND : '&';
+BITWISE_AND : '&';
+//STAR : '*';
+MULTIPLY : '*';
+//SLASH : '/';
+DIVIDE : '/';
+//PERCENT : '%';
+MODULO : '%';
+LT : '<';
+GT : '>';
+//CARET : '^';
+BITWISE_XOR : '^';
+//BAR : '|';
+BITWISE_OR : '|';
 
 /* Fallback (interesting) tokens */
 INT :   '0'..'9'+ ;
