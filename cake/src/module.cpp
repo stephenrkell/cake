@@ -3,6 +3,7 @@
 #include <cassert>
 #include <iostream>
 #include <memory>
+#include <functional>
 #include "cake.hpp" // includes module.hpp
 #include "util.hpp"
 #include "treewalk_helpers.hpp"
@@ -342,7 +343,7 @@ namespace cake
 							BIND2(n, memberNameOrUnderscore);
 							BIND2(n, memberValueDescription);
 							std::vector<std::string> processed_names;
-							if (memberNameOrUnderscore->getType() != cakeJavaParser::UNDERSCORE)
+							if (memberNameOrUnderscore->getType() != cakeJavaParser::INDEFINITE_MEMBER_NAME)
 							{
 								ALIAS3(memberNameOrUnderscore, memberName, IDENT);
 								// find member
@@ -559,7 +560,7 @@ namespace cake
 							new_attribute_map, empty_child_list);
 					} // end for
 				} break;
-				case cakeJavaParser::UNDERSCORE: {
+				case cakeJavaParser::INDEFINITE_MEMBER_NAME: {
 					// arguments are "don't care" -- so create an "unspecified parameters" DIE
 					Dwarf_Off parameter_off = create_new_die(subprogram_die_off, DW_TAG_unspecified_parameters,
 							empty_attribute_map, empty_child_list);
@@ -636,10 +637,13 @@ namespace cake
 	{
 		//if (info[context].tag() == tag) return context; // try us first
 		// else try walking up the tree
-		dwarf::tag_matcher matcher(tag);
-		return *dwarf::find_first_match(
-			dies, context, matcher,
-			dwarf::walk_dwarf_tree_up_siblings<dwarf::tag_matcher, dwarf::capture_func<Dwarf_Off>, dwarf::func_true<dwarf::encap::die&> >);
+		dwarf::walker::tag_matcher<std::equal_to<Dwarf_Half> > matcher(tag);
+		dwarf::walker::siblings_upward_walker<dwarf::walker::capture_func<Dwarf_Off>, 
+			dwarf::walker::tag_matcher<std::equal_to<Dwarf_Half> > > 
+			walk(dwarf::walker::capture_func<Dwarf_Off>(), matcher);
+		return *dwarf::walker::find_first_match(
+			dies, context, walk /*matcher,
+			dwarf::walker::walk_dwarf_tree_up_siblings<, , dwarf::func_true<dwarf::encap::die&> >*/);
 	}
 
 	Dwarf_Off elf_module::find_containing_cu(Dwarf_Off context)
@@ -681,32 +685,33 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 	{
 		// for cases where we recursively AND subclaims together, which handler should we use?
 		eval_event_handler_t recursive_event_handler = handler;
+		bool retval;
 		INIT;
 		switch(claim->getType())
 		{
 			case cakeJavaParser::KEYWORD_CHECK:
 			case cakeJavaParser::KEYWORD_DECLARE:
-			case cakeJavaParser::KEYWORD_OVERRIDE:
+			case cakeJavaParser::KEYWORD_OVERRIDE: {
 				/* We've hit a new handler specification, so:
 				 * 
 				 * claim heads a list of claims to be evaluated recursively;
 				 *
 				 * current_die could be anything, and is simply passed on. */
 				ALIAS2(claim, strength);
-				recursive_handler = handler_for_claim_strength(strength)
-				goto recursively_AND_subclaims;
+				recursive_event_handler = handler_for_claim_strength(strength);
+				} goto recursively_AND_subclaims;
 			
-			case cakeJavaParser::KEYWORD_OBJECT:
+			case cakeJavaParser::KEYWORD_OBJECT: {
 				/* We hit a block of claims about named members of the current die. So:
 				 * 
 				 * claim heads a list of CLAIMs to be evaluated recursively;
 				 *
 				 * current_die is any DIE defining a *type* with named children. */
-				assert(dwarf::tag_is_type(current_die.tag()) 
-					&& dwarf::tag_has_named_children(current_die.tag()));
-				goto recursively_AND_subclaims;
+				assert(dwarf::tag_is_type(info[current_die].tag()) 
+					&& dwarf::tag_has_named_children(info[current_die].tag()));
+			 	} goto recursively_AND_subclaims;
 				
-			case cakeJavaParser::MEMBERSHIP_CLAIM:
+			case cakeJavaParser::MEMBERSHIP_CLAIM: {
 				/* We hit a claim about a named member of the current die. So:
 				 * 
 				 * claim heads a pair (memberNameExpr, valueDescription);
@@ -715,6 +720,7 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 				 * or anything else with named children. */
 				BIND2(claim, memberNameExpr);
 				BIND3(claim, valueDescription, VALUE_DESCRIPTION);
+				assert(current_die == 0UL || dwarf::tag_has_named_children(info[current_die].tag()));
 				
 				/* If current_die == 0 and memberNameExpr is indefinite, 
 				 * we try the claim over *all definitions in all compilation units*
@@ -737,40 +743,86 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 				
 				if (current_die == 0UL && memberNameExpr->getType() == cakeJavaParser::INDEFINITE_MEMBER_NAME)
 				{
-					//die_off_list candidates
-				
+					dwarf::walker::depth_limited_selector max_depth_1(2);
+					
+					struct OR_success : dwarf::walker::action {
+						bool all_success;
+						eval_event_handler_t m_handler;
+						antlr::tree::Tree *m_claim;
+						OR_success(eval_event_handler_t handler, antlr::tree::Tree *claim) 
+							: all_success(false), m_handler(handler), m_claim(claim) {}
+						void operator()(Dwarf_Off off, dwarf::walker::walker& w)
+						{
+							all_success |= eval_claim_depthfirst(m_claim, m_handler, off);
+						}						
+					} accumulator(handler, valueDescription);
+					
+					dwarf::walker::depthfirst_walker<
+						dwarf::walker::do_nothing,
+						dwarf::walker::always_match,
+						dwarf::walker::depth_limited_selector>
+					walk(
+						accumulator, dwarf::walker::tag_matcher(dwarf::tag_has_named_children), max_depth_1);
+
+					retval = accumulator.all_success;				
 				}
 				else if (current_die != 0UL && memberNameExpr->getType() == cakeJavaParser::INDEFINITE_MEMBER_NAME)
-				{
+				{					
 				
 				}
 				else if (current_die == 0UL && memberNameExpr->getType() == cakeJavaParser::DEFINITE_MEMBER_NAME)
 				{
-				
+					// walk with maximum depth 1
+					
 				}
 				else if (current_die != 0UL && memberNameExpr->getType() == cakeJavaParser::DEFINITE_MEMBER_NAME)
 				{
-				
+					definite_member_name nm = read_definite_member_name(memberNameExpr);
+					
+					// truth of the claim is simply existence of the name 
+					// (we handle this recursively)
+					// and that named element's satisfaction of the property
+					
+					struct die_has_name : std::unary_function<Dwarf_Off, bool> {
+						dwarf::dieset& m_dies;
+						std::string m_name;
+						die_has_name(const dwarf::dieset& dies, const std::string& name) 
+							: m_name(name), m_dies(dies) {}
+						bool operator()(Dwarf_Off) 
+						{ return m_dies[off].hasattr(DW_AT_name) && 
+							m_dies[off][DW_AT_name].get_string() == m_name; }
+					};
+					dwarf::die_off_list::iterator found = find(
+						info[current_die].children().begin(), 
+						info[current_die].children().end(),
+						die_has_name(info.dies(), *nm.begin()));
+					);
+
+					retval = (found != info[current_die].children().end())
+						&& eval_claim_depthfirst(valueDescription, handler, *found);
 				}
 				else
 				{
 					RAISE_INTERNAL(memberNameExpr, "expected a memberNameExpr");
 				}
-				
-				bool success = false;
-				// build a list of candidate members;
-				dwarf::die_off_list candidate_members;
-				if (memberNameExpr->getType() == cakeJavaParser::INDEFINITE_MEMBER_NAME)
-				{
-					// the candidate list can have multiple entries
-				}
-				else
-				{
-					// there should be exactly one entry in the list
-				}
 
-					
-				
+
+			} break;
+			
+			case cakeJavaParser::DEFINITE_MEMBER_NAME:
+				/* We hit a claim that is asserting the existence of a named child
+				 * of the current die. The name is a list of member elements, i.e.
+				 * the child might be >1 generation down the line. Also, our search
+				 * has to follow DW_AT_type links if we're in a type die, and will just
+				 * follow children links otherwise. 
+				 *
+				 * We can assert that claim simply heads a list of idents, and 
+				 * current_die is something with members (children or types). */
+				definite_member_name nm = read_definite_member_name(claim);
+				assert(tag_has_named_children(info[current_die].tag())
+			
+			case cakeJavaParser::KEYWORD_VOID: // ****FIXME*** dummy to NOP-out following code
+			
 				if (current_die == 0) // toplevel claim group
 				{
 					/* SPECIAL CASE: because we want to ignore information on compilation units, 
@@ -783,10 +835,10 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 					{
 						INIT;
 						bool this_cu_sat = false;
-						ALIAS3(n, claimHeader, cakeJavaParser::CLAIM); // skip over the CLAIM token
+						ALIAS3(n, claimHeader, cakeJavaParser::MEMBERSHIP_CLAIM); // skip over the CLAIM token
 						BIND2(n, memberName); // either `_' or a memberClaim
 						BIND2(n, valueDescriptionExpr);
-						if (memberName->getType() == cakeJavaParser::UNDERSCORE) RAISE_INTERNAL(memberName, "`_' is not allowed at module level");
+						if (memberName->getType() == cakeJavaParser::INDEFINITE_MEMBER_NAME) RAISE_INTERNAL(memberName, "`_' is not allowed at module level");
 						std::vector<Dwarf_Off>::iterator i_cu;
 						for (i_cu = info.compilation_unit_offsets().begin();
 							i_cu != info.compilation_unit_offsets().end();
@@ -855,12 +907,12 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 					FOR_ALL_CHILDREN(claim)
 					{
 						INIT;
-						ALIAS3(n, claimHeader, cakeJavaParser::CLAIM); // skip over the CLAIM token
+						ALIAS3(n, claimHeader, cakeJavaParser::MEMBERSHIP_CLAIM); // skip over the CLAIM token
 						BIND2(n, memberName); // either `_' or a memberName
 						definite_member_name name;
 						switch (memberName->getType())
 						{
-							case cakeJavaParser::UNDERSCORE:
+							case cakeJavaParser::INDEFINITE_MEMBER_NAME:
 								std::cerr << "Claim concerns all remaining members" << std::endl;
 								// FIXME: now do something
 								sat &= true;							
@@ -898,13 +950,13 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 			default: 
 				std::cerr << "Unsupported claim head node: " << CCP(claim->getText()) << std::endl;
 				return false;
-			recursively_AND_subclaims;
+			recursively_AND_subclaims:
 				bool success = true;
 				FOR_ALL_CHILDREN(claim)
 				{
 					INIT;
 					ALIAS3(n, subclaim, cakeJavaParser::MEMBERSHIP_CLAIM);
-					success &= eval_claim_depthfirst(subclaim, current_die);
+					success &= eval_claim_depthfirst(subclaim, handler, current_die);
 				}
 				return success;
 		}	// end switch	
