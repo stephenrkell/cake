@@ -42,6 +42,9 @@ CLASSES := 	org.antlr.runtime.Lexer \
 .PHONY: default
 default: cake
 
+java_glue/%.o: 
+	$(MAKE) -C java_glue CLASSPATH=$(shell pwd)/antlr-3.1.2.jar:.:
+
 #cake.o:: treewalk_helpers.hpp cake.hpp parser.hpp util.hpp
 
 # cancel builtin implicit rule

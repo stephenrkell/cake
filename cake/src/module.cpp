@@ -637,13 +637,19 @@ namespace cake
 	{
 		//if (info[context].tag() == tag) return context; // try us first
 		// else try walking up the tree
-		dwarf::walker::tag_matcher<std::equal_to<Dwarf_Half> > matcher(tag);
-		dwarf::walker::siblings_upward_walker<dwarf::walker::capture_func<Dwarf_Off>, 
-			dwarf::walker::tag_matcher<std::equal_to<Dwarf_Half> > > 
-			walk(dwarf::walker::capture_func<Dwarf_Off>(), matcher);
-		return *dwarf::walker::find_first_match(
-			dies, context, walk /*matcher,
-			dwarf::walker::walk_dwarf_tree_up_siblings<, , dwarf::func_true<dwarf::encap::die&> >*/);
+		//dwarf::walker::tag_matcher<std::bind2nd<std::equal_to<Dwarf_Half>, Dwarf_Half> > 
+		//	matcher<std::bind2nd<std::equal_to<Dwarf_Half>, Dwarf_Half> >(tag);
+		//dwarf::walker::tag_matcher matcher(dwarf::walker::tag_matcher::equal_to(tag));
+		std::binder2nd<std::equal_to<Dwarf_Half> > matcher = bind2nd(std::equal_to<Dwarf_Half>(), tag);
+		
+ 		dwarf::walker::siblings_upward_walker<dwarf::walker::capture_func<Dwarf_Off>, 
+// 			dwarf::walker::tag_matcher<std::equal_to<Dwarf_Half> > > 
+			std::binder2nd<std::equal_to<Dwarf_Half> >
+			> walk(dwarf::walker::capture_func<Dwarf_Off>(), matcher);
+ 		return *dwarf::walker::find_first_match(
+ 			dies, context, walk /*matcher,
+ 			dwarf::walker::walk_dwarf_tree_up_siblings<, , dwarf::func_true<dwarf::encap::die&> >*/);
+//		return 0UL;
 	}
 
 	Dwarf_Off elf_module::find_containing_cu(Dwarf_Off context)
@@ -679,6 +685,50 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 "declare" to "assert" mid-tree. This will complicate the syntax, so I won't do this yet.
 */
 	
+	struct OR_success : dwarf::walker::action {
+		typedef bool (elf_module::*module_eval_func)(antlr::tree::Tree *, module::eval_event_handler_t, Dwarf_Off);
+		bool all_success;
+		elf_module& m_module;
+		module_eval_func m_evaluator;
+		module::eval_event_handler_t m_handler;
+		antlr::tree::Tree *m_claim;
+		OR_success(elf_module& module, 
+			module_eval_func evaluator,
+			module::eval_event_handler_t handler, antlr::tree::Tree *claim) 
+			: all_success(false), m_module(module), m_evaluator(evaluator), 
+			m_handler(handler), m_claim(claim) {}
+		void operator()(Dwarf_Off off, dwarf::walker::walker& w)
+		{
+			all_success |= (m_module.*m_evaluator)(m_claim, m_handler, off);
+		}
+	};
+	
+// 	template <typename Intermed>
+// 	struct chain_functor
+// 	{
+// 		// inner functor
+// 		typedef std::unary_function<encap::die&, Intermed> InnerFunctor;
+// 		InnerFunctor& m_inner;
+// 		typedef std::unary_function<Intermed, bool> OuterFunctor;
+// 		OuterFunctor& m_outer;
+// 		
+// 		chain_functor(InnerFunctor inner, OuterFunctor outer) : m_inner(inner), m_outer(outer) {}
+// 		
+// 		bool operator()(encap::die& arg)
+// 		{
+// 			return m_outer(m_inner(arg));
+// 		}
+// 	};
+// 	
+// 	template <Arg, Ret, Obj>
+// 	struct mem_fun_to_functor
+// 	{
+// 		Obj const& m_obj;
+// 		Ret (Obj::*mem_fun)(Arg);
+// 		mem_fun_to_functor(Obj& obj) : m_obj(obj) {}
+// 		Ret operator(Arg arg){ return (m_obj.*mem_fun)(arg); }
+// 	};
+// 
 	
 	bool elf_module::eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
 		Dwarf_Off current_die)
@@ -743,26 +793,59 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 				
 				if (current_die == 0UL && memberNameExpr->getType() == cakeJavaParser::INDEFINITE_MEMBER_NAME)
 				{
-					dwarf::walker::depth_limited_selector max_depth_1(2);
+					dwarf::walker::depth_limited_selector max_depth_2(2);
 					
-					struct OR_success : dwarf::walker::action {
-						bool all_success;
-						eval_event_handler_t m_handler;
-						antlr::tree::Tree *m_claim;
-						OR_success(eval_event_handler_t handler, antlr::tree::Tree *claim) 
-							: all_success(false), m_handler(handler), m_claim(claim) {}
-						void operator()(Dwarf_Off off, dwarf::walker::walker& w)
-						{
-							all_success |= eval_claim_depthfirst(m_claim, m_handler, off);
-						}						
-					} accumulator(handler, valueDescription);
+					OR_success accumulator(*this, &cake::elf_module::eval_claim_depthfirst, 
+						handler, valueDescription);
 					
-					dwarf::walker::depthfirst_walker<
-						dwarf::walker::do_nothing,
-						dwarf::walker::always_match,
-						dwarf::walker::depth_limited_selector>
+					dwarf::walker::tag_satisfying_func_matcher_t matcher =
+						dwarf::walker::matcher_for_tag_satisfying_func(
+							&dwarf::tag_has_named_children);
+							
+					typedef dwarf::walker::depthfirst_walker<
+						OR_success, 
+						dwarf::walker::tag_satisfying_func_matcher_t,
+						dwarf::walker::depth_limited_selector> type_of_walker;
+					
+// 					dwarf::walker::depthfirst_walker<
+// 						OR_success,
+// 						//std::binder2nd<std::equal_to<Dwarf_Half> >,
+// 						//dwarf::walker::dieset_functor<
+// 						//	std::pointer_to_unary_function<Dwarf_Half, bool> 
+// 						//>,
+// 						
+// 						// type of a functor which matches a die if
+// 						//  dwarf::tag_has_named_children returns true of its tag
+// 						// i.e. do .tag() then do dwarf::tag_has_named_children of that
+// 						
+// 						//chain_functor<Dwarf_Half>,
+// 						dwarf::walker::tag_satisfying_func_matcher_t
+// 						
+// 						dwarf::walker::depth_limited_selector>
+					type_of_walker
 					walk(
-						accumulator, dwarf::walker::tag_matcher(dwarf::tag_has_named_children), max_depth_1);
+						accumulator, 
+						// \ x -> dwarf::tag_has_named_children(dies[x].tag())
+						
+						//dwarf::walker::dieset_functor<
+						//	std::pointer_to_unary_function<Dwarf_Half, bool> 
+						//>(info.get_dies(), 
+							
+						//	std::ptr_fun(dwarf::tag_has_named_children)),
+						
+						//chain_functor<Dwarf_Half>(
+						//	std::bind2nd(std::mem_fun(&dwarf::encap::die::tag), /* arg to the functor ...? */),
+						//	dwarf::tag_has_named_children)
+						matcher,
+						
+						
+						//std::ptr_fun(dwarf::tag_has_named_children),
+						//std::bind2nd(std::equal_to<Dwarf_Half>(), dwarf::tag_has_named_children), 
+						max_depth_2);
+						
+					walker(info.get_dies(), current_die);
+					
+					// now we have a success value in the accumulator
 
 					retval = accumulator.all_success;				
 				}
@@ -785,20 +868,23 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 					
 					struct die_has_name : std::unary_function<Dwarf_Off, bool> {
 						dwarf::dieset& m_dies;
-						std::string m_name;
-						die_has_name(const dwarf::dieset& dies, const std::string& name) 
-							: m_name(name), m_dies(dies) {}
-						bool operator()(Dwarf_Off) 
-						{ return m_dies[off].hasattr(DW_AT_name) && 
+						const std::string m_name;
+						die_has_name(dwarf::dieset& dies, const std::string& name) 
+							: m_dies(dies), m_name(name) {}
+						bool operator()(Dwarf_Off off)  
+						{ return m_dies[off].has_attr(DW_AT_name) && 
 							m_dies[off][DW_AT_name].get_string() == m_name; }
 					};
-					dwarf::die_off_list::iterator found = find(
-						info[current_die].children().begin(), 
-						info[current_die].children().end(),
-						die_has_name(info.dies(), *nm.begin()));
-					);
+					
+					boost::optional<Dwarf_Off> found = dwarf::resolve_die_path(info.get_dies(),
+						current_die, nm, nm.begin());
+					//dwarf::die_off_list::iterator found = find(
+					//	info[current_die].children().begin(), 
+					//	info[current_die].children().end(),
+					//	die_has_name(info.get_dies(), *(nm.begin())));
+					//);
 
-					retval = (found != info[current_die].children().end())
+					retval = (found != 0) //info[current_die].children().end())
 						&& eval_claim_depthfirst(valueDescription, handler, *found);
 				}
 				else
@@ -806,10 +892,10 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 					RAISE_INTERNAL(memberNameExpr, "expected a memberNameExpr");
 				}
 
-
+				return retval;
 			} break;
 			
-			case cakeJavaParser::DEFINITE_MEMBER_NAME:
+			case cakeJavaParser::DEFINITE_MEMBER_NAME: {
 				/* We hit a claim that is asserting the existence of a named child
 				 * of the current die. The name is a list of member elements, i.e.
 				 * the child might be >1 generation down the line. Also, our search
@@ -819,10 +905,13 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 				 * We can assert that claim simply heads a list of idents, and 
 				 * current_die is something with members (children or types). */
 				definite_member_name nm = read_definite_member_name(claim);
-				assert(tag_has_named_children(info[current_die].tag())
-			
+				assert(dwarf::tag_has_named_children(info[current_die].tag()));
+				
+				// FIXME: implement this
+				
+			} break;			
 			case cakeJavaParser::KEYWORD_VOID: // ****FIXME*** dummy to NOP-out following code
-			
+			{
 				if (current_die == 0) // toplevel claim group
 				{
 					/* SPECIAL CASE: because we want to ignore information on compilation units, 
@@ -936,7 +1025,7 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 					
 					return sat;
 				} // end else we_have_an_object
-			break;
+			} break;
 			case cakeJavaParser::VALUE_DESCRIPTION:
 				{
 					INIT;
