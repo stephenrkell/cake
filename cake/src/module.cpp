@@ -99,13 +99,30 @@ namespace cake
 		&&  dies[falsifier].tag() == DW_TAG_compile_unit)
 		{
 			/* We didn't find a member of the specified name.
-			
-			 * We're creating a *value*, i.e. a subprogram or a global variable. First
-			 * ensure that the *type* of the value is present in the DWARF info. */
-			
+			 * We're creating a *value*, i.e. a subprogram or a global variable. */			
 			INIT;
 			BIND2(falsifiable, memberName);
 			BIND3(falsifiable, valueDescriptionExpr, VALUE_DESCRIPTION);
+			
+			Dwarf_Off parent_off; // the parent of the DIE we're about to create
+			definite_member_name mn = read_definite_member_name(memberName);
+
+			if (mn.size() > 1) 
+			{
+				definite_member_name containing_die_name(mn.begin(), mn.end() - 1);
+					
+				// check whether the containing die exists
+				boost::optional<Dwarf_Off> found = dwarf::resolve_die_path(info.get_dies(),
+					falsifier, containing_die_name, containing_die_name.begin());
+				if (!found)	RAISE(falsifiable, "can't create nested die before parent exists");
+				else parent_off = *found;
+			}
+			else
+			{
+				assert(mn.size() != 0);
+				parent_off = falsifier;
+			}
+			std::string die_name = *(mn.end() - 1);
 
 			// HACK to test for subprogram
 			if (valueDescriptionExpr->getChild(0)->getType() == cakeJavaParser::LR_SINGLE_ARROW)
@@ -117,19 +134,21 @@ namespace cake
 				subprogram_die_off = create_new_die(
 					falsifier, DW_TAG_subprogram, default_attrs, 
 					empty_child_list);
+				dies[subprogram_die_off].put_attr(DW_AT_name, dwarf::encap::attribute_value(die_name));
 				build_subprogram_die_children(valueDescriptionExpr, subprogram_die_off);
 			}
 			else
 			{
-				// create a variable
+				// create a variable, ensuring the type exists
 				Dwarf_Off type_off = ensure_dwarf_type(valueDescriptionExpr, falsifier);
 				//dwarf::encap::die::attribute_map empty_attribute_map;
 				//dwarf::die_off_list empty_child_list;
 				Dwarf_Off variable_die_off = create_new_die(
 					falsifier, DW_TAG_variable, empty_attribute_map,
 					empty_child_list);
-				dies[variable_die_off][DW_AT_type] = dwarf::encap::attribute_value(
-					dwarf::encap::attribute_value::ref(type_off, false));				
+				dies[variable_die_off].put_attr(DW_AT_name, dwarf::encap::attribute_value(die_name));
+				dies[variable_die_off].put_attr(DW_AT_type, dwarf::encap::attribute_value(
+					dwarf::encap::attribute_value::ref(type_off, false)));
 			}
 			
 // 			// Now add a child DIE to the CU DIE, corresponding to the member
@@ -317,7 +336,7 @@ namespace cake
 						// merge any
 						BIND2(description, pointed_to_type);
 						
-						dwarf::encap::attribute_value& pointed_to_type_attr = dies[*type_iter][DW_AT_type];
+						const dwarf::encap::attribute_value& pointed_to_type_attr = dies[*type_iter][DW_AT_type];
 						
 						// test for void
 						if (pointed_to_type_attr == dwarf::encap::attribute_value::DOES_NOT_EXIST())
