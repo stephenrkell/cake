@@ -215,9 +215,9 @@ namespace cake
 		}		
 	}
 	
-	std::ostream& operator<<(std::ostream& o, definite_member_name& n)
+	std::ostream& operator<<(std::ostream& o, const definite_member_name& n)
 	{
-		for (definite_member_name::iterator iter = n.begin();
+		for (definite_member_name::const_iterator iter = n.begin();
 			iter != n.end();
 			iter++)
 		{

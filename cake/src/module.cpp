@@ -35,6 +35,7 @@ namespace cake
 	void module::process_claimgroup(antlr::tree::Tree *claimGroup)
 	{
 		INIT;
+		bool success = false;
 		switch(claimGroup->getType())
 		{
 			case cakeJavaParser::KEYWORD_CHECK:
@@ -42,7 +43,9 @@ namespace cake
 			case cakeJavaParser::KEYWORD_OVERRIDE:
 				std::cerr << "Presented with a claim list of strength " << CCP(claimGroup->getText())
 					<< std::endl;
-				eval_claim_depthfirst(claimGroup, handler_for_claim_strength(claimGroup), (Dwarf_Off) 0);		
+				success = eval_claim_depthfirst(
+					claimGroup, handler_for_claim_strength(claimGroup), (Dwarf_Off) 0);
+				if (!success) RAISE(claimGroup, "referenced file does not satisfy claims");
 			break;
 			default: RAISE_INTERNAL(claimGroup, "bad claim strength (expected `check', `declare' or `override')");
 		}
@@ -75,11 +78,24 @@ namespace cake
 	{
 		std::cerr << "OVERRIDE found falsifying module info, at token " << CCP(falsifiable->getText())
 			<< ", die offset " << falsifier << " (tag: " << dwarf::tag_lookup(dies[falsifier].tag())
-			<< ", name: " << dies[falsifier][DW_AT_name].get_string() << ")"
+			<< ", name: " << (dies[falsifier].has_attr(DW_AT_name) ? 
+				dies[falsifier][DW_AT_name].get_string() : "no name") << ")"
 			<< ", continuing" << std::endl;
+			
+		if (falsifier == 0UL)
+		{
+			// HACK to avoid compilation unit structure: set falsifier to be the 
+			// off of the final compilation unit
+			dwarf::die_off_list::iterator fixup_iter = dies[falsifier].children().end() - 1;
+			if (fixup_iter < dies[falsifier].children().begin())
+			{
+				RAISE(falsifiable, "no compilation units in file's DWARF info!");
+			}
+			falsifier = *fixup_iter;
+		}
 		
 		// We want to alter the DWARF info to make the predicate true, destructively if necessary
-		if (falsifiable->getType() == cakeJavaParser::DEFINITE_MEMBER_NAME
+		if (falsifiable->getType() == cakeJavaParser::MEMBERSHIP_CLAIM
 		&&  dies[falsifier].tag() == DW_TAG_compile_unit)
 		{
 			/* We didn't find a member of the specified name.
@@ -87,11 +103,14 @@ namespace cake
 			 * We're creating a *value*, i.e. a subprogram or a global variable. First
 			 * ensure that the *type* of the value is present in the DWARF info. */
 			
-			antlr::tree::Tree *valueDescriptionExpr = falsifiable->getParent()->getChild(1); // HACK to get sibling
+			INIT;
+			BIND2(falsifiable, memberName);
+			BIND3(falsifiable, valueDescriptionExpr, VALUE_DESCRIPTION);
 
 			// HACK to test for subprogram
 			if (valueDescriptionExpr->getChild(0)->getType() == cakeJavaParser::LR_SINGLE_ARROW)
 			{
+				// create a subprogram
 				Dwarf_Off subprogram_die_off;
 				//dwarf::die_off_list empty_child_list;
 				dwarf::encap::die::attribute_map default_attrs = default_subprogram_attributes;	
@@ -102,6 +121,7 @@ namespace cake
 			}
 			else
 			{
+				// create a variable
 				Dwarf_Off type_off = ensure_dwarf_type(valueDescriptionExpr, falsifier);
 				//dwarf::encap::die::attribute_map empty_attribute_map;
 				//dwarf::die_off_list empty_child_list;
@@ -147,6 +167,8 @@ namespace cake
 		//else if (falsifiable->getType() == cakeJavaParser::		
 		else
 		{
+			std::cerr << "Can't override unsupported tree--tag pair: " << CCP(falsifiable->getText())
+				<< ", " << dwarf::tag_lookup(dies[falsifier].tag()) << std::endl;
 			return false;	
 		}
 	}
@@ -556,13 +578,13 @@ namespace cake
 								&attr_entries[0], &attr_entries[array_len(attr_entries)]
 							);
 						//dwarf::die_off_list empty_child_list;
-						Dwarf_Off parameter_off = create_new_die(subprogram_die_off,  DW_TAG_formal_parameter,
+						/*Dwarf_Off parameter_off = */create_new_die(subprogram_die_off,  DW_TAG_formal_parameter,
 							new_attribute_map, empty_child_list);
 					} // end for
 				} break;
 				case cakeJavaParser::INDEFINITE_MEMBER_NAME: {
 					// arguments are "don't care" -- so create an "unspecified parameters" DIE
-					Dwarf_Off parameter_off = create_new_die(subprogram_die_off, DW_TAG_unspecified_parameters,
+					/*Dwarf_Off parameter_off = */create_new_die(subprogram_die_off, DW_TAG_unspecified_parameters,
 							empty_attribute_map, empty_child_list);
 				} break;
 				default:
@@ -578,7 +600,7 @@ namespace cake
 	Dwarf_Off elf_module::create_dwarf_type_from_value_description(antlr::tree::Tree *valueDescription, Dwarf_Off context)
 	{
 		assert(valueDescription->getType() == cakeJavaParser::VALUE_DESCRIPTION);
-		Dwarf_Off new_off;
+		//Dwarf_Off new_off;
 		INIT;
 		BIND2(valueDescription, descriptionHead);
 		switch(descriptionHead->getType())
@@ -628,31 +650,47 @@ namespace cake
 			<< std::hex << parent << std::dec << ", tag " << dwarf::tag_lookup(dies[parent].tag())
 			<< std::endl;
 		dies.insert(std::make_pair(new_off, dwarf::encap::die(*this, parent, tag, new_off, 
-			new_off - find_containing_cu(parent), attrs, children)));
+			new_off - *find_containing_cu(parent), attrs, children)));
 		dies[parent].children().push_back(new_off);	
 		return new_off;
 	}
 	
-	Dwarf_Off elf_module::find_nearest_containing_die_having_tag(Dwarf_Off context, Dwarf_Half tag)
+	boost::optional<Dwarf_Off> elf_module::find_nearest_containing_die_having_tag(Dwarf_Off context, Dwarf_Half tag)
 	{
-		//if (info[context].tag() == tag) return context; // try us first
-		// else try walking up the tree
-		//dwarf::walker::tag_matcher<std::bind2nd<std::equal_to<Dwarf_Half>, Dwarf_Half> > 
-		//	matcher<std::bind2nd<std::equal_to<Dwarf_Half>, Dwarf_Half> >(tag);
-		//dwarf::walker::tag_matcher matcher(dwarf::walker::tag_matcher::equal_to(tag));
-		std::binder2nd<std::equal_to<Dwarf_Half> > matcher = bind2nd(std::equal_to<Dwarf_Half>(), tag);
+		namespace w = dwarf::walker;
 		
- 		dwarf::walker::siblings_upward_walker<dwarf::walker::capture_func<Dwarf_Off>, 
-// 			dwarf::walker::tag_matcher<std::equal_to<Dwarf_Half> > > 
-			std::binder2nd<std::equal_to<Dwarf_Half> >
-			> walk(dwarf::walker::capture_func<Dwarf_Off>(), matcher);
- 		return *dwarf::walker::find_first_match(
- 			dies, context, walk /*matcher,
- 			dwarf::walker::walk_dwarf_tree_up_siblings<, , dwarf::func_true<dwarf::encap::die&> >*/);
-//		return 0UL;
+		const w::tag_equal_to_matcher_t matcher = w::matcher_for_tag_equal_to(tag);
+		
+		Dwarf_Half test_tag = dies[context].tag();
+		const w::tag_equal_to_matcher_t test_matcher = w::matcher_for_tag_equal_to(test_tag);
+		assert(test_matcher(dies[context]));
+		
+		typedef w::func1_do_nothing<Dwarf_Half> do_nothing_t;
+		typedef w::siblings_upward_walker<do_nothing_t, 
+			w::tag_equal_to_matcher_t> walker_t;
+		
+		//boost::optional<Dwarf_Off> (*f)(dwarf::dieset&, Dwarf_Off, const w::tag_equal_to_matcher_t&) 
+		//	= &(w::find_first_match<w::tag_equal_to_matcher_t, walker_t>);
+		
+		return w::find_first_match<w::tag_equal_to_matcher_t, walker_t>(dies, context, matcher);
+					
+				
+// 		
+// 		dwarf::walker::find_first_match<<
+// 			 dwarf::walker::capture_func<Dwarf_Off>, 
+// 				dwarf::walker::tag_equal_to_matcher_t,
+// 					dwarf::walker::select_until_captured>(
+// 		
+//  		dwarf::walker::siblings_upward_walker<dwarf::walker::capture_func<Dwarf_Off>, 
+// 			dwarf::walker::tag_equal_to_matcher_t,
+// 			dwarf::walker::func2_true<dwarf::encap::die&, dwarf::walker::walker&>
+// 			> walk(dwarf::walker::capture_func<Dwarf_Off>(), matcher, 
+// 				dwarf::walker::func2_true<dwarf::encap::die&, dwarf::walker::walker&>());
+//  		return (
+//  			dies, context, walk);
 	}
 
-	Dwarf_Off elf_module::find_containing_cu(Dwarf_Off context)
+	boost::optional<Dwarf_Off> elf_module::find_containing_cu(Dwarf_Off context)
 	{
 		return find_nearest_containing_die_having_tag(context, DW_TAG_compile_unit);
 	}
@@ -684,10 +722,11 @@ if switch12 turned out not to have an element .gtk_dialog_new, we would be overr
 asserting that it does. So we really want finer grain, i.e. the ability to change from "check" or
 "declare" to "assert" mid-tree. This will complicate the syntax, so I won't do this yet.
 */
-	
+
 	struct OR_success : dwarf::walker::action {
-		typedef bool (elf_module::*module_eval_func)(antlr::tree::Tree *, module::eval_event_handler_t, Dwarf_Off);
-		bool all_success;
+		typedef bool (elf_module::*module_eval_func)
+			(antlr::tree::Tree *, module::eval_event_handler_t, Dwarf_Off);
+		bool any_success;
 		elf_module& m_module;
 		module_eval_func m_evaluator;
 		module::eval_event_handler_t m_handler;
@@ -695,45 +734,20 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 		OR_success(elf_module& module, 
 			module_eval_func evaluator,
 			module::eval_event_handler_t handler, antlr::tree::Tree *claim) 
-			: all_success(false), m_module(module), m_evaluator(evaluator), 
+			: any_success(false), m_module(module), m_evaluator(evaluator), 
 			m_handler(handler), m_claim(claim) {}
-		void operator()(Dwarf_Off off, dwarf::walker::walker& w)
+		void operator()(Dwarf_Off off)
 		{
-			all_success |= (m_module.*m_evaluator)(m_claim, m_handler, off);
+			any_success |= (m_module.*m_evaluator)(m_claim, m_handler, off);
 		}
 	};
-	
-// 	template <typename Intermed>
-// 	struct chain_functor
-// 	{
-// 		// inner functor
-// 		typedef std::unary_function<encap::die&, Intermed> InnerFunctor;
-// 		InnerFunctor& m_inner;
-// 		typedef std::unary_function<Intermed, bool> OuterFunctor;
-// 		OuterFunctor& m_outer;
-// 		
-// 		chain_functor(InnerFunctor inner, OuterFunctor outer) : m_inner(inner), m_outer(outer) {}
-// 		
-// 		bool operator()(encap::die& arg)
-// 		{
-// 			return m_outer(m_inner(arg));
-// 		}
-// 	};
-// 	
-// 	template <Arg, Ret, Obj>
-// 	struct mem_fun_to_functor
-// 	{
-// 		Obj const& m_obj;
-// 		Ret (Obj::*mem_fun)(Arg);
-// 		mem_fun_to_functor(Obj& obj) : m_obj(obj) {}
-// 		Ret operator(Arg arg){ return (m_obj.*mem_fun)(arg); }
-// 	};
-// 
-	
+		
 	bool elf_module::eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
 		Dwarf_Off current_die)
 	{
-		// for cases where we recursively AND subclaims together, which handler should we use?
+		// For cases where we recursively AND subclaims together, which handler should we use?
+		// This variable gets modified by the CHECK, DECLARE and OVERRIDE case-handlers, and
+		// otherwise is left alone.
 		eval_event_handler_t recursive_event_handler = handler;
 		bool retval;
 		INIT;
@@ -748,6 +762,7 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 				 *
 				 * current_die could be anything, and is simply passed on. */
 				ALIAS2(claim, strength);
+				std::cerr << "Changing handler to " << CCP(strength->getText()) << std::endl;
 				recursive_event_handler = handler_for_claim_strength(strength);
 				} goto recursively_AND_subclaims;
 			
@@ -787,17 +802,21 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 				 *
 				 * If current_die != 0 and memberName is definite,
 				 * we try the claim over children of current_die only, and return
-				 * true if we find some child that satisfies the claim.
-				 *
-				 * For clarity, treat all these cases separately. */
+				 * true if we find some child that satisfies the claim. */
 				
+				dwarf::walker::depth_limited_selector max_depth_1(1);
 				if (current_die == 0UL && memberNameExpr->getType() == cakeJavaParser::INDEFINITE_MEMBER_NAME)
 				{
-					dwarf::walker::depth_limited_selector max_depth_2(2);
-					
+					std::cerr << "looking for any toplevel name satisfying " << CCP(claim->getText()) << std::endl;
+					// Success of the claim is success of *the same claim we're currently processing*
+					// on *any* of our child dies. Note: this means we'll recursively evaluate the same
+					// claim, but on children of the current die; this will hit some of the lower-down
+					// if--else cases than this one.
+					// If the claim fails, we fall back to here.
 					OR_success accumulator(*this, &cake::elf_module::eval_claim_depthfirst, 
-						handler, valueDescription);
+						&cake::module::do_nothing_handler, claim);
 					
+					// only perform the action (i.e. recursive evaluation) on dies that have named children
 					dwarf::walker::tag_satisfying_func_matcher_t matcher =
 						dwarf::walker::matcher_for_tag_satisfying_func(
 							&dwarf::tag_has_named_children);
@@ -807,75 +826,88 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 						dwarf::walker::tag_satisfying_func_matcher_t,
 						dwarf::walker::depth_limited_selector> type_of_walker;
 					
-// 					dwarf::walker::depthfirst_walker<
-// 						OR_success,
-// 						//std::binder2nd<std::equal_to<Dwarf_Half> >,
-// 						//dwarf::walker::dieset_functor<
-// 						//	std::pointer_to_unary_function<Dwarf_Half, bool> 
-// 						//>,
-// 						
-// 						// type of a functor which matches a die if
-// 						//  dwarf::tag_has_named_children returns true of its tag
-// 						// i.e. do .tag() then do dwarf::tag_has_named_children of that
-// 						
-// 						//chain_functor<Dwarf_Half>,
-// 						dwarf::walker::tag_satisfying_func_matcher_t
-// 						
-// 						dwarf::walker::depth_limited_selector>
-					type_of_walker
-					walk(
+					type_of_walker walker(
 						accumulator, 
-						// \ x -> dwarf::tag_has_named_children(dies[x].tag())
-						
-						//dwarf::walker::dieset_functor<
-						//	std::pointer_to_unary_function<Dwarf_Half, bool> 
-						//>(info.get_dies(), 
-							
-						//	std::ptr_fun(dwarf::tag_has_named_children)),
-						
-						//chain_functor<Dwarf_Half>(
-						//	std::bind2nd(std::mem_fun(&dwarf::encap::die::tag), /* arg to the functor ...? */),
-						//	dwarf::tag_has_named_children)
 						matcher,
-						
-						
-						//std::ptr_fun(dwarf::tag_has_named_children),
-						//std::bind2nd(std::equal_to<Dwarf_Half>(), dwarf::tag_has_named_children), 
-						max_depth_2);
-						
+						max_depth_1);
+					
+					// do the walk
 					walker(info.get_dies(), current_die);
 					
 					// now we have a success value in the accumulator
-
-					retval = accumulator.all_success;				
+					retval = accumulator.any_success;				
 				}
 				else if (current_die != 0UL && memberNameExpr->getType() == cakeJavaParser::INDEFINITE_MEMBER_NAME)
-				{					
-				
+				{
+					std::cerr << "looking for any non-toplevel name satisfying " << CCP(claim->getText()) << std::endl;	
+					// Success of the claim is success of *the valueDescription claim*
+					// on *any* of our child dies.
+					OR_success accumulator(*this, &cake::elf_module::eval_claim_depthfirst, 
+						handler, valueDescription);
+						
+					// Perform the action (i.e. recursive evaluation) on all dies found.
+					// FIXME: this is a bit underapproximate -- we only want dies that
+					// can be said to satisfy a value description: so variables, types,
+					// subprograms....
+					dwarf::walker::always_match matcher;
+					
+					// We use max_depth_1, i.e. select only immediate children
+					dwarf::walker::depthfirst_walker<OR_success, dwarf::walker::always_match,
+						dwarf::walker::depth_limited_selector> walker(accumulator, matcher, max_depth_1);
+
+					// do the walk
+					walker(info.get_dies(), current_die);
+
+					// now we have a success value in the accumulator						
+					retval = accumulator.any_success;				
 				}
 				else if (current_die == 0UL && memberNameExpr->getType() == cakeJavaParser::DEFINITE_MEMBER_NAME)
 				{
-					// walk with maximum depth 1
+					std::cerr << "looking for a toplevel name " << read_definite_member_name(memberNameExpr) << " satisfying " << CCP(claim->getText()) << std::endl;	
+					// Success of the claim is success of *our current claim* on *any* of our child dies.
+					// In other words, the recursive call will evaluate whether the CU
+					// firstly has a member of the given name, and
+					// secondly that that member satisfies the description.
+					// If the claim fails, we fall back and handle it at this level.
+					OR_success accumulator(*this, &cake::elf_module::eval_claim_depthfirst, 
+						&cake::module::do_nothing_handler, claim);
+						
+					// Perform the action on all compilation unit dies. Conveniently,
+					// this will exclude offset 0, preventing infinite recursion. 
+					dwarf::walker::tag_equal_to_matcher_t matcher =
+						dwarf::walker::matcher_for_tag_equal_to(DW_TAG_compile_unit);
 					
+					// Again, use max_depth_1, i.e. select only immediate children
+					dwarf::walker::depthfirst_walker<OR_success, dwarf::walker::tag_equal_to_matcher_t,
+						dwarf::walker::depth_limited_selector> walker(accumulator, matcher, max_depth_1);
+
+					// do the walk
+					walker(info.get_dies(), current_die);
+
+					// now we have a success value in the accumulator						
+					retval = accumulator.any_success;
 				}
 				else if (current_die != 0UL && memberNameExpr->getType() == cakeJavaParser::DEFINITE_MEMBER_NAME)
 				{
+					std::cerr << "looking for a non-toplevel name " << read_definite_member_name(memberNameExpr) << " satisfying " << CCP(claim->getText()) << std::endl;
+					// This is the simple case: we just need to find the named element and
+					// recursively evaluate the claim on it.
 					definite_member_name nm = read_definite_member_name(memberNameExpr);
 					
 					// truth of the claim is simply existence of the name 
 					// (we handle this recursively)
 					// and that named element's satisfaction of the property
 					
-					struct die_has_name : std::unary_function<Dwarf_Off, bool> {
-						dwarf::dieset& m_dies;
-						const std::string m_name;
-						die_has_name(dwarf::dieset& dies, const std::string& name) 
-							: m_dies(dies), m_name(name) {}
-						bool operator()(Dwarf_Off off)  
-						{ return m_dies[off].has_attr(DW_AT_name) && 
-							m_dies[off][DW_AT_name].get_string() == m_name; }
-					};
-					
+// 					struct die_has_name : std::unary_function<Dwarf_Off, bool> {
+// 						dwarf::dieset& m_dies;
+// 						const std::string m_name;
+// 						die_has_name(dwarf::dieset& dies, const std::string& name) 
+// 							: m_dies(dies), m_name(name) {}
+// 						bool operator()(Dwarf_Off off)  
+// 						{ return m_dies[off].has_attr(DW_AT_name) && 
+// 							m_dies[off][DW_AT_name].get_string() == m_name; }
+// 					};
+// 					
 					boost::optional<Dwarf_Off> found = dwarf::resolve_die_path(info.get_dies(),
 						current_die, nm, nm.begin());
 					//dwarf::die_off_list::iterator found = find(
@@ -892,7 +924,7 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 					RAISE_INTERNAL(memberNameExpr, "expected a memberNameExpr");
 				}
 
-				return retval;
+				//return retval;
 			} break;
 			
 			case cakeJavaParser::DEFINITE_MEMBER_NAME: {
@@ -907,125 +939,126 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 				definite_member_name nm = read_definite_member_name(claim);
 				assert(dwarf::tag_has_named_children(info[current_die].tag()));
 				
-				// FIXME: implement this
+				retval = dwarf::resolve_die_path(info.get_dies(),
+						current_die, nm, nm.begin()) != 0;
 				
 			} break;			
-			case cakeJavaParser::KEYWORD_VOID: // ****FIXME*** dummy to NOP-out following code
-			{
-				if (current_die == 0) // toplevel claim group
-				{
-					/* SPECIAL CASE: because we want to ignore information on compilation units, 
-					 * we loop through each compilation unit when evaluating a toplevel claim.
-					 * Each immediate subclaim will be about membership, so we just want *any*
-					 * compilation unit to satisfy it. */
-					bool all_claims_sat = true;
-					bool any_cu_sat = false;
-					FOR_ALL_CHILDREN(claim) // for all *claims*
-					{
-						INIT;
-						bool this_cu_sat = false;
-						ALIAS3(n, claimHeader, cakeJavaParser::MEMBERSHIP_CLAIM); // skip over the CLAIM token
-						BIND2(n, memberName); // either `_' or a memberClaim
-						BIND2(n, valueDescriptionExpr);
-						if (memberName->getType() == cakeJavaParser::INDEFINITE_MEMBER_NAME) RAISE_INTERNAL(memberName, "`_' is not allowed at module level");
-						std::vector<Dwarf_Off>::iterator i_cu;
-						for (i_cu = info.compilation_unit_offsets().begin();
-							i_cu != info.compilation_unit_offsets().end();
-							i_cu++)
-						{
-							/* This is a CLAIM, so of the form "member : predicate".
-							 * We check that the member exists, and that it satisfies
-							 * the predicate.							
-							 */
-							definite_member_name mn = read_definite_member_name(memberName);
-
-							std::cerr << "Trying claim about member " << mn 
-								<< " in compilation unit " 
-								<< (info[*i_cu].has_attr(DW_AT_name) ? info[*i_cu][DW_AT_name].get_string().c_str() : "(anonymous)")
-								<< std::endl;
-
-							dwarf::encap::die& parent = info[*i_cu];
-							std::vector<Dwarf_Off>::iterator i_child;
-							for (i_child = parent.children().begin();
-								i_child != parent.children().end();
-								i_child++)
-							{	
-								dwarf::encap::die& child = dies[*i_child];
-								this_cu_sat |= ( // 1. child must be something we understand
-									(	child.tag() == DW_TAG_subprogram
-									|| 	child.tag() == DW_TAG_variable )
-								// 2. child must have the name given
-								&&  (	child.has_attr(DW_AT_name) && child[DW_AT_name].get_string() == mn[0]
-								/* FIXME: need proper n-deep finding of members, for multipart memberNames */
-									)
-								&& eval_claim_depthfirst(valueDescriptionExpr, handler, *i_child)
-								);
-								
-								if (this_cu_sat) break; // succeed-fast
-							}
-							if (!this_cu_sat) /* DO NOTHING -- try the next cu */ {}
-							any_cu_sat |= this_cu_sat;
-							if (any_cu_sat) break;
-						} // end for all compilation units
-						
-						/* Now we've tried all compilation units. If we still haven't satisfied
-						 * the predicate, call the handler passing the *last* compilation unit.
-						 * FIXME: this is a bit of a hack. It's okay because we don't care about
-						 * how the input is divided into compilation units. However, it will bite
-						 * us if e.g. one compilation unit defines functions/types/variables with
-						 * the same name as each other but different definitions.
-						 */
-						if (!any_cu_sat) any_cu_sat |= (this->*handler)(memberName, *(i_cu - 1));
-					}
-					all_claims_sat &= any_cu_sat;
-					if (!all_claims_sat) all_claims_sat |= (this->*handler)(claim, current_die); // fallback
-					return all_claims_sat;
-				}
-				else
-				{
-					assert(claim->getType() == cakeJavaParser::KEYWORD_OBJECT && current_die != 0);
-					
-					// check the current die: it must be something that has members
-					if (!dwarf::tag_has_named_children(dies.find(current_die)->second.get_tag()))
-					{
-						RAISE_INTERNAL(claim, "found a membership claim about a structureless object");
-					}
-					
-					// now process each immediate subclaim in turn
-					bool sat = true;
-					FOR_ALL_CHILDREN(claim)
-					{
-						INIT;
-						ALIAS3(n, claimHeader, cakeJavaParser::MEMBERSHIP_CLAIM); // skip over the CLAIM token
-						BIND2(n, memberName); // either `_' or a memberName
-						definite_member_name name;
-						switch (memberName->getType())
-						{
-							case cakeJavaParser::INDEFINITE_MEMBER_NAME:
-								std::cerr << "Claim concerns all remaining members" << std::endl;
-								// FIXME: now do something
-								sat &= true;							
-							break;
-							case cakeJavaParser::DEFINITE_MEMBER_NAME:
-								definite_member_name list = read_definite_member_name(memberName);
-								std::cerr << "Claim concerns member ";
-								for (definite_member_name::iterator i = list.begin(); i != list.end(); i++)
-								{
-									std::cerr << *i;
-									if (i + 1 != list.end()) std::cerr << " :: ";
-								}
-								std::cerr << std::endl;
-								// FIXME: now do something and recurse
-								sat &= true;
-							break;						
-						}
-						if (!sat) sat |= (this->*handler)(claim, current_die); // fallback
-						if (!sat) break; // fail fast
-					} // end FOR_ALL_CHILDREN
-					
-					return sat;
-				} // end else we_have_an_object
-			} break;
+// 			case cakeJavaParser::KEYWORD_VOID: // ****FIXME*** dummy to NOP-out following code
+// 			{
+// 				if (current_die == 0) // toplevel claim group
+// 				{
+// 					/* SPECIAL CASE: because we want to ignore information on compilation units, 
+// 					 * we loop through each compilation unit when evaluating a toplevel claim.
+// 					 * Each immediate subclaim will be about membership, so we just want *any*
+// 					 * compilation unit to satisfy it. */
+// 					bool all_claims_sat = true;
+// 					bool any_cu_sat = false;
+// 					FOR_ALL_CHILDREN(claim) // for all *claims*
+// 					{
+// 						INIT;
+// 						bool this_cu_sat = false;
+// 						ALIAS3(n, claimHeader, cakeJavaParser::MEMBERSHIP_CLAIM); // skip over the CLAIM token
+// 						BIND2(n, memberName); // either `_' or a memberClaim
+// 						BIND2(n, valueDescriptionExpr);
+// 						if (memberName->getType() == cakeJavaParser::INDEFINITE_MEMBER_NAME) RAISE_INTERNAL(memberName, "`_' is not allowed at module level");
+// 						std::vector<Dwarf_Off>::iterator i_cu;
+// 						for (i_cu = info.compilation_unit_offsets().begin();
+// 							i_cu != info.compilation_unit_offsets().end();
+// 							i_cu++)
+// 						{
+// 							/* This is a CLAIM, so of the form "member : predicate".
+// 							 * We check that the member exists, and that it satisfies
+// 							 * the predicate.							
+// 							 */
+// 							definite_member_name mn = read_definite_member_name(memberName);
+// 
+// 							std::cerr << "Trying claim about member " << mn 
+// 								<< " in compilation unit " 
+// 								<< (info[*i_cu].has_attr(DW_AT_name) ? info[*i_cu][DW_AT_name].get_string().c_str() : "(anonymous)")
+// 								<< std::endl;
+// 
+// 							dwarf::encap::die& parent = info[*i_cu];
+// 							std::vector<Dwarf_Off>::iterator i_child;
+// 							for (i_child = parent.children().begin();
+// 								i_child != parent.children().end();
+// 								i_child++)
+// 							{	
+// 								dwarf::encap::die& child = dies[*i_child];
+// 								this_cu_sat |= ( // 1. child must be something we understand
+// 									(	child.tag() == DW_TAG_subprogram
+// 									|| 	child.tag() == DW_TAG_variable )
+// 								// 2. child must have the name given
+// 								&&  (	child.has_attr(DW_AT_name) && child[DW_AT_name].get_string() == mn[0]
+// 								/* FIXME: need proper n-deep finding of members, for multipart memberNames */
+// 									)
+// 								&& eval_claim_depthfirst(valueDescriptionExpr, handler, *i_child)
+// 								);
+// 								
+// 								if (this_cu_sat) break; // succeed-fast
+// 							}
+// 							if (!this_cu_sat) /* DO NOTHING -- try the next cu */ {}
+// 							any_cu_sat |= this_cu_sat;
+// 							if (any_cu_sat) break;
+// 						} // end for all compilation units
+// 						
+// 						/* Now we've tried all compilation units. If we still haven't satisfied
+// 						 * the predicate, call the handler passing the *last* compilation unit.
+// 						 * FIXME: this is a bit of a hack. It's okay because we don't care about
+// 						 * how the input is divided into compilation units. However, it will bite
+// 						 * us if e.g. one compilation unit defines functions/types/variables with
+// 						 * the same name as each other but different definitions.
+// 						 */
+// 						if (!any_cu_sat) any_cu_sat |= (this->*handler)(memberName, *(i_cu - 1));
+// 					}
+// 					all_claims_sat &= any_cu_sat;
+// 					if (!all_claims_sat) all_claims_sat |= (this->*handler)(claim, current_die); // fallback
+// 					return all_claims_sat;
+// 				}
+// 				else
+// 				{
+// 					assert(claim->getType() == cakeJavaParser::KEYWORD_OBJECT && current_die != 0);
+// 					
+// 					// check the current die: it must be something that has members
+// 					if (!dwarf::tag_has_named_children(dies.find(current_die)->second.get_tag()))
+// 					{
+// 						RAISE_INTERNAL(claim, "found a membership claim about a structureless object");
+// 					}
+// 					
+// 					// now process each immediate subclaim in turn
+// 					bool sat = true;
+// 					FOR_ALL_CHILDREN(claim)
+// 					{
+// 						INIT;
+// 						ALIAS3(n, claimHeader, cakeJavaParser::MEMBERSHIP_CLAIM); // skip over the CLAIM token
+// 						BIND2(n, memberName); // either `_' or a memberName
+// 						definite_member_name name;
+// 						switch (memberName->getType())
+// 						{
+// 							case cakeJavaParser::INDEFINITE_MEMBER_NAME:
+// 								std::cerr << "Claim concerns all remaining members" << std::endl;
+// 								// FIXME: now do something
+// 								sat &= true;							
+// 							break;
+// 							case cakeJavaParser::DEFINITE_MEMBER_NAME:
+// 								definite_member_name list = read_definite_member_name(memberName);
+// 								std::cerr << "Claim concerns member ";
+// 								for (definite_member_name::iterator i = list.begin(); i != list.end(); i++)
+// 								{
+// 									std::cerr << *i;
+// 									if (i + 1 != list.end()) std::cerr << " :: ";
+// 								}
+// 								std::cerr << std::endl;
+// 								// FIXME: now do something and recurse
+// 								sat &= true;
+// 							break;						
+// 						}
+// 						if (!sat) sat |= (this->*handler)(claim, current_die); // fallback
+// 						if (!sat) break; // fail fast
+// 					} // end FOR_ALL_CHILDREN
+// 					
+// 					return sat;
+// 				} // end else we_have_an_object
+// 			} break;
 			case cakeJavaParser::VALUE_DESCRIPTION:
 				{
 					INIT;
@@ -1034,21 +1067,30 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 						<< CCP(valueDescriptionHead->getText())
 						<< " on DIE of tag " << dwarf::tag_lookup(dies[current_die].tag())
 						<< std::endl;
-					return false;
+						
+					retval = dwarf_type_satisfies_description(current_die, claim);
 				} break;
 			default: 
 				std::cerr << "Unsupported claim head node: " << CCP(claim->getText()) << std::endl;
 				return false;
 			recursively_AND_subclaims:
-				bool success = true;
+				retval = true;
 				FOR_ALL_CHILDREN(claim)
 				{
 					INIT;
 					ALIAS3(n, subclaim, cakeJavaParser::MEMBERSHIP_CLAIM);
-					success &= eval_claim_depthfirst(subclaim, handler, current_die);
+					retval &= eval_claim_depthfirst(subclaim, recursive_event_handler, current_die);
 				}
-				return success;
-		}	// end switch	
+				//return success;
+		}	// end switch
+		
+		std::cerr << "Result of evaluating claim " << CCP(claim->getText()) << " was " << retval << std::endl;
+		if (!retval)
+		{
+			std::cerr << "Claim failed, so invoking handler." << std::endl;
+			retval |= (this->*handler)(claim, current_die);
+		}
+		return retval;
 	} // end function
 
 	void elf_module::print_abi_info()
@@ -1116,3 +1158,4 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 	);
 
 }
+

@@ -36,9 +36,9 @@ namespace cake
 		definite_member_name(const definite_member_name& x)
 			: std::vector<std::string>(x) {}
 		
-		friend std::ostream& operator<<(std::ostream&, definite_member_name&);
+		friend std::ostream& operator<<(std::ostream&, const definite_member_name&);
 	};
-	std::ostream& operator<<(std::ostream&, definite_member_name&);
+	std::ostream& operator<<(std::ostream&, const definite_member_name&);
 	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName);
 
 	inline const char *jtocstring(java::lang::String *s)	

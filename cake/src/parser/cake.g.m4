@@ -282,14 +282,15 @@ stubPrimitiveExpression	: stubLiteralExpression
 
 memberSelectionExpression	: stubPrimitiveExpression (MEMBER_SELECT^ stubPrimitiveExpression )*
 							; /* left-associative 
-                               * Note this subsumes memberNameExpr, so we don't need it. */
+                               * FIXME: Note this subsumes memberNameExpr, so we don't need it. */
 
 functionInvocationExpression	: (memberSelectionExpression '(') => memberSelectionExpression '(' ( stubLangExpression (',' stubLangExpression )* )? ')'
 									-> ^( INVOCATION memberSelectionExpression stubLangExpression* )
                                 | memberSelectionExpression
     							;
          
-unaryOperatorExpression	: (COMPLEMENT^|NOT^|MINUS^|PLUS^)* functionInvocationExpression
+/* Here MULTIPLY is actually unary * (dereference) */
+unaryOperatorExpression	: (COMPLEMENT^|NOT^|MINUS^|PLUS^|MULTIPLY^)* functionInvocationExpression
 						;
                         
 castExpression	: unaryOperatorExpression reinterpretation?

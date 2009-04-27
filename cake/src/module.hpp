@@ -83,8 +83,8 @@ namespace cake
 		//virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 
 		//virtual dwarf::encap::die::attribute_map default_subprogram_attributes();
-		Dwarf_Off find_containing_cu(Dwarf_Off context);
-		Dwarf_Off find_nearest_containing_die_having_tag(Dwarf_Off context, Dwarf_Half tag);		
+		boost::optional<Dwarf_Off> find_containing_cu(Dwarf_Off context);
+		boost::optional<Dwarf_Off> find_nearest_containing_die_having_tag(Dwarf_Off context, Dwarf_Half tag);		
 		Dwarf_Off create_new_die(const Dwarf_Off parent, const Dwarf_Half tag, 
 			const dwarf::encap::die::attribute_map& attrs, const dwarf::die_off_list& children);		
 		Dwarf_Off create_dwarf_type_from_value_description(antlr::tree::Tree *valueDescription, Dwarf_Off context);
