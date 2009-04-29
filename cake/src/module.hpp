@@ -72,7 +72,7 @@ namespace cake
 		dwarf::dieset& dies; // = info.get_dies();
 		boost::shared_ptr<std::ifstream> input_stream;
 		
-		static const Dwarf_Off private_offsets_begin = 1<<30; // 1GB of original DWARF information should be enough
+		static const Dwarf_Off private_offsets_begin; 
 		Dwarf_Off private_offsets_next;
 		Dwarf_Off next_private_offset() { return private_offsets_next++; }
 		
@@ -95,6 +95,9 @@ namespace cake
 		dwarf::die_off_list *find_dwarf_types_satisfying(antlr::tree::Tree *description,
 			dwarf::die_off_list& list_to_search);
 		bool dwarf_type_satisfies_description(Dwarf_Off type_offset, antlr::tree::Tree *description);
+		bool dwarf_subprogram_satisfies_description(Dwarf_Off subprogram_offset, antlr::tree::Tree *description);
+		bool dwarf_arguments_satisfy_description(Dwarf_Off subprogram_offset, antlr::tree::Tree *description);
+		bool dwarf_variable_satisfies_description(Dwarf_Off variable_offset, antlr::tree::Tree *description);
 		dwarf::die_off_list *find_dwarf_type_named(antlr::tree::Tree *ident, Dwarf_Off context);
 		
 		eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength);

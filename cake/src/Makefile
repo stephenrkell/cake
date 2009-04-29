@@ -6,15 +6,17 @@
 # antlr-3.1.2.jar 
 # junit-3.8.2.jar
 
+EXTRA_DEBUG_OPTS := -fno-eliminate-unused-debug-symbols -fno-eliminate-unused-debug-types
+
 JAVA_OBJS := java_glue/cake/SemanticError.o java_glue/cake/InternalError.o java_glue/cake/TreewalkError.o
 OBJS := $(JAVA_OBJS) main.o cake.o alias.o util.o module.o exists.o derive.o link.o supplementary.o
 LIBS := -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
 INCLUDES += -Iparser -Igcjh_generated -I../../dwarf/libdwarfpp -I$(HOME)/opt/include -I../../c++-fileno/include
 HDRS :=
 HDRS += $(wildcard *.hpp) $(wildcard ../../dwarf/libdwarfpp/*.hpp)
-CXXFLAGS += -fPIC -g $(INCLUDES) -Wall #-D_STREAM_COMPAT
+CXXFLAGS += $(EXTRA_DEBUG_OPTS) -fPIC -g $(INCLUDES) -Wall #-D_STREAM_COMPAT
 CLASSPATH := .:$(shell ( echo ./java_glue; ls -1 *.jar ) | while read line; do readlink -f "$$line"; done | tr '\n' ':' | sed 's/:+$$/:/' )
-GCJFLAGS += -g -classpath $(CLASSPATH) -fPIC -Wall
+GCJFLAGS += $(EXTRA_DEBUG_OPTS) -g -classpath $(CLASSPATH) -fPIC -Wall
 LIBPATHS += -L../../dwarf/libdwarfpp -L$(HOME)/opt/lib -L../../c++-fileno/lib
 
 CLASSES := 	org.antlr.runtime.Lexer \

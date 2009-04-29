@@ -5,7 +5,7 @@ GCJFLAGS := -fPIC -g
 
 INCS := $(wildcard *.inc)
 
-CLASSPATH ?= .:
+CLASSPATH ?= ../antlr-3.1.2.jar:.:
 
 ANTLR ?= java -classpath $(CLASSPATH) org.antlr.Tool
 
