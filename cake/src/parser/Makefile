@@ -1,13 +1,14 @@
 CFLAGS ?=
 CFLAGS += -I$(HOME)/opt/include
 
-GCJFLAGS := -fPIC -g
-
 INCS := $(wildcard *.inc)
 
 CLASSPATH ?= ../antlr-3.1.2.jar:.:
 
 ANTLR ?= java -classpath $(CLASSPATH) org.antlr.Tool
+
+GCJ ?= gcj --classpath=$(CLASSPATH)
+GCJFLAGS := -fPIC -g --classpath=$(CLASSPATH)
 
 .PHONY: default
 default: cakeCLexer.c cakeCParser.c cakeJavaLexer.java cakeJavaParser.java cakeJavaLexer.class cakeJavaParser.class cakeJavaLexer.o cakeJavaParser.o cakeJavaLexer.h cakeJavaParser.h
@@ -49,17 +50,17 @@ test: cakePyParser.py
 	$(ANTLR) "$<"
 
 %.class: %.java
-	gcj -MD -C -Wno-unused "$<"
+	$(GCJ) -MD -C -Wno-unused "$<"
 
 %.o: %.c
 	gcc -o "$@" -c $(CFLAGS) "$<"
 
 %.o: %.class
-	gcj $(GCJFLAGS) -MD -Wno-unused -c -o "$@" "$<"
+	$(GCJ) $(GCJFLAGS) -MD -Wno-unused -c -o "$@" "$<"
 # HACK: also make nested classes' object files, because we can't enumerate these statically for Makefile purposes
 	for classfile in "$*"\$$*.class; do \
 		if [[ $$classfile != "$*"\$$"*".class ]]; then \
-			gcj $(GCJFLAGS) -o $$( echo "$$classfile" | sed 's/class$$/o/') -MD -Wno-unused -c "$$classfile"; \
+			$(GCJ) $(GCJFLAGS) -o $$( echo "$$classfile" | sed 's/class$$/o/') -MD -Wno-unused -c "$$classfile"; \
 		fi; \
 	done
 

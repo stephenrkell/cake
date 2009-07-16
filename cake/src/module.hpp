@@ -32,6 +32,7 @@ namespace cake
 		//virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
 			// FIXME: build_value_description_handler doesn't really belong here, but pointer-to-member
 			// type-checking rules demand that it is here. Work out a more satisfactory solution.
+		virtual	bool internal_check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
 				
 		module(std::string& filename) : filename(filename) {}
 		std::string& get_filename() { return filename; }
@@ -81,9 +82,11 @@ namespace cake
 		bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		//virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
-
+		bool internal_check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+		
 		//virtual dwarf::encap::die::attribute_map default_subprogram_attributes();
 		boost::optional<Dwarf_Off> find_containing_cu(Dwarf_Off context);
+		Dwarf_Off follow_typedefs(Dwarf_Off off);
 		boost::optional<Dwarf_Off> find_nearest_containing_die_having_tag(Dwarf_Off context, Dwarf_Half tag);		
 		Dwarf_Off create_new_die(const Dwarf_Off parent, const Dwarf_Half tag, 
 			const dwarf::encap::die::attribute_map& attrs, const dwarf::die_off_list& children);		
@@ -94,7 +97,7 @@ namespace cake
 		Dwarf_Off ensure_dwarf_type(antlr::tree::Tree *description, Dwarf_Off context);
 		dwarf::die_off_list *find_dwarf_types_satisfying(antlr::tree::Tree *description,
 			dwarf::die_off_list& list_to_search);
-		bool dwarf_type_satisfies_description(Dwarf_Off type_offset, antlr::tree::Tree *description);
+		bool dwarf_type_satisfies(antlr::tree::Tree *description, Dwarf_Off type_offset);
 		bool dwarf_subprogram_satisfies_description(Dwarf_Off subprogram_offset, antlr::tree::Tree *description);
 		bool dwarf_arguments_satisfy_description(Dwarf_Off subprogram_offset, antlr::tree::Tree *description);
 		bool dwarf_variable_satisfies_description(Dwarf_Off variable_offset, antlr::tree::Tree *description);

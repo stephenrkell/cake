@@ -14,9 +14,9 @@ LIBS := -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -l
 INCLUDES += -Iparser -Igcjh_generated -I../../dwarf/libdwarfpp -I$(HOME)/opt/include -I../../c++-fileno/include
 HDRS :=
 HDRS += $(wildcard *.hpp) $(wildcard ../../dwarf/libdwarfpp/*.hpp)
-CXXFLAGS += $(EXTRA_DEBUG_OPTS) -fPIC -g $(INCLUDES) -Wall #-D_STREAM_COMPAT
+CXXFLAGS += $(EXTRA_DEBUG_OPTS) -fPIC -g3 $(INCLUDES) -Wall #-D_STREAM_COMPAT
 CLASSPATH := .:$(shell ( echo ./java_glue; ls -1 *.jar ) | while read line; do readlink -f "$$line"; done | tr '\n' ':' | sed 's/:+$$/:/' )
-GCJFLAGS += $(EXTRA_DEBUG_OPTS) -g -classpath $(CLASSPATH) -fPIC -Wall
+GCJFLAGS += $(EXTRA_DEBUG_OPTS) -g3 -classpath $(CLASSPATH) -fPIC -Wall
 LIBPATHS += -L../../dwarf/libdwarfpp -L$(HOME)/opt/lib -L../../c++-fileno/lib
 
 CLASSES := 	org.antlr.runtime.Lexer \
@@ -101,7 +101,7 @@ clean:
 	$(MAKE) -C parser clean
 
 .PHONY: test
-RUN_PREFIX := gdb --eval-command "break main" --eval-command run --args
+RUN_PREFIX := gdb --eval-command "source ../src/cake-test.gdb" --eval-command run --args
 test: cake
 	cd ../examples; LD_LIBRARY_PATH=../src:${LD_LIBRARY_PATH} $(RUN_PREFIX) ../src/cake switch-simple.cake
 

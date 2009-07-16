@@ -8,7 +8,7 @@ options {
 tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; 
 VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; 
 OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; MEMBERSHIP_CLAIM; VALUE_DESCRIPTION; DWARF_BASE_TYPE; 
-DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; }
+DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; }
 /* The whole input */
 toplevel:   declaration* //-> ^( TOPLEVEL<ToplevelNode> declaration* )
 			/*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
@@ -67,6 +67,8 @@ claim				: membershipClaim
                     
 membershipClaim		: memberNameExpr ':' valueDescriptionExpr ';'
 						-> ^( MEMBERSHIP_CLAIM memberNameExpr valueDescriptionExpr )
+                    | ELLIPSIS ':' valueDescriptionExpr ';'
+                    	-> ^( REMAINING_MEMBERS valueDescriptionExpr )
 					;
                     
 memberNameExpr		: '.'? IDENT ( '.' IDENT )* -> ^( DEFINITE_MEMBER_NAME IDENT* )
