@@ -17,7 +17,8 @@ HDRS += $(wildcard *.hpp) $(wildcard ../../dwarf/libdwarfpp/*.hpp)
 CXXFLAGS += $(EXTRA_DEBUG_OPTS) -fPIC -g3 $(INCLUDES) -Wall #-D_STREAM_COMPAT
 CLASSPATH := .:$(shell ( echo ./java_glue; ls -1 *.jar ) | while read line; do readlink -f "$$line"; done | tr '\n' ':' | sed 's/:+$$/:/' )
 GCJFLAGS += $(EXTRA_DEBUG_OPTS) -g3 -classpath $(CLASSPATH) -fPIC -Wall
-LIBPATHS += -L../../dwarf/libdwarfpp -L$(HOME)/opt/lib -L../../c++-fileno/lib
+DWARFPP_PATH ?= ../../dwarf/libdwarfpp
+LIBPATHS += -L$(DWARFPP_PATH) -L$(HOME)/opt/lib -L../../c++-fileno/lib
 
 CLASSES := 	org.antlr.runtime.Lexer \
 		org.antlr.runtime.Parser \
@@ -59,7 +60,7 @@ java_glue/%.o:
 #main.o: main.cpp 
 #	g++ -c -o "$@" ${CXXFLAGS} "$<"
 
-cake: $(OBJS) stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so
+cake: $(OBJS) stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so $(DWARFPP_PATH)/libdwarfpp.a
 	gcj $(GCJFLAGS) $(LIBPATHS) -Wl,-R. -o "$@" $(OBJS) $(LIBS) -lstdc++ parser/cakeJava{Parser,Lexer}*.o stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so
 
 # FIXME: to build, change the following .jar paths

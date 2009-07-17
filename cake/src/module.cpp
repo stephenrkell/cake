@@ -363,8 +363,15 @@ namespace cake
 		   (description->getType() == cakeJavaParser::LR_SINGLE_ARROW)
 		   		? (
 					dwarf_arguments_satisfy_description(subprogram_offset, description->getChild(0))
-					&& dies[subprogram_offset].has_attr(DW_AT_type)
-					&& dwarf_type_satisfies(description->getChild(1), dies[subprogram_offset][DW_AT_type].get_ref().off))
+					&& (
+						(description->getChild(1)->getType() == cakeJavaParser::KEYWORD_VOID
+							&& !dies[subprogram_offset].has_attr(DW_AT_type))
+						||
+						(dies[subprogram_offset].has_attr(DW_AT_type) 
+							&& dwarf_type_satisfies(description->getChild(1), 
+								dies[subprogram_offset][DW_AT_type].get_ref().off))
+					)
+				)
 				: false;
 		
 		return retval;
