@@ -282,6 +282,8 @@ namespace cake
 	bool elf_module::dwarf_type_satisfies(antlr::tree::Tree *description,
 		Dwarf_Off off)
 	{
+		std::cerr << "Testing whether DWARF type at offset 0x" << std::hex << off << std::dec
+			<< " satisfies description: " << CCP(description->toStringTree()) << std::endl;
 		INIT;
 		switch(description->getType())
 		{
@@ -336,7 +338,11 @@ namespace cake
 			{
 				std::auto_ptr<dwarf::die_off_list> results(find_dwarf_type_named(description, off));
 				// FIXME: we take the head; is this correct? I think so; it's the nearest match
-				return results.get() != 0 && results->size() > 0;
+				return //results.get() != 0 && results->size() > 0;
+					results.get() != 0 && std::find(*results, description->getText()) != results->end();
+					// FIXME: no, the original logic was correct, but the find_dwarf_type_named() call
+					// isn't doing the right thing (it's returning a list containing
+					// the offset for struct _GMutex, even though that's not named GtkDialog)
 			} 
 			case cakeJavaParser::LR_SINGLE_ARROW: // a subprogram type
 				// FIXME: we want this to succeed with a dummy
@@ -477,7 +483,7 @@ namespace cake
 				iter != p_retval->end();
 				iter++)
 			{
-				std::cerr << *iter << " ";	
+				std::cerr << "0x" << std::hex << *iter << std::dec << " ";	
 			}
 		}
 		std::cerr << std::endl;

@@ -106,6 +106,10 @@ RUN_PREFIX := gdb --eval-command "source ../src/cake-test.gdb" --eval-command ru
 test: cake
 	cd ../examples; LD_LIBRARY_PATH=../src:${LD_LIBRARY_PATH} $(RUN_PREFIX) ../src/cake switch-simple.cake
 
+.PHONY: test_batch
+test_batch: cake
+	cd ../examples; LD_LIBRARY_PATH=../src:${LD_LIBRARY_PATH} ../src/cake switch-simple.cake
+
 .PHONY: memtest
 memtest: cake
 	cd ../examples; LD_LIBRARY_PATH=../src:$(LD_LIBRARY_PATH) valgrind --tool=memcheck ../src/cake switch-simple.cake
