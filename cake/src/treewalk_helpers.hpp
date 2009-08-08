@@ -18,13 +18,14 @@
 	FOR_BODY(t)
 	
 #define FOR_BODY(t) \
+	org::antlr::runtime::tree::Tree *__tree_head_pointer = reinterpret_cast<org::antlr::runtime::tree::Tree *>(t); /* because our tree may well alias 'n' */ \
 	jint childcount; \
 	const char *text; \
 	org::antlr::runtime::tree::Tree *n; \
-	for (childcount = (t)->getChildCount(), \
-		n = ((childcount > 0) ? (t)->getChild(0) : 0), \
+	for (childcount = __tree_head_pointer->getChildCount(), \
+		n = ((childcount > 0) ? __tree_head_pointer->getChild(0) : 0), \
 		text = (n != 0) ? jtocstring_safe(n->getText()) : "(null)"; \
-	i < childcount && ASSIGN_AS_COND(n, (t)->getChild(i)) && \
+	i < childcount && ASSIGN_AS_COND(n, __tree_head_pointer->getChild(i)) && \
 		ASSIGN_AS_COND(text, (n != 0) ? jtocstring_safe(n->getText()) : "(null)"); \
 	i++)
 

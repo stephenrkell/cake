@@ -32,6 +32,11 @@ namespace cake
 			process_claimgroup(n);
 		}
 	}
+
+	void module::process_supplementary_claim(antlr::tree::Tree *claimGroup)
+	{
+		process_claimgroup(claimGroup);
+	}
 	
 	void module::process_claimgroup(antlr::tree::Tree *claimGroup)
 	{
@@ -102,7 +107,8 @@ namespace cake
 			// HACK to avoid compilation unit structure: set falsifier to be the 
 			// off of the final compilation unit
 			dwarf::die_off_list::iterator fixup_iter = dies[falsifier].children().end() - 1;
-			if (fixup_iter < dies[falsifier].children().begin())
+			if (dies[falsifier].children().size() == 0
+				|| fixup_iter < dies[falsifier].children().begin())
 			{
 				RAISE(falsifiable, "no compilation units in file's DWARF info!");
 			}

@@ -25,6 +25,9 @@ namespace cake
 		FOR_ALL_CHILDREN(t)
 		{	/* Find all the toplevel alias definitions */
 			SELECT_ONLY(KEYWORD_ALIAS);
+			
+			std::cerr << "Processing alias definition: " << CCP(n->toStringTree()) << std::endl;
+			
 			/* Create an alias record for this alias. */
 			module_alias_tbl.insert(std::make_pair(
  				std::string(text),
@@ -42,29 +45,27 @@ namespace cake
 		INIT;
 		BIND2(t, aliasDescription);
 		BIND3(t, aliasName, IDENT);
-		{ 	/* case 1: aliasDescription is KEYWORD_ANY followed by an identList */
-			FOR_ALL_CHILDREN(aliasDescription)
-			{
-				SELECT_ONLY(KEYWORD_ANY);
-				{ 
-					INIT; 
-					FOR_ALL_CHILDREN(n)
-					{
-						BIND3(t, ident, IDENT);
-						module_alias_tbl[CCP(aliasName->getText())].push_back(CCP(ident->getText()));			
-					} 
-				}
+		
+		switch (aliasDescription->getType())
+		{
+			case cakeJavaParser::KEYWORD_ANY: { 	
+				/* case 1: aliasDescription is KEYWORD_ANY followed by an identList */
+				INIT;
+				BIND3(aliasDescription, identList, cakeJavaParser::IDENT_LIST); 
+				FOR_ALL_CHILDREN(identList)
+				{
+					ALIAS3(n, ident, IDENT);
+					module_alias_tbl[CCP(aliasName->getText())].push_back(CCP(ident->getText()));			
+				} 
+			} return;
+			
+			case cakeJavaParser::IDENT:
+				/* case 2: aliasDescription is a plain IDENT */
+				module_alias_tbl[CCP(aliasName->getText())].push_back(CCP(aliasName->getText()));
 				return;
-			} 
-		}		
-
-		{ 	/* case 2: aliasDescription is a plain IDENT */
-			FOR_ALL_CHILDREN(aliasDescription)
-			{
-				SELECT_ONLY(IDENT);
-				module_alias_tbl[CCP(aliasName->getText())].push_back(CCP(n->getText()));
-				return;
-			} 
+				
+			default: 
+				SEMANTIC_ERROR(aliasDescription);
 		}		
 	}
 }

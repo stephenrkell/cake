@@ -37,6 +37,7 @@ namespace cake
 		module(std::string& filename) : filename(filename) {}
 		std::string& get_filename() { return filename; }
 		void process_exists_claims(antlr::tree::Tree *existsBody);
+		void process_supplementary_claim(antlr::tree::Tree *claimGroup);
 		void process_claimgroup(antlr::tree::Tree *claimGroup);
 		virtual eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength) = 0;
 		virtual bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
