@@ -7,9 +7,13 @@
 #include <org/antlr/runtime/TokenStream.h>
 #include <org/antlr/runtime/tree/Tree.h>
 #include <org/antlr/runtime/tree/CommonTree.h>
+/*
 #undef EOF
 #include "cakeJavaLexer.h"
 #include "cakeJavaParser.h"
+*/
+class cakeJavaLexer;
+class cakeJavaParser;
 #include "cake/SemanticError.h"
 #include "cake/InternalError.h"
 #include <vector>

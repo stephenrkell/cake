@@ -7,7 +7,6 @@
 #include <fstream>
 #include <vector>
 #include <map>
-#undef EOF
 #include "cake.hpp"
 #include "util.hpp"
 #include "dwarfpp.h"

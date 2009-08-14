@@ -7,13 +7,13 @@
 #include <java/io/PrintStream.h>
 #include <org/antlr/runtime/tree/BaseTree.h>
 #include <org/antlr/runtime/tree/CommonTree.h>
-#undef EOF
-#include <org/antlr/runtime/CharStream.h>
-#include <org/antlr/runtime/IntStream.h>
 #include "cake.hpp"
 #include "parser.hpp"
 #include "util.hpp"
 #include "treewalk_helpers.hpp"
+#undef EOF
+#include <org/antlr/runtime/CharStream.h>
+#include <org/antlr/runtime/IntStream.h>
 
 namespace cake
 {

@@ -9,7 +9,8 @@
 EXTRA_DEBUG_OPTS := -fno-eliminate-unused-debug-symbols -fno-eliminate-unused-debug-types
 
 JAVA_OBJS := java_glue/cake/SemanticError.o java_glue/cake/InternalError.o java_glue/cake/TreewalkError.o
-OBJS := $(JAVA_OBJS) main.o cake.o alias.o util.o module.o exists.o derive.o link.o supplementary.o
+CAKE_SRC := main.cpp cppcatch.cpp javacatch.cpp cake.cpp alias.cpp util.cpp module.cpp exists.cpp derive.cpp link.cpp supplementary.cpp
+OBJS := $(JAVA_OBJS) $(patsubst %.cpp,%.o,$(CAKE_SRC))
 LIBS := -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
 INCLUDES += -Iparser -Igcjh_generated -I../../dwarf/libdwarfpp -I$(HOME)/opt/include -I../../c++-fileno/include
 HDRS :=
@@ -19,6 +20,10 @@ CLASSPATH := .:$(shell ( echo ./java_glue; ls -1 *.jar ) | while read line; do r
 GCJFLAGS += $(EXTRA_DEBUG_OPTS) -g3 -classpath $(CLASSPATH) -fPIC -Wall
 DWARFPP_PATH ?= ../../dwarf/libdwarfpp
 LIBPATHS += -L$(DWARFPP_PATH) -L$(HOME)/opt/lib -L../../c++-fileno/lib
+CAKE_VERSION := 0.0$(shell hg log --template '{date|isodate}\n' $(CAKE_SRC) | head -n1 | sed 's/+.*//' | tr -cd '[:digit:]' )#$(shell if [[ -n $$( hg status $(patsubst %,cake/src/%,$(CAKE_SRC))) ]]; then echo "+local"; fi )
+$(warning Generated Cake version macro $(CAKE_VERSION))
+CFLAGS += -DCAKE_VERSION=\"$(CAKE_VERSION)\"
+CXXFLAGS += -DCAKE_VERSION=\"$(CAKE_VERSION)\"
 
 CLASSES := 	org.antlr.runtime.Lexer \
 		org.antlr.runtime.Parser \

@@ -3,15 +3,15 @@
 #include <cstring>
 #include <cassert>
 
+#include "cake.hpp"
+#include "util.hpp"
+#include "main.hpp"
+
 #include <java/lang/System.h>
 #include <java/io/PrintStream.h>
 #include <org/antlr/runtime/tree/CommonTree.h>
 #undef EOF
 #include <org/antlr/runtime/Token.h>
-
-#include "cake.hpp"
-#include "util.hpp"
-#include "main.hpp"
 
 const struct option opts[] = {
 	{ "help", false, NULL, 'h' }
