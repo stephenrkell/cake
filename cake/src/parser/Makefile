@@ -3,7 +3,8 @@ CFLAGS += -I$(HOME)/opt/include
 
 INCS := $(wildcard *.inc)
 
-CLASSPATH ?= ../antlr-3.1.2.jar:.:
+#CLASSPATH ?= ../antlr-3.1.2.jar:.:
+CLASSPATH ?= $(wildcard ../antlr-runtime-*.jar):.:
 
 ANTLR ?= java -classpath $(CLASSPATH) org.antlr.Tool
 

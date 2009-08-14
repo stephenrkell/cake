@@ -3,7 +3,6 @@
 #
 # antlr-runtime-3.1.jar
 # stringtemplate-3.2.jar
-# antlr-3.1.2.jar 
 # junit-3.8.2.jar
 
 EXTRA_DEBUG_OPTS := -fno-eliminate-unused-debug-symbols -fno-eliminate-unused-debug-types
@@ -46,7 +45,7 @@ CLASSES := 	org.antlr.runtime.Lexer \
 default: cake
 
 java_glue/%.o: 
-	$(MAKE) -C java_glue CLASSPATH=$(shell pwd)/antlr-3.1.2.jar:.:
+	$(MAKE) -C java_glue CLASSPATH=$(shell pwd)/$(wildcard antlr-runtime-3*.jar):.:
 
 #cake.o:: treewalk_helpers.hpp cake.hpp parser.hpp util.hpp
 
@@ -60,8 +59,8 @@ java_glue/%.o:
 #main.o: main.cpp 
 #	g++ -c -o "$@" ${CXXFLAGS} "$<"
 
-cake: $(OBJS) stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so $(DWARFPP_PATH)/libdwarfpp.a
-	gcj $(GCJFLAGS) $(LIBPATHS) -Wl,-R. -o "$@" $(OBJS) $(LIBS) -lstdc++ parser/cakeJava{Parser,Lexer}*.o stringtemplate-3.2.jar.so antlr-3.1.2.jar.so junit-3.8.2.jar.so
+cake: $(OBJS) antlr.jar.so stringtemplate-3.2.jar.so $(wildcard antlr-runtime-3*.jar).so junit-3.8.2.jar.so $(DWARFPP_PATH)/libdwarfpp.a
+	gcj $(GCJFLAGS) $(LIBPATHS) -Wl,-R. -o "$@" $(OBJS) $(LIBS) -lstdc++ parser/cakeJava{Parser,Lexer}*.o  $(wildcard antlr-runtime-3*.jar).so junit-3.8.2.jar.so antlr.jar.so stringtemplate-3.2.jar.so 
 
 # FIXME: to build, change the following .jar paths
 
@@ -71,6 +70,13 @@ gcjh_generated: java_glue-recursive.stamp parser-recursive.stamp
 		
 #antlr-headers.stamp: antlr-headers
 #	touch antlr-headers.stamp
+
+stringtemplate-3.2.jar.so: stringtemplate-3.2.jar
+	gcj $(EXTRA_DEBUG_OPTS) -g3 -classpath /usr/share/java/antlr.jar:./$(wildcard junit-*.jar): -fPIC -Wall -shared -Wl,-Bsymbolic "$<" /usr/lib/gcj/antlr.jar.so  -o "$@"
+
+antlr.jar.so: /usr/share/java/antlr.jar
+	gcj $(EXTRA_DEBUG_OPTS) -g3 -classpath /usr/share/java/antlr.jar:./$(wildcard junit-*.jar): -fPIC -Wall -shared -Wl,-Bsymbolic "$<" /usr/lib/gcj/antlr.jar.so  -o "$@"
+
 
 %.jar.so: %.jar
 	gcj $(GCJFLAGS) -shared -Wl,-Bsymbolic "$<" -o "$@"
