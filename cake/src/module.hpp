@@ -18,6 +18,7 @@
 
 namespace cake
 {
+	class definite_member_name;
 	class module
 	{
 		std::string filename;
@@ -52,7 +53,7 @@ namespace cake
 		newline_tabbing_filter debug_out_filter;
 		boost::iostreams::filtering_ostreambuf debug_outbuf;
 		std::ostream debug_out;
-						
+								
 	public: // FIXME: make some of the below private
 		typedef bool (cake::module::* eval_event_handler_t)(antlr::tree::Tree *, Dwarf_Off);
 		virtual bool do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
@@ -104,7 +105,11 @@ namespace cake
 		bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		//virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool internal_check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
-		
+
+		void debug_print_artificial_dies();
+		boost::optional<Dwarf_Off> find_immediate_container(const definite_member_name& mn, 
+			Dwarf_Off context) const;
+		Dwarf_Off ensure_non_toplevel_falsifier(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) const;
 		//virtual dwarf::encap::die::attribute_map default_subprogram_attributes();
 		boost::optional<Dwarf_Off> find_containing_cu(Dwarf_Off context);
 		Dwarf_Off follow_typedefs(Dwarf_Off off);
@@ -112,11 +117,13 @@ namespace cake
 		boost::optional<Dwarf_Off> find_nearest_type_named(Dwarf_Off context, const char *name);
 		Dwarf_Off create_new_die(const Dwarf_Off parent, const Dwarf_Half tag, 
 			const dwarf::encap::die::attribute_map& attrs, const dwarf::die_off_list& children);		
-		Dwarf_Off create_dwarf_type_from_value_description(antlr::tree::Tree *valueDescription, Dwarf_Off context);
+		Dwarf_Off create_dwarf_type_from_value_description(antlr::tree::Tree *valueDescription, 
+			Dwarf_Off context, boost::optional<std::string> name);
 		void build_subprogram_die_children(antlr::tree::Tree *valueDescriptionExpr, Dwarf_Off subprogram_die_off);
 
 		virtual Dwarf_Unsigned make_default_dwarf_location_expression_for_arg(int argn);
-		Dwarf_Off ensure_dwarf_type(antlr::tree::Tree *description, Dwarf_Off context);
+		Dwarf_Off ensure_dwarf_type(antlr::tree::Tree *description, 
+			Dwarf_Off context, boost::optional<std::string> name);
 		dwarf::die_off_list *find_dwarf_types_satisfying(antlr::tree::Tree *description,
 			dwarf::die_off_list& list_to_search);
 		bool dwarf_type_satisfies(antlr::tree::Tree *description, Dwarf_Off type_offset);
@@ -124,6 +131,7 @@ namespace cake
 		bool dwarf_arguments_satisfy_description(Dwarf_Off subprogram_offset, antlr::tree::Tree *description);
 		bool dwarf_variable_satisfies_description(Dwarf_Off variable_offset, antlr::tree::Tree *description);
 		dwarf::die_off_list *find_dwarf_type_named(antlr::tree::Tree *ident, Dwarf_Off context);
+		boost::optional<std::string> type_name_from_value_description(antlr::tree::Tree *);
 		
 		eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength);
 	

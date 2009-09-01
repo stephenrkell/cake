@@ -65,7 +65,9 @@ claimGroup			: KEYWORD_CHECK^ '{'! claim* '}'!
 claim				: membershipClaim
 					;
                     
-membershipClaim		: memberNameExpr ':' valueDescriptionExpr ';'
+membershipClaim		:  memberNameExpr ':' KEYWORD_CLASS_OF valueDescriptionExpr ';'
+						-> ^( MEMBERSHIP_CLAIM memberNameExpr ^( KEYWORD_CLASS_OF  valueDescriptionExpr ) )
+					|  memberNameExpr ':' valueDescriptionExpr ';'
 						-> ^( MEMBERSHIP_CLAIM memberNameExpr valueDescriptionExpr )
                     | ELLIPSIS ':' valueDescriptionExpr ';'
                     	-> ^( MEMBERSHIP_CLAIM REMAINING_MEMBERS valueDescriptionExpr )
@@ -449,6 +451,7 @@ LR_SINGLE_ARROW : '->';
 KEYWORD_BASE : 'base' ;
 KEYWORD_OBJECT : 'object';
 KEYWORD_PTR : 'ptr';
+KEYWORD_CLASS_OF : 'class_of';
 KEYWORD_ENUM : 'enum';
 KEYWORD_ENUMERATOR : 'enumerator';
 SHIFT_LEFT : '<<';
