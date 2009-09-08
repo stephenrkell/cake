@@ -525,13 +525,16 @@ namespace cake
 				off = follow_typedefs(off);
 				BIND3(description, encoding, IDENT);
 				BIND3(description, attributeList, DWARF_BASE_TYPE_ATTRIBUTE_LIST);				
-				return dies[off].tag() == DW_TAG_base_type
-					&& dies[off][DW_AT_encoding].get_string().substr((std::string("DW_ATE_").size())) 
+				return dies[off].tag() == DW_TAG_base_type 		// is a base type
+					&& std::string(								// whose encoding matches the encoding ident
+						dwarf::encoding_lookup(
+							static_cast<Dwarf_Half>(dies[off][DW_AT_encoding].get_unsigned())
+						)).substr((std::string("DW_ATE_").size()))
 						== CCP(encoding->getText())
 					&& eval_claim_depthfirst(attributeList, &cake::module::internal_check_handler, off)
 					&& (description->getChildCount() <= 2 ||
 							dies[off][DW_AT_byte_size].get_unsigned() ==
-								static_cast<Dwarf_Unsigned>(atoll(CCP(description->getChild(3)->getText()))));
+								static_cast<Dwarf_Unsigned>(atoll(CCP(description->getChild(2)->getText()))));
 			}
 			// no break
 			case cakeJavaParser::IDENT: // look for any named type
@@ -565,10 +568,16 @@ namespace cake
 				assert(false);
 				break;
 			case cakeJavaParser::INDEFINITE_MEMBER_NAME: // always true
-				return true;				
+				return true;
+			case cakeJavaParser::KEYWORD_BASE:
+			{
+				BIND3(description, baseTypeHead, DWARF_BASE_TYPE);
+				return dwarf_type_satisfies(baseTypeHead, off);
+			}
 			default: 
 				debug_out << "Looking for a DWARF type satisfying unrecognised constructor: " <<
 					CCP(description->getText()) << std::endl;
+				assert(false);
 				break;				
 		} // end switch
 		debug_out << "Warning: fell through bottom of dwarf_type_satisfies switch statement" << std::endl;
@@ -897,6 +906,7 @@ namespace cake
 					/* We have to create the type, then a typedef with the name. */
 					// FIXME -- for now, just flag up occurrences of this peculiar case
 					assert(false);
+					return 0UL;
 				}				
 			} break;
 			case cakeJavaParser::KEYWORD_OBJECT: {
@@ -951,12 +961,57 @@ namespace cake
 				
 				return new_type_off;
 			}
+			case cakeJavaParser::KEYWORD_BASE: {
+				/* We've been asked to build a base type. First, build the tag DIE. */
+				 dwarf::encap::die::attribute_map::value_type attr_entries[] = {
+					std::make_pair(DW_AT_byte_size, dwarf::encap::attribute_value((Dwarf_Unsigned 0)) // NOTE: placeholder!
+				};
+				dwarf::encap::die::attribute_map new_attribute_map(
+						&attr_entries[0], &attr_entries[array_len(attr_entries)]
+						);
+				if (name) new_attribute_map.insert(std::make_pair(DW_AT_name,
+					dwarf::encap::attribute_value(*name)));
+				assert(dwarf::tag_has_named_children(context)); // is it okay to create a type here? this is sloppy! FIXME
+				Dwarf_Off new_type_off = create_new_die(context, DW_TAG_structure_type,
+					new_attribute_map, empty_child_list);
+				
+				// now build the children
+				BIND3(description, header, cakeJavaParser::DWARF_BASE_TYPE_ATTRIBUTE);
+				{
+					// FIXME: pasted code in need of tailoring
+					INIT;
+					BIND3(header, attr, IDENT);
+					BIND3(header, value, INT);
+
+					std::map<const char *, Dwarf_Half>::iterator found
+						= dwarf::attr_forward_map.find(CCP(attr->getText()));
+					if (found == dwarf::attr_forward_map.end()) 
+					{
+						retval = false; break; // not found -- note **break** exits FOR loop!
+					}
+
+					// if we got here, the token is a recognised attribute
+
+					std::istringstream istr(CCP(value->getText()));
+					signed valueAsInt; istr >> valueAsInt;
+
+					if (dies[current_die][found->second].get_signed() != valueAsInt) 
+					{
+						// the attribute value in the Cake file doesn't match that in the DWARF info								
+						retval = false; break; // doesn't match -- note **break** exits FOR loop!
+					}						
+				}
+					
+				
+			} break;
 			default:
 				debug_out << "Asked to build a DWARF type from unsupported value description node: "
 					<< CCP(valueDescription->getText()) << std::endl;
 				assert(false);
 			break;
-		}		
+		}
+		debug_out << "Warning: fell through the bottom of create_dwarf_type_from_value_description" << std::endl;
+		assert(false);
 	}
 	
 	Dwarf_Off elf_module::create_new_die(const Dwarf_Off parent, const Dwarf_Half tag, 
@@ -1169,6 +1224,7 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 				recursive_event_handler = handler_for_claim_strength(strength);
 				} goto recursively_AND_subclaims;
 			case cakeJavaParser::DWARF_BASE_TYPE_ATTRIBUTE_LIST: {
+				retval =  true;
 				FOR_ALL_CHILDREN(claim)
 				{
 					INIT;
@@ -1182,18 +1238,22 @@ asserting that it does. So we really want finer grain, i.e. the ability to chang
 							= dwarf::attr_forward_map.find(CCP(attr->getText()));
 						if (found == dwarf::attr_forward_map.end()) 
 						{
-							retval = false; break; // not found
+							retval = false; break; // not found -- note **break** exits FOR loop!
 						}
+						
+						// if we got here, the token is a recognised attribute
 
 						std::istringstream istr(CCP(value->getText()));
 						signed valueAsInt; istr >> valueAsInt;
 
 						if (dies[current_die][found->second].get_signed() != valueAsInt) 
-						{								
-							retval = false; break;
-						}
+						{
+							// the attribute value in the Cake file doesn't match that in the DWARF info								
+							retval = false; break; // doesn't match -- note **break** exits FOR loop!
+						}						
 					}							
 				}
+				break; // retval will be true only if all attributes exist and match
 			}
 			case cakeJavaParser::KEYWORD_OBJECT: {
 				/* We hit a block of claims about named members of the current die. So:
