@@ -22,7 +22,7 @@ namespace cake
 	extern std::string solib_constructor;
 
 	//typedef std::vector<std::string> definite_member_name;
-	class definite_member_name : public std::vector<std::string>
+	class definite_member_name : public dwarf::pathname
 	{
 		typedef std::allocator<std::string> A;
 	public:
@@ -79,4 +79,16 @@ namespace cake
 	}
 	
 	template<class T, size_t s> size_t array_len(T (&arg)[s]) { return s; }
+	
+	/* copy_if should be in the standard algorithms, but it isn't. */
+	template<class In, class Out, class Pred>
+	Out copy_if(In first, In last, Out res, Pred p)
+	{
+		while (first != last)
+		{
+			if (p(*first)) *res++ = *first;
+			++first;
+		}
+		return res;
+	}	
 }

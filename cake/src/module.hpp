@@ -9,12 +9,12 @@
 #include <dwarf.h>
 #include <dwarfpp.h>
 #include <dwarfpp_simple.hpp>
-#include <dwarfpp_util.hpp>
-#include <boost/iostreams/concepts.hpp>    // input_filter
-#include <boost/iostreams/operations.hpp>  // get()
-#include <boost/iostreams/stream.hpp>
-#include <boost/iostreams/stream_buffer.hpp>
-#include <boost/iostreams/filtering_streambuf.hpp>
+//#include <dwarfpp_util.hpp>
+//#include <boost/iostreams/concepts.hpp>    // input_filter
+//#include <boost/iostreams/operations.hpp>  // get()
+//#include <boost/iostreams/stream.hpp>
+//#include <boost/iostreams/stream_buffer.hpp>
+//#include <boost/iostreams/filtering_streambuf.hpp>
 
 namespace cake
 {
@@ -28,31 +28,32 @@ namespace cake
 		static std::map<std::string, std::string> known_constructors;
 		
 	protected: // debugging output infrastructure
-		struct newline_tabbing_filter : boost::iostreams::output_filter {
-			static int indent_level; // HACK: make static for now!
-			newline_tabbing_filter() /*: indent_level(0)*/ {}
-    		template<typename Sink>
-    		bool put_char(Sink& dest, int c)
-    		{
-        		if (!boost::iostreams::put(dest, c)) return false;
-        		if (c == '\n')
-				{
-					for (int i = indent_level; i > 0; i--) 
-					{
-						if (!boost::iostreams::put(dest, '\t')) return false;
-					}
-				}
-        		return true;
-    		}
-			template<typename Sink>
-    		bool put(Sink& dest, int c) 
-    		{
-        		return put_char(dest, c);
-    		}
-		};
-		newline_tabbing_filter debug_out_filter;
-		boost::iostreams::filtering_ostreambuf debug_outbuf;
-		std::ostream debug_out;
+// 		struct newline_tabbing_filter : boost::iostreams::output_filter {
+// 			static int indent_level; // HACK: make static for now!
+// 			newline_tabbing_filter() /*: indent_level(0)*/ {}
+//     		template<typename Sink>
+//     		bool put_char(Sink& dest, int c)
+//     		{
+//         		if (!boost::iostreams::put(dest, c)) return false;
+//         		if (c == '\n')
+// 				{
+// 					for (int i = indent_level; i > 0; i--) 
+// 					{
+// 						if (!boost::iostreams::put(dest, '\t')) return false;
+// 					}
+// 				}
+//         		return true;
+//     		}
+// 			template<typename Sink>
+//     		bool put(Sink& dest, int c) 
+//     		{
+//         		return put_char(dest, c);
+//     		}
+// 		};
+// 		newline_tabbing_filter debug_out_filter;
+// 		boost::iostreams::filtering_ostreambuf debug_outbuf;
+		//std::ostream& debug_out;
+		srk31::indenting_ostream& debug_out;
 								
 	public: // FIXME: make some of the below private
 		typedef bool (cake::module::* eval_event_handler_t)(antlr::tree::Tree *, Dwarf_Off);
@@ -65,7 +66,7 @@ namespace cake
 			// type-checking rules demand that it is here. Work out a more satisfactory solution.
 		virtual	bool internal_check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
 				
-		module(std::string& filename);
+		module(std::string& filename); // defined in cppcatch.cpp, because it initializes debug_out
 		std::string& get_filename() { return filename; }
 		void process_exists_claims(antlr::tree::Tree *existsBody);
 		void process_supplementary_claim(antlr::tree::Tree *claimGroup);
@@ -107,6 +108,7 @@ namespace cake
 		bool internal_check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 
 		void debug_print_artificial_dies();
+		Dwarf_Off create_new_member(Dwarf_Off parent_off, std::string& name, antlr::tree::Tree *description);
 		boost::optional<Dwarf_Off> find_immediate_container(const definite_member_name& mn, 
 			Dwarf_Off context) const;
 		Dwarf_Off ensure_non_toplevel_falsifier(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) const;

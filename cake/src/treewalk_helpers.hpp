@@ -42,8 +42,8 @@
 		" (" __FILE__ ":" << __LINE__ << "); found token " << CCP((name)->getText()) \
 		<< " class id " << (int) (name)->getType()) \
 		, exception_msg_stream.str().c_str()) )); \
-	std::cerr << "DEBUG: " __FILE__ ":" << __LINE__ << " bound a token of type " << (int) ((name)->getType()) << "(" #token ") to name " #name \
-		<< ", text " << CCP((name)->getText()) << std::endl
+	//std::cerr << "DEBUG: " __FILE__ ":" << __LINE__ << " bound a token of type " << (int) ((name)->getType()) << "(" #token ") to name " #name \
+	//	<< ", text " << CCP((name)->getText()) << std::endl
 
 /* Skip over tokens we're not interested in. */
 #define SELECT_NOT(token) if (n->getType() == (cakeJavaParser::token)) continue
