@@ -7,7 +7,6 @@
 #include <iostream>
 #include <vector>
 #include <map>
-#undef EOF
 #include "cake.hpp"
 
 namespace cake

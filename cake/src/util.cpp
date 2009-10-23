@@ -6,6 +6,7 @@
 #include "cake.hpp"
 #include "util.hpp"
 #include "treewalk_helpers.hpp"
+#include "parser.hpp"
 
 namespace cake
 {

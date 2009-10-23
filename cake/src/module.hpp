@@ -1,6 +1,5 @@
 // note: this file is included by cake.hpp
 
-#include <gcj/cni.h>
 #include <string>
 #include <map>
 #include <memory>
@@ -11,17 +10,48 @@
 #include <dwarfpp.h>
 #include <dwarfpp_simple.hpp>
 #include <dwarfpp_util.hpp>
+#include <boost/iostreams/concepts.hpp>    // input_filter
+#include <boost/iostreams/operations.hpp>  // get()
+#include <boost/iostreams/stream.hpp>
+#include <boost/iostreams/stream_buffer.hpp>
+#include <boost/iostreams/filtering_streambuf.hpp>
 
 namespace cake
 {
 	class module
 	{
 		std::string filename;
-
 	
 		typedef std::pair<const std::string, const std::string> constructor_map_entry;
 		static constructor_map_entry known_constructor_extensions[];		
 		static std::map<std::string, std::string> known_constructors;
+		
+	protected: // debugging output infrastructure
+		struct newline_tabbing_filter : boost::iostreams::output_filter {
+			static int indent_level; // HACK: make static for now!
+			newline_tabbing_filter() /*: indent_level(0)*/ {}
+    		template<typename Sink>
+    		bool put_char(Sink& dest, int c)
+    		{
+        		if (!boost::iostreams::put(dest, c)) return false;
+        		if (c == '\n')
+				{
+					for (int i = indent_level; i > 0; i--) 
+					{
+						if (!boost::iostreams::put(dest, '\t')) return false;
+					}
+				}
+        		return true;
+    		}
+			template<typename Sink>
+    		bool put(Sink& dest, int c) 
+    		{
+        		return put_char(dest, c);
+    		}
+		};
+		newline_tabbing_filter debug_out_filter;
+		boost::iostreams::filtering_ostreambuf debug_outbuf;
+		std::ostream debug_out;
 						
 	public: // FIXME: make some of the below private
 		typedef bool (cake::module::* eval_event_handler_t)(antlr::tree::Tree *, Dwarf_Off);
@@ -34,9 +64,10 @@ namespace cake
 			// type-checking rules demand that it is here. Work out a more satisfactory solution.
 		virtual	bool internal_check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
 				
-		module(std::string& filename) : filename(filename) {}
+		module(std::string& filename);
 		std::string& get_filename() { return filename; }
 		void process_exists_claims(antlr::tree::Tree *existsBody);
+		void process_supplementary_claim(antlr::tree::Tree *claimGroup);
 		void process_claimgroup(antlr::tree::Tree *claimGroup);
 		virtual eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength) = 0;
 		virtual bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
@@ -53,17 +84,7 @@ namespace cake
 	{ 
 		std::ifstream this_ifstream;
 	public:
-		ifstream_holder(std::string& filename) : this_ifstream(filename.c_str(), std::ios::in) 
-		{
-			if (!this_ifstream) 
-			{ 
-				throw new SemanticError(
-					0, 
-					JvNewStringUTF(
-						"file does not exist! ")->concat(
-						JvNewStringUTF(filename.c_str())));
-			}
-		}
+		ifstream_holder(std::string& filename);
 		int fileno() { return ::fileno(this_ifstream);  }
 	};
 	
@@ -88,6 +109,7 @@ namespace cake
 		boost::optional<Dwarf_Off> find_containing_cu(Dwarf_Off context);
 		Dwarf_Off follow_typedefs(Dwarf_Off off);
 		boost::optional<Dwarf_Off> find_nearest_containing_die_having_tag(Dwarf_Off context, Dwarf_Half tag);		
+		boost::optional<Dwarf_Off> find_nearest_type_named(Dwarf_Off context, const char *name);
 		Dwarf_Off create_new_die(const Dwarf_Off parent, const Dwarf_Half tag, 
 			const dwarf::encap::die::attribute_map& attrs, const dwarf::die_off_list& children);		
 		Dwarf_Off create_dwarf_type_from_value_description(antlr::tree::Tree *valueDescription, Dwarf_Off context);
@@ -116,16 +138,7 @@ namespace cake
 		static const dwarf::encap::die::attribute_map default_subprogram_attributes;
 	
 	public:
-		elf_module(std::string filename) :
-			ifstream_holder(filename),
-			module(filename),
-			dwarf::file(fileno()),
-			info(*this),
-			dies(info.get_dies()),
-			private_offsets_next(private_offsets_begin)
-		{
-			//print_abi_info();
-		}
+		elf_module(std::string filename);
 	
 		//virtual void make_default_subprogram(dwarf::encap::die &die_to_modify);
 	

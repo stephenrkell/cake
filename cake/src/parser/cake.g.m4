@@ -68,7 +68,7 @@ claim				: membershipClaim
 membershipClaim		: memberNameExpr ':' valueDescriptionExpr ';'
 						-> ^( MEMBERSHIP_CLAIM memberNameExpr valueDescriptionExpr )
                     | ELLIPSIS ':' valueDescriptionExpr ';'
-                    	-> ^( REMAINING_MEMBERS valueDescriptionExpr )
+                    	-> ^( MEMBERSHIP_CLAIM REMAINING_MEMBERS valueDescriptionExpr )
 					;
                     
 memberNameExpr		: '.'? IDENT ( '.' IDENT )* -> ^( DEFINITE_MEMBER_NAME IDENT* )
