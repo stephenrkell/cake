@@ -8,7 +8,7 @@ options {
 tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; 
 VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; 
 OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; MEMBERSHIP_CLAIM; VALUE_DESCRIPTION; DWARF_BASE_TYPE; 
-DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; }
+DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; ANY_VALUE; }
 /* The whole input */
 toplevel:   declaration* //-> ^( TOPLEVEL<ToplevelNode> declaration* )
 			/*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
@@ -65,7 +65,9 @@ claimGroup			: KEYWORD_CHECK^ '{'! claim* '}'!
 claim				: membershipClaim
 					;
                     
-membershipClaim		: memberNameExpr ':' valueDescriptionExpr ';'
+membershipClaim		:  memberNameExpr ':' KEYWORD_CLASS_OF valueDescriptionExpr ';'
+						-> ^( MEMBERSHIP_CLAIM memberNameExpr ^( KEYWORD_CLASS_OF  valueDescriptionExpr ) )
+					|  memberNameExpr ':' valueDescriptionExpr ';'
 						-> ^( MEMBERSHIP_CLAIM memberNameExpr valueDescriptionExpr )
                     | ELLIPSIS ':' valueDescriptionExpr ';'
                     	-> ^( MEMBERSHIP_CLAIM REMAINING_MEMBERS valueDescriptionExpr )
@@ -134,7 +136,7 @@ simpleOrObjectOrPointerValueDescription : structuredValueDescription^ ( KEYWORD_
 									    ;
 
 simpleValueDescription		: namedDwarfTypeDescription^
-                            | INDEFINITE_MEMBER_NAME
+                            | INDEFINITE_MEMBER_NAME -> ANY_VALUE
 							| '('! valueDescriptionExpr^ ')'! 
 							;
 
@@ -449,6 +451,7 @@ LR_SINGLE_ARROW : '->';
 KEYWORD_BASE : 'base' ;
 KEYWORD_OBJECT : 'object';
 KEYWORD_PTR : 'ptr';
+KEYWORD_CLASS_OF : 'class_of';
 KEYWORD_ENUM : 'enum';
 KEYWORD_ENUMERATOR : 'enumerator';
 SHIFT_LEFT : '<<';

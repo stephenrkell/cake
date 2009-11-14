@@ -2,6 +2,7 @@ namespace org { namespace antlr { namespace runtime { namespace tree { class Tre
 namespace antlr = org::antlr::runtime;
 
 #include "module.hpp"
+#include "indenting_ostream.hpp"
 
 /* This translation unit exists only to separate out problematic
  * C++ exception handling to avoid g++'s 
@@ -9,9 +10,10 @@ namespace antlr = org::antlr::runtime;
 
 namespace cake
 {
-	module::module(std::string& filename) : filename(filename), debug_out(&debug_outbuf) 
-	{
-		debug_outbuf.push(debug_out_filter);
-		debug_outbuf.push(std::cerr);
-	}
+//	module::module(std::string& filename) : filename(filename), debug_out(&debug_outbuf) 
+//	{
+//		debug_outbuf.push(debug_out_filter);
+//		debug_outbuf.push(std::cerr);
+//	}
+	module::module(std::string& filename) : filename(filename), debug_out(srk31::indenting_cerr) {}
 }

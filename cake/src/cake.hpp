@@ -7,6 +7,8 @@
 #include <org/antlr/runtime/TokenStream.h>
 #include <org/antlr/runtime/tree/Tree.h>
 #include <org/antlr/runtime/tree/CommonTree.h>
+#include <cake/CloneableTree.h>
+#include <org/antlr/runtime/CommonToken.h>
 /*
 #undef EOF
 #include "cakeJavaLexer.h"
@@ -23,7 +25,7 @@ class cakeJavaParser;
 
 // our headers are too lazy to use the fully-qualified antlr namespace
 namespace antlr = ::org::antlr::runtime;
-#include "dwarfpp_simple.hpp"
+//#include "dwarfpp_simple.hpp"
 #include "module.hpp"
 
 namespace cake
