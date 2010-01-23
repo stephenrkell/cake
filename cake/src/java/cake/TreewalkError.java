@@ -3,6 +3,7 @@ package cake;
 public class TreewalkError extends Exception
 {
 	org.antlr.runtime.tree.Tree t;
+    static final long serialVersionUID = 0;
 	String msg;
 	public TreewalkError(org.antlr.runtime.tree.Tree t, String msg)
 	{

@@ -2,18 +2,18 @@
 #include <iostream>
 #include <cassert>
 #include <cstring>
-#include <java/lang/Exception.h>
-#include <java/lang/System.h>
-#include <java/io/PrintStream.h>
-#include <org/antlr/runtime/tree/BaseTree.h>
-#include <org/antlr/runtime/tree/CommonTree.h>
-#include "cake.hpp"
+// #include <java/lang/Exception.h>
+// #include <java/lang/System.h>
+// #include <java/io/PrintStream.h>
+// #include <org/antlr/runtime/tree/BaseTree.h>
+// #include <org/antlr/runtime/tree/CommonTree.h>
+#include "request.hpp"
 #include "parser.hpp"
 #include "util.hpp"
-#include "treewalk_helpers.hpp"
-#undef EOF
-#include <org/antlr/runtime/CharStream.h>
-#include <org/antlr/runtime/IntStream.h>
+//#include "treewalk_helpers.hpp"
+//#undef EOF
+// #include <org/antlr/runtime/CharStream.h>
+// #include <org/antlr/runtime/IntStream.h>
 
 namespace cake
 {

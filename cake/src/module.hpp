@@ -1,20 +1,27 @@
-// note: this file is included by cake.hpp
+// note: this file is included by request.hpp
 
 #include <string>
 #include <map>
 #include <memory>
 #include <boost/shared_ptr.hpp>
+#include <boost/optional.hpp>
 #include <fstream>
 #include <fileno.hpp>
-#include <dwarf.h>
-#include <dwarfpp.h>
-#include <dwarfpp_simple.hpp>
+//#include <dwarf.h>
+#include <dwarfpp/lib.hpp>
+#include <dwarfpp/encap.hpp>
+#include "indenting_ostream.hpp"
+//#include <dwarfpp_simple.hpp>
 //#include <dwarfpp_util.hpp>
 //#include <boost/iostreams/concepts.hpp>    // input_filter
 //#include <boost/iostreams/operations.hpp>  // get()
 //#include <boost/iostreams/stream.hpp>
 //#include <boost/iostreams/stream_buffer.hpp>
 //#include <boost/iostreams/filtering_streambuf.hpp>
+
+using namespace dwarf::lib;
+
+namespace antlr { namespace tree { typedef ANTLR3_BASE_TREE Tree; } }
 
 namespace cake
 {
@@ -90,10 +97,10 @@ namespace cake
 		int fileno() { return ::fileno(this_ifstream);  }
 	};
 	
-	class elf_module : private ifstream_holder, public module, private dwarf::file
+	class elf_module : private ifstream_holder, public module, private dwarf::encap::file
 	{
-		dwarf::abi_information info;
-		dwarf::dieset& dies; // = info.get_dies();
+		//dwarf::encap::abi_information info;
+		dwarf::encap::dieset& dies; // = info.get_dies();
 		boost::shared_ptr<std::ifstream> input_stream;
 		
 		static const Dwarf_Off private_offsets_begin; 
@@ -107,33 +114,34 @@ namespace cake
 		//virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool internal_check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 
-		void debug_print_artificial_dies();
-		Dwarf_Off create_new_member(Dwarf_Off parent_off, std::string& name, antlr::tree::Tree *description);
-		boost::optional<Dwarf_Off> find_immediate_container(const definite_member_name& mn, 
-			Dwarf_Off context) const;
+		//void debug_print_artificial_dies();
+		//Dwarf_Off create_new_member(Dwarf_Off parent_off, std::string& name, antlr::tree::Tree *description);
+		//boost::optional<dwarf::encap::die&> find_immediate_container(const definite_member_name& mn, 
+		//	Dwarf_Off context) const;
 		Dwarf_Off ensure_non_toplevel_falsifier(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) const;
 		//virtual dwarf::encap::die::attribute_map default_subprogram_attributes();
-		boost::optional<Dwarf_Off> find_containing_cu(Dwarf_Off context);
-		Dwarf_Off follow_typedefs(Dwarf_Off off);
-		boost::optional<Dwarf_Off> find_nearest_containing_die_having_tag(Dwarf_Off context, Dwarf_Half tag);		
-		boost::optional<Dwarf_Off> find_nearest_type_named(Dwarf_Off context, const char *name);
-		Dwarf_Off create_new_die(const Dwarf_Off parent, const Dwarf_Half tag, 
-			const dwarf::encap::die::attribute_map& attrs, const dwarf::die_off_list& children);		
-		Dwarf_Off create_dwarf_type_from_value_description(antlr::tree::Tree *valueDescription, 
-			Dwarf_Off context, boost::optional<std::string> name);
-		void build_subprogram_die_children(antlr::tree::Tree *valueDescriptionExpr, Dwarf_Off subprogram_die_off);
+		//boost::optional<Dwarf_Off> find_containing_cu(Dwarf_Off context);
+		//Dwarf_Off follow_typedefs(Dwarf_Off off);
+		//boost::optional<Dwarf_Off> find_nearest_containing_die_having_tag(Dwarf_Off context, Dwarf_Half tag);		
+		//boost::optional<Dwarf_Off> find_nearest_type_named(Dwarf_Off context, const char *name);
+		//Dwarf_Off create_new_die(const Dwarf_Off parent, const Dwarf_Half tag, 
+		//	const dwarf::encap::die::attribute_map& attrs, 
+        //    const dwarf::encap::die_off_list& children);		
+		//Dwarf_Off create_dwarf_type_from_value_description(antlr::tree::Tree *valueDescription, 
+		//	Dwarf_Off context, boost::optional<std::string> name);
+		//void build_subprogram_die_children(antlr::tree::Tree *valueDescriptionExpr, Dwarf_Off subprogram_die_off);
 
-		virtual Dwarf_Unsigned make_default_dwarf_location_expression_for_arg(int argn);
-		Dwarf_Off ensure_dwarf_type(antlr::tree::Tree *description, 
-			Dwarf_Off context, boost::optional<std::string> name);
-		dwarf::die_off_list *find_dwarf_types_satisfying(antlr::tree::Tree *description,
-			dwarf::die_off_list& list_to_search);
-		bool dwarf_type_satisfies(antlr::tree::Tree *description, Dwarf_Off type_offset);
-		bool dwarf_subprogram_satisfies_description(Dwarf_Off subprogram_offset, antlr::tree::Tree *description);
-		bool dwarf_arguments_satisfy_description(Dwarf_Off subprogram_offset, antlr::tree::Tree *description);
-		bool dwarf_variable_satisfies_description(Dwarf_Off variable_offset, antlr::tree::Tree *description);
-		dwarf::die_off_list *find_dwarf_type_named(antlr::tree::Tree *ident, Dwarf_Off context);
-		boost::optional<std::string> type_name_from_value_description(antlr::tree::Tree *);
+		//virtual Dwarf_Unsigned make_default_dwarf_location_expression_for_arg(int argn);
+		//Dwarf_Off ensure_dwarf_type(antlr::tree::Tree *description, 
+		//	Dwarf_Off context, boost::optional<std::string> name);
+		//dwarf::encap::die_off_list *find_dwarf_types_satisfying(antlr::tree::Tree *description,
+		//	dwarf::encap::die_off_list& list_to_search);
+		//bool dwarf_type_satisfies(antlr::tree::Tree *description, Dwarf_Off type_offset);
+		//bool dwarf_subprogram_satisfies_description(Dwarf_Off subprogram_offset, antlr::tree::Tree *description);
+		//bool dwarf_arguments_satisfy_description(Dwarf_Off subprogram_offset, antlr::tree::Tree *description);
+		//bool dwarf_variable_satisfies_description(Dwarf_Off variable_offset, antlr::tree::Tree *description);
+		//dwarf::encap::die_off_list *find_dwarf_type_named(antlr::tree::Tree *ident, Dwarf_Off context);
+		//boost::optional<std::string> type_name_from_value_description(antlr::tree::Tree *);
 		
 		eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength);
 	
@@ -141,7 +149,7 @@ namespace cake
 			Dwarf_Off current_die);
 	
 	protected:
-		static const dwarf::die_off_list empty_child_list;
+		static const dwarf::encap::die_off_list empty_child_list;
 		static const dwarf::encap::die::attribute_map empty_attribute_map;
 		
 		static const dwarf::encap::die::attribute_map::value_type default_subprogram_attr_entries[];

@@ -3,15 +3,15 @@
 #include <cstring>
 #include <cassert>
 
-#include "cake.hpp"
+#include "request.hpp"
 #include "util.hpp"
 #include "main.hpp"
-
-#include <java/lang/System.h>
-#include <java/io/PrintStream.h>
-#include <org/antlr/runtime/tree/CommonTree.h>
-#undef EOF
-#include <org/antlr/runtime/Token.h>
+// 
+// #include <java/lang/System.h>
+// #include <java/io/PrintStream.h>
+// #include <org/antlr/runtime/tree/CommonTree.h>
+// #undef EOF
+// #include <org/antlr/runtime/Token.h>
 
 const struct option opts[] = {
 	{ "help", false, NULL, 'h' }
@@ -44,9 +44,9 @@ int main(int argc, char **argv)
 	
 	/* FIXME: this should automatically be added to the ELF .inits, rather than
 	 * embedded here. */
-	JvCreateJavaVM(NULL);
-	JvAttachCurrentThread(NULL, NULL);
-	JvInitClass(&java::lang::System::class$);
+//	JvCreateJavaVM(NULL);
+//	JvAttachCurrentThread(NULL, NULL);
+//	JvInitClass(&java::lang::System::class$);
 	
 	const char *cakefile = argv[optind];
 	if (cakefile == NULL) 
@@ -61,12 +61,13 @@ int main(int argc, char **argv)
 			cake::request req(cakefile);
 			return req.process();
 		}
-		catch (cake::TreewalkError *e)
+		catch (cake::TreewalkError e)
 		{
 // 			/* Let's hope the node is from a CommonTree */
 // 			org::antlr::runtime::tree::CommonTree *ct = 
 // 				jcast<org::antlr::runtime::tree::CommonTree *>(e->t);
-			std::cerr 	<< jtocstring_safe(e->toString()) << std::endl;
+			//std::cerr 	<< jtocstring_safe(e->toString()) << std::endl;
+            std::cerr << e.message();
 // 			//"Semantic error";
 // 			if (ct != 0)
 // 			{
@@ -80,9 +81,11 @@ int main(int argc, char **argv)
 // 			std::cerr	<< std::endl;
 // 			return 1;
 		}
-		catch (java::lang::Exception *e)
+		//catch (java::lang::Exception *e)
+        catch (std::string s)
 		{
-			java::lang::System::err->print(e->toString());
+			//java::lang::System::err->print(e->toString());
+            std::cerr << s;
 			return 1;
 		}				
 	}

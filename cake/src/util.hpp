@@ -1,12 +1,14 @@
-#include <gcj/cni.h>
+//#include <gcj/cni.h>
 #include <boost/static_assert.hpp>
 #include <boost/type_traits/is_pointer.hpp>
 #include <boost/type_traits/remove_pointer.hpp>
-#include <java/lang/ClassCastException.h>
-#include <java/lang/String.h>
+//#include <java/lang/ClassCastException.h>
+//#include <java/lang/String.h>
 #include <string>
 #include <vector>
 #include <sstream>
+
+#include <dwarfpp/encap.hpp>
 
 namespace cake
 {
@@ -22,7 +24,7 @@ namespace cake
 	extern std::string solib_constructor;
 
 	//typedef std::vector<std::string> definite_member_name;
-	class definite_member_name : public dwarf::pathname
+	class definite_member_name : public dwarf::encap::pathname
 	{
 		typedef std::allocator<std::string> A;
 	public:
@@ -41,44 +43,44 @@ namespace cake
 	std::ostream& operator<<(std::ostream&, const definite_member_name&);
 	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName);
 
-	inline const char *jtocstring(java::lang::String *s)	
-	{
-		static char *buf;
-		static jsize buf_len;
-		jsize string_len = JvGetStringUTFLength(s);
-
-		if (buf == 0 || string_len >= buf_len)
-		{
-			if (buf != 0) delete[] buf;
-			buf_len = string_len + 1;
-			buf = new char[buf_len];
-		}
-		JvGetStringUTFRegion(s, 0, string_len, buf);
-		buf[string_len] = '\0';
-		return buf;
-	}
-
-	inline const char *jtocstring_safe(java::lang::String *s)
-	{
-		if (s == 0) return "(null)";
-		return jtocstring(s);
-	}
-	
-	/* Gratefully stolen from Waba
-	 * http://www.waba.be/page/java-integration-through-cni-1.xhtml */
-
-	template<class T>
-	inline T jcast (java::lang::Object *o)
-	{  
-        	BOOST_STATIC_ASSERT ((::boost::is_pointer<T>::value));
-			if (o == 0) return 0;
-        	if (::boost::remove_pointer<T>::type::class$.isAssignableFrom (o->getClass ()))
-                	return reinterpret_cast<T>(o);
-        	else
-                	throw new java::lang::ClassCastException;
-	}
-	
-	template<class T, size_t s> size_t array_len(T (&arg)[s]) { return s; }
+// 	inline const char *jtocstring(java::lang::String *s)	
+// 	{
+// 		static char *buf;
+// 		static jsize buf_len;
+// 		jsize string_len = JvGetStringUTFLength(s);
+// 
+// 		if (buf == 0 || string_len >= buf_len)
+// 		{
+// 			if (buf != 0) delete[] buf;
+// 			buf_len = string_len + 1;
+// 			buf = new char[buf_len];
+// 		}
+// 		JvGetStringUTFRegion(s, 0, string_len, buf);
+// 		buf[string_len] = '\0';
+// 		return buf;
+// 	}
+// 
+// 	inline const char *jtocstring_safe(java::lang::String *s)
+// 	{
+// 		if (s == 0) return "(null)";
+// 		return jtocstring(s);
+// 	}
+// 	
+// 	/* Gratefully stolen from Waba
+// 	 * http://www.waba.be/page/java-integration-through-cni-1.xhtml */
+// 
+// 	template<class T>
+// 	inline T jcast (java::lang::Object *o)
+// 	{  
+//         	BOOST_STATIC_ASSERT ((::boost::is_pointer<T>::value));
+// 			if (o == 0) return 0;
+//         	if (::boost::remove_pointer<T>::type::class$.isAssignableFrom (o->getClass ()))
+//                 	return reinterpret_cast<T>(o);
+//         	else
+//                 	throw new java::lang::ClassCastException;
+// 	}
+// 	
+// 	template<class T, size_t s> size_t array_len(T (&arg)[s]) { return s; }
 	
 	/* copy_if should be in the standard algorithms, but it isn't. */
 	template<class In, class Out, class Pred>

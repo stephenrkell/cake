@@ -1,20 +1,24 @@
 CFLAGS ?=
 CFLAGS += -I$(HOME)/opt/include
+CFLAGS += -I.
+
+GRAMMAR_BASENAME := cake
 
 INCS := $(wildcard *.inc)
 
-#CLASSPATH ?= ../antlr-3.1.2.jar:.:
-CLASSPATH ?= $(wildcard ../antlr-runtime-*.jar):.:
+.PHONY: default
+#default: java-all 
+default: cakeCLexer.o cakeCParser.o
+
+#cakeCLexer.c cakeCParser.c 
+#cakeJavaLexer.class cakeJavaParser.class 
+#cakeJavaLexer.h cakeJavaParser.h
+
+#JAVA_SRC := cake/cakeJavaLexer.java cake/cakeJavaParser.java cake/CakeParserHelper.java
+#GCJFLAGS := -findirect-dispatch -fPIC -g -Wno-unused -Wno-dead-code --classpath=$(CLASSPATH)
+#include ../Makerules.java.mk
 
 ANTLR ?= java -classpath $(CLASSPATH) org.antlr.Tool
-
-GCJ ?= gcj --classpath=$(CLASSPATH)
-GCJFLAGS := -fPIC -g --classpath=$(CLASSPATH)
-
-.PHONY: default
-default: cakeCLexer.c cakeCParser.c cakeJavaLexer.java cakeJavaParser.java cakeJavaLexer.class cakeJavaParser.class cakeJavaLexer.o cakeJavaParser.o cakeJavaLexer.h cakeJavaParser.h
-	touch stamp
-# cakePyLexer.py cakePyParser.py 
 
 #cake.tokens: Makefile
 ## create a simple ASCII (32--127) token vocabulary for single-character tokens
@@ -37,6 +41,7 @@ test: cakePyParser.py
 	
 %CLexer.c %CParser.c: %C.g 
 	$(ANTLR) "$<"
+	mkdir -p include && mv %CLexer.h %CParser.h include/
 
 %Cpp.g: %.g.m4 $(INCS)
 	m4 -Dantlr_m4_include_file=antlr-m4-cpp.inc "$<" > "$@"
@@ -45,29 +50,20 @@ test: cakePyParser.py
 	$(ANTLR) "$<"
 
 %Java.g: %.g.m4 $(INCS)
-	m4 -Dantlr_m4_include_file=antlr-m4-java.inc "$<" > "$@"
-	
-%JavaLexer.java %JavaParser.java: %Java.g
-	$(ANTLR) "$<"
+	m4 -Dantlr_m4_include_file=antlr-m4-java.inc -Dantlr_m4_java_package=$$(echo "$<" | sed 's/\.g\.m4$$//') "$<" > "$@"
 
-%.class: %.java
-	$(GCJ) -MD -C -Wno-unused "$<"
+# HACK: we have to use this GRAMMAR_BASENAME thing because make has
+# no way of expressing <pattern>/<the-same-pattern>blah.foo
+$(GRAMMAR_BASENAME)/%JavaLexer.java $(GRAMMAR_BASENAME)/%JavaParser.java: %Java.g
+	$(ANTLR) "$<" -o "$(GRAMMAR_BASENAME)"
 
 %.o: %.c
-	gcc -o "$@" -c $(CFLAGS) "$<"
+	gcc $(CFLAGS) -o "$@" -c "$<"
 
-%.o: %.class
-	$(GCJ) $(GCJFLAGS) -MD -Wno-unused -c -o "$@" "$<"
-# HACK: also make nested classes' object files, because we can't enumerate these statically for Makefile purposes
-	for classfile in "$*"\$$*.class; do \
-		if [[ $$classfile != "$*"\$$"*".class ]]; then \
-			$(GCJ) $(GCJFLAGS) -o $$( echo "$$classfile" | sed 's/class$$/o/') -MD -Wno-unused -c "$$classfile"; \
-		fi; \
-	done
+#.PHONY: headers
+#%.h: %.class
+#	gcjh -force -d . -classpath .:$(CLASSPATH) $**.class
 
-.PHONY: headers
-%.h: %.class
-	gcjh -force -d . -classpath .:$(CLASSPATH) $**.class
-
-clean:
-	rm -f *.class *.h *.o *.pyc *.d *{Py,Java,Cpp,C}.g *{Parser,Lexer}.* cake.tokens
+clean::
+	rm -f *.class *.h *.o *.a *.pyc *.d *{Py,Java,Cpp,C}.g 
+	rm -f $(GRAMMAR_BASENAME)/*{Parser,Lexer}.java $(GRAMMAR_BASENAME)/*.tokens

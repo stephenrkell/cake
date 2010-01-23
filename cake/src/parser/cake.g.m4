@@ -3,12 +3,22 @@ grammar antlr_m4_make_grammar_name(cake,antlr_m4_grammar_name_suffix);
 options {
     output=AST;
     language=antlr_m4_language;
-    ASTLabelType=CommonTree; // type of $statement.tree ref etc...
+    antlr_m4_extra_options
 }
+
 tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; 
 VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; 
 OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; MEMBERSHIP_CLAIM; VALUE_DESCRIPTION; DWARF_BASE_TYPE; 
 DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; ANY_VALUE; }
+
+
+@header {
+antlr_m4_header
+}
+@lexer::header {
+antlr_m4_header
+}
+
 /* The whole input */
 toplevel:   declaration* //-> ^( TOPLEVEL<ToplevelNode> declaration* )
 			/*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
@@ -120,9 +130,9 @@ constantSetExpression	: '{' ( IDENT ( ',' IDENT* )* )? '}' -> ^( SET_CONST IDENT
 						;
 
 primitiveOrFunctionValueDescription	: 
-	(primitiveValueDescription LR_SINGLE_ARROW)=> 
-    	primitiveValueDescription LR_SINGLE_ARROW primitiveOrFunctionValueDescription 
-			-> ^(LR_SINGLE_ARROW primitiveValueDescription ^( primitiveOrFunctionValueDescription ) )
+	(primitiveValueDescription FUNCTION_ARROW)=> 
+    	primitiveValueDescription FUNCTION_ARROW primitiveOrFunctionValueDescription 
+			-> ^(FUNCTION_ARROW primitiveValueDescription ^( primitiveOrFunctionValueDescription ) )
 	| primitiveValueDescription
 	; 
 							                            
@@ -180,9 +190,9 @@ constantShiftingExpression	: primitiveIntegerArithmeticExpression ( ( SHIFT_LEFT
 					;
                            
 functionValueDescription	: 
-	(functionArgumentDescriptionExpr LR_SINGLE_ARROW)=> 
-    	functionArgumentDescriptionExpr LR_SINGLE_ARROW functionResultDescriptionExpr
-        	-> ^(LR_SINGLE_ARROW functionArgumentDescriptionExpr functionResultDescriptionExpr )
+	(functionArgumentDescriptionExpr FUNCTION_ARROW)=> 
+    	functionArgumentDescriptionExpr FUNCTION_ARROW functionResultDescriptionExpr
+        	-> ^(FUNCTION_ARROW functionArgumentDescriptionExpr functionResultDescriptionExpr )
 	| valueDescriptionExpr^ 
 							;
 
@@ -309,7 +319,7 @@ additiveOperatorExpression 	: multiplicativeOperatorExpression ( ( PLUS^ | MINUS
 shiftingExpression	: additiveOperatorExpression ( (SHIFT_LEFT^ | SHIFT_RIGHT^ )  additiveOperatorExpression )*
 					;
                     
-magnitudeComparisonExpression 	: shiftingExpression ( ( LT^ | GT^ | LE^ | GE^ ) shiftingExpression )?
+magnitudeComparisonExpression 	: shiftingExpression ( ( LESS^ | GREATER^ | LE^ | GE^ ) shiftingExpression )?
 								;
                                 
 equalityComparisonExpression	: magnitudeComparisonExpression ( ( EQ^ | NEQ^ ) magnitudeComparisonExpression )*
@@ -447,7 +457,7 @@ KEYWORD_OPAQUE : 'opaque';
 KEYWORD_IGNORED : 'ignored';
 KEYWORD_VOID : 'void';
 KEYWORD_NULL : 'null';
-LR_SINGLE_ARROW : '->';
+FUNCTION_ARROW : '=>';
 KEYWORD_BASE : 'base' ;
 KEYWORD_OBJECT : 'object';
 KEYWORD_PTR : 'ptr';
@@ -501,8 +511,8 @@ MULTIPLY : '*';
 DIVIDE : '/';
 //PERCENT : '%';
 MODULO : '%';
-LT : '<';
-GT : '>';
+LESS : '<';
+GREATER : '>';
 //CARET : '^';
 BITWISE_XOR : '^';
 //BAR : '|';
@@ -515,7 +525,7 @@ WS  :   (' '|'\t')+ {antlr_m4_skip_action} ;
 LINECOMMENT : '/' '/'( ~ '\n' )* {antlr_m4_skip_action} ;
 BLOCKCOMMENT : '/' '*' ( ~ '/' | ( ~ '*' ) '/' )* '*' '/' {antlr_m4_skip_action} ;
 STRING_LIT : '\"' ( ~'\"'|'\\\"' )* '\"' ;
-IDENT  :   ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9'|'\\'.) /* begin with a-zA-Z or non-terminal '_' */
+IDENT  :   ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9'|'\\'.) /* begin with a-zA-Z or non-terminating '_' */
 (
 	('a'..'z'|'A'..'Z'|'0'..'9'|'\\'.|'_'|'-'|'.'/*'0'..'9'*/)*('a'..'z'|'A'..'Z'|'0'..'9'|'\\'.|'_')
    /*|('.''0'..'9') /* ending with dot-digit is okay */

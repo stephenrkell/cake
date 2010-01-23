@@ -1,117 +1,95 @@
-# FIXME: for this to build, you must copy or symlink the following JAR files into
-# the directory containing this Makefile.
-#
-# antlr-runtime-3.1.jar
-# stringtemplate-3.2.jar
-# junit-3.8.2.jar
-
 EXTRA_DEBUG_OPTS := -fno-eliminate-unused-debug-symbols -fno-eliminate-unused-debug-types
 
-JAVA_OBJS := java_glue/cake/SemanticError.o java_glue/cake/InternalError.o java_glue/cake/TreewalkError.o java_glue/cake/CloneableTree.o
-CAKE_SRC := main.cpp cppcatch.cpp javacatch.cpp cake.cpp alias.cpp util.cpp module.cpp exists.cpp derive.cpp link.cpp supplementary.cpp
-OBJS := $(JAVA_OBJS) $(patsubst %.cpp,%.o,$(CAKE_SRC))
+JAVA_OBJS := $(patsubst %.java,%.o,$(shell find java -name '*.java'))
+
+SRC := $(wildcard *.cpp) #$(wildcard *.hpp)
+# main.cpp cppcatch.cpp javacatch.cpp cake.cpp alias.cpp util.cpp module.cpp exists.cpp derive.cpp link.cpp supplementary.cpp
+
+OBJS := $(JAVA_OBJS) 
+OBJS += $(patsubst %.cpp,%.o,$(SRC)) 
+OBJS += parser/parser.a 
+#OBJS += antlr-runtime.jar.so stringtemplate.jar.so
+$(warning OBJS is $(OBJS))
+
 LIBS := -lsrk31c++ -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
-INCLUDES += -Iparser -Igcjh_generated -I../../dwarf/libdwarfpp -I../../libsrk31c++ -I$(HOME)/opt/include -I../../c++-fileno/include
-HDRS :=
-HDRS += $(wildcard *.hpp) $(wildcard ../../dwarf/libdwarfpp/*.hpp)
+
+INCLUDES += -Iparser/include -Iinclude -Ijava/include
+INCLUDES += -I../../dwarf/libdwarfpp/include -I../../libsrk31c++ -I../../c++-fileno/include
+INCLUDES += -I$(HOME)/opt/include 
+
+CLASSPATH := ./java:$(CLASSPATH)
+$(warning CLASSPATH is $(CLASSPATH))
+
 CXXFLAGS += $(EXTRA_DEBUG_OPTS) -fPIC -g3 $(INCLUDES) -Wall #-D_STREAM_COMPAT
-CLASSPATH := .:$(shell ( echo ./java_glue; ls -1 *.jar ) | while read line; do readlink -f "$$line"; done | tr '\n' ':' | sed 's/:+$$/:/' )
-GCJFLAGS += $(EXTRA_DEBUG_OPTS) -g3 -classpath $(CLASSPATH) -fPIC -Wall
-DWARFPP_PATH ?= ../../dwarf/libdwarfpp
+GCJFLAGS += $(EXTRA_DEBUG_OPTS) -findirect-dispatch -fno-indirect-classes -fPIC -g3 --classpath=$(CLASSPATH) -Wall 
+
+DWARFPP_PATH ?= ../../dwarf/libdwarfpp/src
 LIBPATHS += -L$(DWARFPP_PATH) -L$(HOME)/opt/lib -L../../c++-fileno/lib -L../../libsrk31c++
+
 CAKE_VERSION := 0.0$(shell hg log --template '{date|isodate}\n' $(CAKE_SRC) | head -n1 | sed 's/+.*//' | tr -cd '[:digit:]' )#$(shell if [[ -n $$( hg status $(patsubst %,cake/src/%,$(CAKE_SRC))) ]]; then echo "+local"; fi )
 $(warning Generated Cake version macro $(CAKE_VERSION))
+
 CFLAGS += -DCAKE_VERSION=\"$(CAKE_VERSION)\"
 CXXFLAGS += -DCAKE_VERSION=\"$(CAKE_VERSION)\"
 
-CLASSES := 	org.antlr.runtime.Lexer \
-		org.antlr.runtime.Parser \
-		org.antlr.runtime.BaseRecognizer \
-		org.antlr.runtime.ANTLRInputStream \
-		org.antlr.runtime.CommonTokenStream \
-		org.antlr.runtime.TokenStream \
-		org.antlr.runtime.ANTLRReaderStream \
-		org.antlr.runtime.ANTLRStringStream \
-		org.antlr.runtime.CharStream \
-		org.antlr.runtime.IntStream \
-		org.antlr.runtime.ParserRuleReturnScope \
-		org.antlr.runtime.RuleReturnScope \
-		org.antlr.runtime.tree.CommonTree \
-		org.antlr.runtime.tree.BaseTree \
-		org.antlr.runtime.tree.Tree \
-		org.antlr.runtime.CommonToken \
-		org.antlr.runtime.Token \
-		org.antlr.runtime.ClassicToken \
-		cake.SemanticError \
-		cake.InternalError \
-		cake.TreewalkError \
-		cake.CloneableTree \
-		cakeJavaParser \
-		cakeJavaLexer
-
+#CLASSES := 	org.antlr.runtime.Lexer \
+#		org.antlr.runtime.Parser \
+#		org.antlr.runtime.BaseRecognizer \
+#		org.antlr.runtime.ANTLRInputStream \
+#		org.antlr.runtime.CommonTokenStream \
+#		org.antlr.runtime.TokenStream \
+#		org.antlr.runtime.ANTLRReaderStream \
+#		org.antlr.runtime.ANTLRStringStream \
+#		org.antlr.runtime.CharStream \
+#		org.antlr.runtime.IntStream \
+#		org.antlr.runtime.ParserRuleReturnScope \
+#		org.antlr.runtime.RuleReturnScope \
+#		org.antlr.runtime.tree.CommonTree \
+#		org.antlr.runtime.tree.BaseTree \
+#		org.antlr.runtime.tree.Tree \
+#		org.antlr.runtime.CommonToken \
+#		org.antlr.runtime.Token \
+#		org.antlr.runtime.ClassicToken 
+		
 .PHONY: default
 default: cake
 
-java_glue/%.o: 
-	$(MAKE) -C java_glue CLASSPATH=$(shell pwd)/$(wildcard antlr-runtime-3*.jar):.:
-
-#cake.o:: treewalk_helpers.hpp cake.hpp parser.hpp util.hpp
+java: 
+	$(MAKE) -C java && touch java
 
 # cancel builtin implicit rule
 %.o: %.cpp
-
 # new implicit rule for compiling C++
-%.o: %.cpp  $(HDRS) parser-recursive.stamp gcjh_generated
+%.o: %.cpp  $(HDRS) 
 	g++ -c -o "$@" ${CXXFLAGS} "$<"
 
-#main.o: main.cpp 
-#	g++ -c -o "$@" ${CXXFLAGS} "$<"
+# cancel builtin implicit rule
+%: %.o
 
-cake: $(OBJS) antlr.jar.so stringtemplate-3.2.jar.so $(wildcard antlr-runtime-3*.jar).so junit-3.8.2.jar.so $(DWARFPP_PATH)/libdwarfpp.a
-	gcj $(GCJFLAGS) $(LIBPATHS) -Wl,-R. -o "$@" $(OBJS) $(LIBS) -lstdc++ parser/cakeJava{Parser,Lexer}*.o  $(wildcard antlr-runtime-3*.jar).so junit-3.8.2.jar.so antlr.jar.so stringtemplate-3.2.jar.so 
+$(warning OBJS is $(OBJS))
+cake: parser include $(OBJS) $(DWARFPP_PATH)/libdwarfpp.a # dependency only
+	gcj $(GCJFLAGS) $(LIBPATHS) -Wl,-R. $(OBJS) $(LIBS) -lstdc++ -o "$@" 
 
-# FIXME: to build, change the following .jar paths
+#antlr-runtime.jar.so: antlr-runtime-3*.jar 
+#	gcj -shared -o "$@" "$<"
 
-#.PHONY: antlr-headers
-#gcjh_generated: java_glue-recursive.stamp parser-recursive.stamp
-gcjh_generated: Makefile $(wildcard java_glue/*.class) $(wildcard parser/*.class)
-	gcjh -force -d gcjh_generated -classpath ./parser:$(CLASSPATH) $(CLASSES)
+#antlr-runtime-direct.jar.so: antlr-runtime-3*.jar 
+#	gcj $(GCJFLAGS) -shared  -o "$@" "$<"
+
+#stringtemplate.jar.so: stringtemplate-*.jar
+#	gcj $(GCJFLAGS) -shared -o "$@" "$<"
+
+
+JAVA_SRC := 
+CLASSFILES := $(CLASSES)
+include:: Makefile # our list of classes is in this file, so add a dependency
+include Makerules.java.mk
 		
-#antlr-headers.stamp: antlr-headers
-#	touch antlr-headers.stamp
-
-stringtemplate-3.2.jar.so: stringtemplate-3.2.jar
-	gcj $(EXTRA_DEBUG_OPTS) -g3 -classpath /usr/share/java/antlr.jar:./$(wildcard junit-*.jar): -fPIC -Wall -shared -Wl,-Bsymbolic "$<" /usr/lib/gcj/antlr.jar.so  -o "$@"
-
-antlr.jar.so: /usr/share/java/antlr.jar
-	gcj $(EXTRA_DEBUG_OPTS) -g3 -classpath /usr/share/java/antlr.jar:./$(wildcard junit-*.jar): -fPIC -Wall -shared -Wl,-Bsymbolic "$<" /usr/lib/gcj/antlr.jar.so  -o "$@"
-
-
-%.jar.so: %.jar
-	gcj $(GCJFLAGS) -shared -Wl,-Bsymbolic "$<" -o "$@"
-
-#java-headers:
-#	gcjh -d gcjh_generated -classpath .:$(CLASSPATH) java.io.File java.io.FileInputStream
-	
-parser-recursive.stamp: parser/stamp
-	touch parser-recursive.stamp
-
-parser/stamp:
-	$(MAKE) -C parser CLASSPATH=$(CLASSPATH)
-	touch parser/stamp
-
-java_glue-recursive.stamp: java_glue/stamp
-	touch java_glue-recursive.stamp
-	
-java_glue/stamp:
-	$(MAKE) -C java_glue CLASSPATH=$(CLASSPATH)
-	touch java_glue/stamp
-
-# FIXME: this rule doesn't work (doesn't do anything). Find out why!
-#java_glue/%.o: java_glue-recursive.stamp
+%.jar.so: %-*.jar.so
+	cp "$<" "$@"
 
 .PHONY: clean
-clean:
+clean::
 	rm -rf gcjh_generated
 	rm -f cake *.o *.so
 	$(MAKE) -C parser clean

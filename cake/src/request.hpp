@@ -1,35 +1,40 @@
-#include <java/lang/System.h>
-#include <java/io/File.h>
-#include <java/io/FileInputStream.h>
-#include <org/antlr/runtime/ANTLRInputStream.h>
-#include <org/antlr/runtime/ANTLRStringStream.h>
-#include <org/antlr/runtime/CommonTokenStream.h>
-#include <org/antlr/runtime/TokenStream.h>
-#include <org/antlr/runtime/tree/Tree.h>
-#include <org/antlr/runtime/tree/CommonTree.h>
-#include <cake/CloneableTree.h>
-#include <org/antlr/runtime/CommonToken.h>
+// #include <java/lang/System.h>
+// #include <java/io/File.h>
+// #include <java/io/FileInputStream.h>
+// #include <org/antlr/runtime/ANTLRInputStream.h>
+// #include <org/antlr/runtime/ANTLRStringStream.h>
+// #include <org/antlr/runtime/CommonTokenStream.h>
+// #include <org/antlr/runtime/TokenStream.h>
+// #include <org/antlr/runtime/tree/Tree.h>
+// #include <org/antlr/runtime/tree/CommonTree.h>
+// #include <cake/CloneableTree.h>
+// #include <org/antlr/runtime/CommonToken.h>
 /*
 #undef EOF
 #include "cakeJavaLexer.h"
 #include "cakeJavaParser.h"
 */
-class cakeJavaLexer;
-class cakeJavaParser;
-#include "cake/SemanticError.h"
-#include "cake/InternalError.h"
+//namespace cake { class cakeJavaLexer; }
+//namespace cake { class cakeJavaParser; }
+// #include "cake/SemanticError.h"
+// #include "cake/InternalError.h"
 #include <vector>
 #include <map>
 #include <memory>
 #include <boost/shared_ptr.hpp>
+#include <fstream>
 
 // our headers are too lazy to use the fully-qualified antlr namespace
-namespace antlr = ::org::antlr::runtime;
+//namespace antlr = ::org::antlr::runtime;
 //#include "dwarfpp_simple.hpp"
-#include "module.hpp"
+#include "parser.hpp"
+//#include "module.hpp"
+
+//namespace antlr { typedef ANTLRInputStream
 
 namespace cake
 {
+	class module;
 	class request
 	{
 		friend class derivation;
@@ -38,18 +43,24 @@ namespace cake
 		friend class make_exec_derivation;
 		
 		/* Source file */
-		jstring in_filename;
-		java::io::File *in_fileobj;
-		java::io::FileInputStream *in_file;
+		//jstring in_filename;
+		//java::io::File *in_fileobj;
+		//java::io::FileInputStream *in_file;
+        char *in_filename;
+        pANTLR3_INPUT_STREAM/*std::ifstream*/ /*ANTLR3_FDSC*/ in_fileobj;
 
 		/* Parsing apparatus */		
-		antlr::ANTLRInputStream *stream;
-		cakeJavaLexer *lexer;
-		antlr::CommonTokenStream *tokenStream;
-		cakeJavaParser *parser;
+		//antlr::ANTLRInputStream *stream;
+        //antlr::ANTLRInputStream *stream;
+		//cakeJavaLexer *lexer;
+        cakeCLexer *lexer;
+		//antlr::CommonTokenStream *tokenStream;
+        antlr::CommonTokenStream *tokenStream;
+		//cakeJavaParser *parser;
+        cakeCParser *parser;
 		
 		/* AST */
-		antlr::tree::CommonTree *ast;
+		antlr::tree::Tree *ast;
 		
 		/* AST traversal */		
 		void depthFirst(antlr::tree::Tree *t);
@@ -91,7 +102,7 @@ namespace cake
 		
 					
 	public:
-		request(const char *filename);
+		request(char *filename);
 		int process();
 		
 		//static void print_abi_info(dwarf::abi_information& info, std::string& unescaped_filename);

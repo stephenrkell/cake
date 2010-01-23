@@ -1,17 +1,18 @@
-#include <gcj/cni.h>
-#include <org/antlr/runtime/tree/Tree.h>
-#include <org/antlr/runtime/tree/CommonTree.h>
-#include <cakeJavaLexer.h>
-#include <cakeJavaParser.h>
-#include <cake/SemanticError.h>
+// #include <gcj/cni.h>
+// #include <org/antlr/runtime/tree/Tree.h>
+// #include <org/antlr/runtime/tree/CommonTree.h>
+// #include <cake/cakeJavaLexer.h>
+// #include <cake/cakeJavaParser.h>
+// #include <cake/SemanticError.h>
 #include <fstream>
 #include <vector>
 #include <map>
-#include "cake.hpp"
+#include "request.hpp"
 #include "util.hpp"
-#include "dwarfpp.h"
-#include "dwarfpp_simple.hpp"
-#include "treewalk_helpers.hpp"
+#include "module.hpp"
+#include <dwarfpp/encap.hpp>
+//#include "dwarfpp_simple.hpp"
+//#include "treewalk_helpers.hpp"
 //#include <fileno.hpp>
 #include <stdio.h>
 #include <ext/stdio_filebuf.h>
@@ -33,21 +34,21 @@ namespace cake
 			/* with children of objectSpec */
 			{
 				INIT;
-				switch (objectSpec->getType())
+				switch (objectSpec->getType(objectSpec))
 				{
-					case cakeJavaParser::OBJECT_SPEC_DIRECT: {
+					case OBJECT_SPEC_DIRECT: {
 						BIND3(objectSpec, objectConstructor, OBJECT_CONSTRUCTOR);
 						BIND3(objectSpec, id, IDENT);
 						std::pair<std::string, std::string> ocStrings =
 							read_object_constructor(objectConstructor);
-						std::string ident(CCP(id->getText()));							
+						std::string ident(CCP(id->getText(id)));							
 						add_exists(ocStrings.first,
 							ocStrings.second,
 							ident);
 						// now process the claim group
 						module_tbl[ident]->process_exists_claims(existsBody);
 						} break;
-					case cakeJavaParser::OBJECT_SPEC_DERIVING: {
+					case OBJECT_SPEC_DERIVING: {
 						BIND3(objectSpec, existingObjectConstructor, OBJECT_CONSTRUCTOR);
 						BIND3(objectSpec, derivedObjectConstructor, OBJECT_CONSTRUCTOR);
 						std::pair<std::string, std::string> eocStrings =

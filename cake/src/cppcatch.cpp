@@ -1,5 +1,5 @@
-namespace org { namespace antlr { namespace runtime { namespace tree { class Tree; } } } }
-namespace antlr = org::antlr::runtime;
+//namespace org { namespace antlr { namespace runtime { namespace tree { class Tree; } } } }
+//namespace antlr = org::antlr::runtime;
 
 #include "module.hpp"
 #include "indenting_ostream.hpp"

@@ -1,15 +1,16 @@
-#include <gcj/cni.h>
-#include <org/antlr/runtime/tree/Tree.h>
-#include <org/antlr/runtime/tree/CommonTree.h>
-#include <cakeJavaLexer.h>
-#include <cakeJavaParser.h>
-#include <cake/SemanticError.h>
+//#include <gcj/cni.h>
+// #include <org/antlr/runtime/tree/Tree.h>
+// #include <org/antlr/runtime/tree/CommonTree.h>
+// #include <cake/cakeJavaLexer.h>
+// #include <cake/cakeJavaParser.h>
+// #include <cake/SemanticError.h>
 #include <iostream>
 #include <vector>
 #include <map>
-#include "cake.hpp"
+#include "request.hpp"
 #include "util.hpp"
-#include "treewalk_helpers.hpp"
+//#include "treewalk_helpers.hpp"
+#include "parser.hpp"
 
 namespace cake
 {
