@@ -4,13 +4,53 @@
 // #include <cake/cakeJavaLexer.h>
 // #include <cake/cakeJavaParser.h>
 // #include <cake/SemanticError.h>
-// #include <iostream>
-// #include <vector>
-// #include <map>
+ #include <iostream>
+ #include <vector>
+ #include <map>
+
 #include "request.hpp"
+#include "parser.hpp"
 
 namespace cake
 {
+	link_derivation::link_derivation(cake::request& r, antlr::tree::Tree *t) 
+     : 	derivation(r, t)
+    {
+    	assert(GET_TYPE(t) == CAKE_TOKEN(KEYWORD_LINK));
+        INIT;
+        BIND3(t, identList, IDENT_LIST);
+        BIND3(t, linkRefinement, PAIRWISE_BLOCK_LIST);
+        
+        {
+        	INIT;
+            std::cerr << "Link expression at " << t << " links modules: ";
+            FOR_ALL_CHILDREN(identList)
+            {
+            	std::cerr << GET_TEXT(n) << " ";
+            }
+            std::cerr << std::endl;
+        }
+        
+        {
+        	INIT;
+            std::cerr << "Link expression at " << t << " has pairwise blocks as follows: ";
+            FOR_ALL_CHILDREN(linkRefinement)
+            {
+            	INIT;
+            	BIND3(n, arrow, LR_DOUBLE_ARROW);
+                std::cerr << GET_TEXT(GET_CHILD(arrow, 0)) 
+                		<< " <--> "
+                        << GET_TEXT(GET_CHILD(arrow, 1));
+            }
+			std::cerr << std::endl;
+        }
+    }
+
+	void link_derivation::extract_definition()
+    {
+    
+	}
+
 	void link_derivation::write_makerules(std::ostream& out)
 	{
 		extract_event_correspondences();

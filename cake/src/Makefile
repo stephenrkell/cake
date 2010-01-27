@@ -3,15 +3,18 @@ EXTRA_DEBUG_OPTS := -fno-eliminate-unused-debug-symbols -fno-eliminate-unused-de
 JAVA_OBJS := $(patsubst %.java,%.o,$(shell find java -name '*.java'))
 
 SRC := $(wildcard *.cpp) #$(wildcard *.hpp)
+DEPS := $(patsubst %.cpp,.%.d,$(SRC))
 # main.cpp cppcatch.cpp javacatch.cpp cake.cpp alias.cpp util.cpp module.cpp exists.cpp derive.cpp link.cpp supplementary.cpp
 
-OBJS := $(JAVA_OBJS) 
+#OBJS := $(JAVA_OBJS) 
+OBJS :=
 OBJS += $(patsubst %.cpp,%.o,$(SRC)) 
-OBJS += parser/parser.a 
+#OBJS += parser/parser.a 
 #OBJS += antlr-runtime.jar.so stringtemplate.jar.so
+#OBJS += parser/cakeCLexer.o parser/cakeCParser.o
 $(warning OBJS is $(OBJS))
 
-LIBS := -lsrk31c++ -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
+LIBS := -lboost_system -lantlr3c -lsrk31c++ -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
 
 INCLUDES += -Iparser/include -Iinclude -Ijava/include
 INCLUDES += -I../../dwarf/libdwarfpp/include -I../../libsrk31c++ -I../../c++-fileno/include
@@ -54,11 +57,22 @@ CXXFLAGS += -DCAKE_VERSION=\"$(CAKE_VERSION)\"
 .PHONY: default
 default: cake
 
-java: 
-	$(MAKE) -C java && touch java
+java: java/stamp
+java/stamp: 
+	$(MAKE) -C java
+
+#parser: parser/stamp
+parser: parser-recursive
+.PHONY: parser-recursive
+parser-recursive: 
+	$(MAKE) -C parser
 
 # cancel builtin implicit rule
 %.o: %.cpp
+
+$(DEPS): .%.d : %.cpp
+	g++ -MM $(CXXFLAGS) "$<"  > "$@"
+include $(DEPS)
 # new implicit rule for compiling C++
 %.o: %.cpp  $(HDRS) 
 	g++ -c -o "$@" ${CXXFLAGS} "$<"
@@ -67,8 +81,8 @@ java:
 %: %.o
 
 $(warning OBJS is $(OBJS))
-cake: parser include $(OBJS) $(DWARFPP_PATH)/libdwarfpp.a # dependency only
-	gcj $(GCJFLAGS) $(LIBPATHS) -Wl,-R. $(OBJS) $(LIBS) -lstdc++ -o "$@" 
+cake: parser $(OBJS) $(DWARFPP_PATH)/libdwarfpp.a # dependency only
+	gcj $(GCJFLAGS) $(LIBPATHS) -Wl,-R. $(OBJS) parser/cakeC{Parser,Lexer}.o $(LIBS) -lstdc++ -o "$@" 
 
 #antlr-runtime.jar.so: antlr-runtime-3*.jar 
 #	gcj -shared -o "$@" "$<"

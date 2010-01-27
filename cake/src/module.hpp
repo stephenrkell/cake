@@ -1,4 +1,5 @@
-// note: this file is included by request.hpp
+#ifndef __CAKE_MODULE_HPP
+#define __CAKE_MODULE_HPP
 
 #include <string>
 #include <map>
@@ -7,17 +8,10 @@
 #include <boost/optional.hpp>
 #include <fstream>
 #include <fileno.hpp>
-//#include <dwarf.h>
 #include <dwarfpp/lib.hpp>
 #include <dwarfpp/encap.hpp>
-#include "indenting_ostream.hpp"
-//#include <dwarfpp_simple.hpp>
-//#include <dwarfpp_util.hpp>
-//#include <boost/iostreams/concepts.hpp>    // input_filter
-//#include <boost/iostreams/operations.hpp>  // get()
-//#include <boost/iostreams/stream.hpp>
-//#include <boost/iostreams/stream_buffer.hpp>
-//#include <boost/iostreams/filtering_streambuf.hpp>
+#include <indenting_ostream.hpp>
+#include "parser.hpp"
 
 using namespace dwarf::lib;
 
@@ -26,64 +20,57 @@ namespace antlr { namespace tree { typedef ANTLR3_BASE_TREE Tree; } }
 namespace cake
 {
 	class definite_member_name;
+    class derivation;
 	class module
 	{
+    protected:
 		std::string filename;
 	
 		typedef std::pair<const std::string, const std::string> constructor_map_entry;
-		static constructor_map_entry known_constructor_extensions[];		
+		static constructor_map_entry known_constructor_extensions[];
+        
+        // map used to generate filenames of correct extensions for derived modules	
 		static std::map<std::string, std::string> known_constructors;
-		
-	protected: // debugging output infrastructure
-// 		struct newline_tabbing_filter : boost::iostreams::output_filter {
-// 			static int indent_level; // HACK: make static for now!
-// 			newline_tabbing_filter() /*: indent_level(0)*/ {}
-//     		template<typename Sink>
-//     		bool put_char(Sink& dest, int c)
-//     		{
-//         		if (!boost::iostreams::put(dest, c)) return false;
-//         		if (c == '\n')
-// 				{
-// 					for (int i = indent_level; i > 0; i--) 
-// 					{
-// 						if (!boost::iostreams::put(dest, '\t')) return false;
-// 					}
-// 				}
-//         		return true;
-//     		}
-// 			template<typename Sink>
-//     		bool put(Sink& dest, int c) 
-//     		{
-//         		return put_char(dest, c);
-//     		}
-// 		};
-// 		newline_tabbing_filter debug_out_filter;
-// 		boost::iostreams::filtering_ostreambuf debug_outbuf;
-		//std::ostream& debug_out;
+        
+    public:
+		std::string& get_filename() { return filename; }
+		static std::string extension_for_constructor(std::string& module_constructor_name)
+		{ return known_constructors[module_constructor_name]; }		
+    };    
+    
+	class described_module : public module
+    {
+	protected: 
+    	// debugging output infrastructure
 		srk31::indenting_ostream& debug_out;
 								
-	public: // FIXME: make some of the below private
-		typedef bool (cake::module::* eval_event_handler_t)(antlr::tree::Tree *, Dwarf_Off);
+	public: 
+    	// FIXME: make some of the below private
+        // FIXME: DWARF-agnostify the interface
+		typedef bool (cake::described_module::* eval_event_handler_t)(antlr::tree::Tree *, Dwarf_Off);
+        
 		virtual bool do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
 		virtual bool check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
 		virtual bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
 		virtual bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
-		//virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
-			// FIXME: build_value_description_handler doesn't really belong here, but pointer-to-member
-			// type-checking rules demand that it is here. Work out a more satisfactory solution.
 		virtual	bool internal_check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
-				
-		module(std::string& filename); // defined in cppcatch.cpp, because it initializes debug_out
-		std::string& get_filename() { return filename; }
-		void process_exists_claims(antlr::tree::Tree *existsBody);
-		void process_supplementary_claim(antlr::tree::Tree *claimGroup);
-		void process_claimgroup(antlr::tree::Tree *claimGroup);
-		virtual eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength) = 0;
+		virtual eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength)
+        {
+		return
+			GET_TYPE(strength) == CAKE_TOKEN(KEYWORD_CHECK) 	? &cake::described_module::check_handler
+		: 	GET_TYPE(strength) == CAKE_TOKEN(KEYWORD_DECLARE) 	? &cake::described_module::declare_handler
+		: 	GET_TYPE(strength) == CAKE_TOKEN(KEYWORD_OVERRIDE) ? &cake::described_module::override_handler : 0;
+        }
 		virtual bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
 			unsigned long long current_position) = 0;
-		static std::string extension_for_constructor(std::string& module_constructor_name)
-		{ return known_constructors[module_constructor_name]; }		
+		void process_exists_claims(antlr::tree::Tree *existsBody);
+		void process_supplementary_claim(antlr::tree::Tree *claimGroup);
+		virtual void process_claimgroup(antlr::tree::Tree *claimGroup) = 0;
+				
+		described_module() : debug_out(srk31::indenting_cerr) {}
+        
 	};
+    
 	
 	/* This is a simple class which opens a std::ifstream. We use it so that
 	 * we can apply the RAII style to base classes whose constructor 
@@ -96,71 +83,56 @@ namespace cake
 		ifstream_holder(std::string& filename);
 		int fileno() { return ::fileno(this_ifstream);  }
 	};
-	
-	class elf_module : private ifstream_holder, public module, private dwarf::encap::file
+
+	class module_described_by_dwarf : public described_module
 	{
-		//dwarf::encap::abi_information info;
-		dwarf::encap::dieset& dies; // = info.get_dies();
-		boost::shared_ptr<std::ifstream> input_stream;
-		
+    protected:
 		static const Dwarf_Off private_offsets_begin; 
+		dwarf::encap::dieset& dies;
 		Dwarf_Off private_offsets_next;
 		Dwarf_Off next_private_offset() { return private_offsets_next++; }
-		
+        virtual const dwarf::spec::abstract_def& get_spec() = 0;
+	public:        
 		bool do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
-		//virtual bool build_value_description_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool internal_check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 
-		//void debug_print_artificial_dies();
-		//Dwarf_Off create_new_member(Dwarf_Off parent_off, std::string& name, antlr::tree::Tree *description);
-		//boost::optional<dwarf::encap::die&> find_immediate_container(const definite_member_name& mn, 
-		//	Dwarf_Off context) const;
 		Dwarf_Off ensure_non_toplevel_falsifier(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) const;
-		//virtual dwarf::encap::die::attribute_map default_subprogram_attributes();
-		//boost::optional<Dwarf_Off> find_containing_cu(Dwarf_Off context);
-		//Dwarf_Off follow_typedefs(Dwarf_Off off);
-		//boost::optional<Dwarf_Off> find_nearest_containing_die_having_tag(Dwarf_Off context, Dwarf_Half tag);		
-		//boost::optional<Dwarf_Off> find_nearest_type_named(Dwarf_Off context, const char *name);
-		//Dwarf_Off create_new_die(const Dwarf_Off parent, const Dwarf_Half tag, 
-		//	const dwarf::encap::die::attribute_map& attrs, 
-        //    const dwarf::encap::die_off_list& children);		
-		//Dwarf_Off create_dwarf_type_from_value_description(antlr::tree::Tree *valueDescription, 
-		//	Dwarf_Off context, boost::optional<std::string> name);
-		//void build_subprogram_die_children(antlr::tree::Tree *valueDescriptionExpr, Dwarf_Off subprogram_die_off);
 
-		//virtual Dwarf_Unsigned make_default_dwarf_location_expression_for_arg(int argn);
-		//Dwarf_Off ensure_dwarf_type(antlr::tree::Tree *description, 
-		//	Dwarf_Off context, boost::optional<std::string> name);
-		//dwarf::encap::die_off_list *find_dwarf_types_satisfying(antlr::tree::Tree *description,
-		//	dwarf::encap::die_off_list& list_to_search);
-		//bool dwarf_type_satisfies(antlr::tree::Tree *description, Dwarf_Off type_offset);
-		//bool dwarf_subprogram_satisfies_description(Dwarf_Off subprogram_offset, antlr::tree::Tree *description);
-		//bool dwarf_arguments_satisfy_description(Dwarf_Off subprogram_offset, antlr::tree::Tree *description);
-		//bool dwarf_variable_satisfies_description(Dwarf_Off variable_offset, antlr::tree::Tree *description);
-		//dwarf::encap::die_off_list *find_dwarf_type_named(antlr::tree::Tree *ident, Dwarf_Off context);
-		//boost::optional<std::string> type_name_from_value_description(antlr::tree::Tree *);
-		
-		eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength);
-	
+		void process_claimgroup(antlr::tree::Tree *claimGroup);
+
 		bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
 			Dwarf_Off current_die);
-	
+            
+        module_described_by_dwarf(dwarf::encap::dieset& ds) 
+         : 	dies(ds),
+         	private_offsets_next(private_offsets_begin) {}
+	};
+
+	class elf_module : 	private ifstream_holder, 
+    					public module_described_by_dwarf, 
+                        private dwarf::encap::file
+	{
+		boost::shared_ptr<std::ifstream> input_stream;
+					
 	protected:
 		static const dwarf::encap::die_off_list empty_child_list;
 		static const dwarf::encap::die::attribute_map empty_attribute_map;
 		
 		static const dwarf::encap::die::attribute_map::value_type default_subprogram_attr_entries[];
 		static const dwarf::encap::die::attribute_map default_subprogram_attributes;
+
+        const dwarf::spec::abstract_def& get_spec() 
+        { return static_cast<dwarf::encap::file*>(this)->get_spec(); }
 	
 	public:
 		elf_module(std::string filename);
+        //const dwarf::spec::abstract_def& get_spec() 
+        //{ return static_cast<module_described_by_dwarf*>(this)->get_spec(); }
 	
-		//virtual void make_default_subprogram(dwarf::encap::die &die_to_modify);
-	
-		void print_abi_info();
+		//void print_abi_info();
 	};
 	
 	class elf_reloc_module : public elf_module
@@ -177,4 +149,21 @@ namespace cake
 	public:
 		elf_external_sharedlib_module(std::string filename) : elf_module(filename) {}
 	};
+    
+    class derived_module : public module_described_by_dwarf
+    {
+    	dwarf::encap::dieset dies;
+    	derivation& m_derivation;
+    protected:
+    	const dwarf::spec::abstract_def& get_spec() { return dwarf::spec::dwarf3; }
+        
+    public:
+    	derived_module(derivation& d, std::string& filename) 
+         :	module_described_by_dwarf(dies),
+         	dies(get_spec()),
+            m_derivation(d)
+         	 {}
+    };
 }
+
+#endif

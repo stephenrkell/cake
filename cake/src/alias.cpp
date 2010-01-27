@@ -2,19 +2,9 @@
 #include <iostream>
 #include <cassert>
 #include <cstring>
-// #include <java/lang/Exception.h>
-// #include <java/lang/System.h>
-// #include <java/io/PrintStream.h>
-// #include <org/antlr/runtime/tree/BaseTree.h>
-// #include <org/antlr/runtime/tree/CommonTree.h>
 #include "request.hpp"
 #include "parser.hpp"
 #include "util.hpp"
-//#include "treewalk_helpers.hpp"
-//#undef EOF
-// #include <org/antlr/runtime/CharStream.h>
-// #include <org/antlr/runtime/IntStream.h>
-
 namespace cake
 {
 	void request::extract_aliases()
@@ -26,7 +16,7 @@ namespace cake
 		{	/* Find all the toplevel alias definitions */
 			SELECT_ONLY(KEYWORD_ALIAS);
 			
-			std::cerr << "Processing alias definition: " << CCP(n->toStringTree()) << std::endl;
+			std::cerr << "Processing alias definition: " << CCP(TO_STRING_TREE(n)) << std::endl;
 			
 			/* Create an alias record for this alias. */
 			module_alias_tbl.insert(std::make_pair(
@@ -40,28 +30,28 @@ namespace cake
 		/* FIXME: check for cycles in the alias graph */
 	}
 
-	void request::pass1_visit_alias_declaration(org::antlr::runtime::tree::Tree *t)
+	void request::pass1_visit_alias_declaration(antlr::tree::Tree *t)
 	{
 		INIT;
 		BIND2(t, aliasDescription);
 		BIND3(t, aliasName, IDENT);
 		
-		switch (aliasDescription->getType())
+		switch (GET_TYPE(aliasDescription))
 		{
-			case cakeJavaParser::KEYWORD_ANY: { 	
+			case CAKE_TOKEN(KEYWORD_ANY): { 	
 				/* case 1: aliasDescription is KEYWORD_ANY followed by an identList */
 				INIT;
-				BIND3(aliasDescription, identList, cakeJavaParser::IDENT_LIST); 
+				BIND3(aliasDescription, identList, CAKE_TOKEN(IDENT_LIST)); 
 				FOR_ALL_CHILDREN(identList)
 				{
 					ALIAS3(n, ident, IDENT);
-					module_alias_tbl[CCP(aliasName->getText())].push_back(CCP(ident->getText()));			
+					module_alias_tbl[CCP(GET_TEXT(aliasName))].push_back(CCP(GET_TEXT(ident)));
 				} 
 			} return;
 			
-			case cakeJavaParser::IDENT:
+			case CAKE_TOKEN(IDENT):
 				/* case 2: aliasDescription is a plain IDENT */
-				module_alias_tbl[CCP(aliasName->getText())].push_back(CCP(aliasName->getText()));
+				module_alias_tbl[CCP(GET_TEXT(aliasName))].push_back(CCP(GET_TEXT(aliasName)));
 				return;
 				
 			default: 

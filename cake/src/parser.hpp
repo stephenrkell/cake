@@ -39,6 +39,13 @@ namespace tree {
 } }
 
 #include <sstream>
+#include "util.hpp"
+#define GET_TEXT(node) (node)->getText((node))
+#define GET_TYPE(node) (node)->getType((node))
+#define GET_CHILD_COUNT(node) (node)->getChildCount((node))
+#define TO_STRING_TREE(node) (node)->toStringTree((node))
+#define GET_CHILD(node, i) (reinterpret_cast<antlr::tree::Tree*>((node)->getChild((node), i)))
+#define CAKE_TOKEN(tokname) tokname
 
 /* Since antlr doesn't provide us with named tree elements, or a convenient way of
  * querying for subtrees (except using tree grammars), let's define some nasty
@@ -62,32 +69,34 @@ namespace tree {
 	unsigned childcount; \
 	const char * text; \
 	antlr::tree::Tree *n; \
-	for (childcount = __tree_head_pointer->getChildCount(__tree_head_pointer), \
-		n = ((childcount > 0) ? reinterpret_cast<antlr::tree::Tree*>(__tree_head_pointer->getChild(__tree_head_pointer, 0)) : 0), \
-		text = (n != 0) ? reinterpret_cast<char*>(n->getText(n)->chars) : "(null)"; \
-	i < childcount && ASSIGN_AS_COND(n, reinterpret_cast<antlr::tree::Tree*>(__tree_head_pointer->getChild(__tree_head_pointer, i))) && \
-		ASSIGN_AS_COND(text, (n != 0) ? reinterpret_cast<char*>(n->getText(n)->chars) : "(null)"); \
+	for (childcount = GET_CHILD_COUNT(__tree_head_pointer), \
+		n = ((childcount > 0) ? reinterpret_cast<antlr::tree::Tree*>(GET_CHILD(__tree_head_pointer, 0)) : 0), \
+		text = (n != 0) ? CCP(GET_TEXT(n)) : "(null)"; \
+	i < childcount && ASSIGN_AS_COND(n, reinterpret_cast<antlr::tree::Tree*>(GET_CHILD(__tree_head_pointer, i))) && \
+		ASSIGN_AS_COND(text, (n != 0) ? CCP(GET_TEXT(n)) : "(null)"); \
 	i++)
+
+#define CHECK_TOKEN(node, token, tokenname) \
+	if (!(GET_TYPE(node) == token)) throw cake::SemanticError((node), \
+	((cake::exception_msg_stream << "expected a token of class " << CAKE_TOKEN(token) << "/" << tokenname \
+	" (" __FILE__ ":" << __LINE__ << "); found token " << CCP(GET_TEXT(node)) \
+	<< " class id " << GET_TYPE(node)) \
+	, exception_msg_stream.str() ))
 
 /* Before binding a sequence of children, do INIT. 
  * Don't do INIT more than once in the same scope -- start another scope instead. */
 #define INIT int next_child_to_bind __attribute__(( unused )) = 0 
-#define BIND2(node, name) antlr::tree::Tree *(name) = reinterpret_cast<antlr::tree::Tree*>((node)->getChild((node), next_child_to_bind++));
-#define BIND3(node, name, token) antlr::tree::Tree *(name) = reinterpret_cast<antlr::tree::Tree*>((node)->getChild((node), next_child_to_bind++)); \
+#define BIND2(node, name) antlr::tree::Tree *(name) = reinterpret_cast<antlr::tree::Tree*>(GET_CHILD(node, next_child_to_bind++));
+#define BIND3(node, name, token) antlr::tree::Tree *(name) = reinterpret_cast<antlr::tree::Tree*>(GET_CHILD(node, next_child_to_bind++)); \
 	if ((name) == 0) throw cake::SemanticError( \
 		(name), \
 		"no child node!"); \
-	if (!((name)->getType((name)) == token)) throw cake::SemanticError((name), \
-		((cake::exception_msg_stream << "expected a token of class " #token \
-		" (" __FILE__ ":" << __LINE__ << "); found token " << CCP((name)->getText((name))) \
-		<< " class id " << (int) (name)->getType((name))) \
-		, exception_msg_stream.str() )); \
-	//std::cerr << "DEBUG: " __FILE__ ":" << __LINE__ << " bound a token of type " << (int) ((name)->getType()) << "(" #token ") to name " #name \
-	//	<< ", text " << CCP((name)->getText()) << std::endl
+	CHECK_TOKEN(name, token, #token) \
+	//std::cerr << "DEBUG: " __FILE__ ":" << __LINE__ << " bound a token of type " << (int) ((name)->getType()) << "(" #token ") to name " #name << ", text " << CCP((name)->getText()) << std::endl
 
 /* Skip over tokens we're not interested in. */
-#define SELECT_NOT(token) if (n->getType(n) == (token)) continue
-#define SELECT_ONLY(token) if (n->getType(n) != (token)) continue
+#define SELECT_NOT(token) if (GET_TYPE(n) == (token)) continue
+#define SELECT_ONLY(token) if (GET_TYPE(n) != (token)) continue
 
 /* Make a C-style string out of a Java one. */
 //#define CCP(p) jtocstring_safe((p))
@@ -95,24 +104,20 @@ namespace tree {
 
 /* Throw a semantic error for token n */
 #define SEMANTIC_ERROR(n) throw cake::SemanticError( \
-							(n), std::string("Malformed AST: found an unexpected token: ")+std::string(CCP((n)->getText((n)))))
+							(n), std::string("Malformed AST: found an unexpected token: ")+std::string(CCP(GET_TEXT(n))))
 
 #define ALIAS2(node, name) antlr::tree::Tree *& name = (node)
 #define ALIAS3(node, name, token) \
 	antlr::tree::Tree *& name = (node); \
-	if (!((name)->getType((name)) == token)) throw cake::SemanticError((name), \
-	((cake::exception_msg_stream << "expected a token of class " #token \
-	" (" __FILE__ ":" << __LINE__ << "); found token " << CCP((name)->getText((name))) \
-	<< " class id " << (int) (name)->getType(name)) \
-	, exception_msg_stream.str() ));
+	CHECK_TOKEN(name, token, #token);
 
 #define RAISE(node, msg) throw cake::SemanticError((node), std::string( \
 					msg ": ") \
-						+ std::string(CCP((node)->getText(node))))
+						+ std::string(CCP(GET_TEXT(node))))
 
 #define RAISE_INTERNAL(node, msg) throw cake::InternalError((node), std::string( \
 					msg ": ") \
-						+std::string(CCP((node)->getText(node))))
+						+std::string(CCP(GET_TEXT(node))))
 
 namespace cake {
 	class TreewalkError

@@ -1,3 +1,6 @@
+#ifndef __CAKE_UTIL_HPP
+#define __CAKE_UTIL_HPP
+
 //#include <gcj/cni.h>
 #include <boost/static_assert.hpp>
 #include <boost/type_traits/is_pointer.hpp>
@@ -80,7 +83,7 @@ namespace cake
 //                 	throw new java::lang::ClassCastException;
 // 	}
 // 	
-// 	template<class T, size_t s> size_t array_len(T (&arg)[s]) { return s; }
+ 	template<class T, size_t s> size_t array_len(T (&arg)[s]) { return s; }
 	
 	/* copy_if should be in the standard algorithms, but it isn't. */
 	template<class In, class Out, class Pred>
@@ -94,3 +97,5 @@ namespace cake
 		return res;
 	}	
 }
+
+#endif

@@ -5,8 +5,9 @@
 #include <cstdlib>
 #include "request.hpp"
 #include "util.hpp"
-#include "treewalk_helpers.hpp"
+//#include "treewalk_helpers.hpp"
 #include "parser.hpp"
+#include "module.hpp"
 
 namespace cake
 {
@@ -179,12 +180,12 @@ namespace cake
 	{
 		INIT;
 		BIND3(t, id, IDENT);
-		std::string fst(CCP(id->getText()));
+		std::string fst(CCP(GET_TEXT(id)));
 		std::string snd;
-		if (t->getChildCount() > 1) 
+		if (GET_CHILD_COUNT(t) > 1) 
 		{
 			BIND3(t, quoted_lit, STRING_LIT);
-			snd = std::string(CCP(quoted_lit->getText()));
+			snd = std::string(CCP(GET_TEXT(quoted_lit)));
 		}
 		return std::make_pair(fst, snd);
 	}
@@ -195,17 +196,17 @@ namespace cake
 	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName)
 	{
 		definite_member_name name;
-		switch(memberName->getType())
+		switch(GET_TYPE(memberName))
 		{
 			case '_':
 				RAISE_INTERNAL(memberName, "expecting a definite memberName, found indefinite `_'");
 			// no break
-			case cakeJavaParser::DEFINITE_MEMBER_NAME: {
-				definite_member_name vec(memberName->getChildCount());
+			case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
+				definite_member_name vec(GET_CHILD_COUNT(memberName));
 				definite_member_name::iterator iter = vec.begin();
 				FOR_ALL_CHILDREN(memberName)
 				{
-					*iter = std::string(CCP(n->getText()));
+					*iter = std::string(CCP(GET_TEXT(n)));
 					iter++;
 				}
 				return vec;

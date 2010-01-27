@@ -1,6 +1,6 @@
 CFLAGS ?=
 CFLAGS += -I$(HOME)/opt/include
-CFLAGS += -I.
+CFLAGS += -I./include
 
 GRAMMAR_BASENAME := cake
 
@@ -8,7 +8,10 @@ INCS := $(wildcard *.inc)
 
 .PHONY: default
 #default: java-all 
-default: cakeCLexer.o cakeCParser.o
+default: cakeCLexer.o cakeCParser.o stamp
+
+stamp:
+	touch stamp
 
 #cakeCLexer.c cakeCParser.c 
 #cakeJavaLexer.class cakeJavaParser.class 
@@ -41,7 +44,7 @@ test: cakePyParser.py
 	
 %CLexer.c %CParser.c: %C.g 
 	$(ANTLR) "$<"
-	mkdir -p include && mv %CLexer.h %CParser.h include/
+	mkdir -p include && mv $*C{Lexer,Parser}.h include/
 
 %Cpp.g: %.g.m4 $(INCS)
 	m4 -Dantlr_m4_include_file=antlr-m4-cpp.inc "$<" > "$@"
@@ -67,3 +70,4 @@ $(GRAMMAR_BASENAME)/%JavaLexer.java $(GRAMMAR_BASENAME)/%JavaParser.java: %Java.
 clean::
 	rm -f *.class *.h *.o *.a *.pyc *.d *{Py,Java,Cpp,C}.g 
 	rm -f $(GRAMMAR_BASENAME)/*{Parser,Lexer}.java $(GRAMMAR_BASENAME)/*.tokens
+	rm -f stamp

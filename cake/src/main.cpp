@@ -61,17 +61,21 @@ int main(int argc, char **argv)
 			cake::request req(cakefile);
 			return req.process();
 		}
+        catch (cake::SemanticError e)
+        {
+        	std::cerr << e.message() << std::endl;
+        }
 		catch (cake::TreewalkError e)
 		{
 // 			/* Let's hope the node is from a CommonTree */
-// 			org::antlr::runtime::tree::CommonTree *ct = 
-// 				jcast<org::antlr::runtime::tree::CommonTree *>(e->t);
+// 			antlr::tree::CommonTree *ct = 
+// 				jcast<org::antlr::tree::CommonTree *>(e->t);
 			//std::cerr 	<< jtocstring_safe(e->toString()) << std::endl;
-            std::cerr << e.message();
+            std::cerr << e.message() << std::endl;
 // 			//"Semantic error";
 // 			if (ct != 0)
 // 			{
-// 				org::antlr::runtime::Token *token = ct->getToken();				
+// 				antlr::Token *token = ct->getToken();				
 // 				std::cerr	<< " at line ";
 // 				std::cerr	<< (int) token->getLine();
 // 				std::cerr	<< ":";

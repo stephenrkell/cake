@@ -9,7 +9,7 @@ options {
 tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; 
 VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; 
 OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; MEMBERSHIP_CLAIM; VALUE_DESCRIPTION; DWARF_BASE_TYPE; 
-DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; ANY_VALUE; }
+DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; ANY_VALUE; PAIRWISE_BLOCK_LIST; }
 
 
 @header {
@@ -208,17 +208,17 @@ multiValueDescriptionExpr	: '<' primitiveValueDescription (',' primitiveValueDes
 	-> ^( MULTIVALUE primitiveValueDescription )
 	;
 
-deriveDeclaration	: KEYWORD_DERIVE^ objectConstructor IDENT '=' derivedObjectExpression
+deriveDeclaration	: KEYWORD_DERIVE^ objectConstructor IDENT '='! derivedObjectExpression ';'!
 					;
                     
 derivedObjectExpression	: IDENT^ '('! derivedObjectExpression ')'!
 						| KEYWORD_LINK^ identList linkRefinement
 						;
 
-linkRefinement	: '{'! pairwiseCorrespondenceBlock^ '}'!
-				| ;
+linkRefinement	: '{' pairwiseCorrespondenceBlock* '}' -> ^( PAIRWISE_BLOCK_LIST pairwiseCorrespondenceBlock* )
+				| -> ^( PAIRWISE_BLOCK_LIST );
                 
-pairwiseCorrespondenceBlock	:	IDENT ( BI_DOUBLE_ARROW^ | RL_DOUBLE_ARROW^ | LR_DOUBLE_ARROW^ ) IDENT pairwiseCorrespondenceBody
+pairwiseCorrespondenceBlock	:	IDENT /*(*/ BI_DOUBLE_ARROW^ /*| RL_DOUBLE_ARROW^ | LR_DOUBLE_ARROW^ )*/ IDENT pairwiseCorrespondenceBody
 							;
                             
 pairwiseCorrespondenceBody	: '{' pairwiseCorrespondenceElement* '}' -> ^( CORRESP pairwiseCorrespondenceElement* )

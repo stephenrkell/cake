@@ -28,13 +28,14 @@
 //namespace antlr = ::org::antlr::runtime;
 //#include "dwarfpp_simple.hpp"
 #include "parser.hpp"
-//#include "module.hpp"
+#include "module.hpp"
 
 //namespace antlr { typedef ANTLRInputStream
 
 namespace cake
 {
 	class module;
+    class derivation;
 	class request
 	{
 		friend class derivation;
@@ -46,7 +47,7 @@ namespace cake
 		//jstring in_filename;
 		//java::io::File *in_fileobj;
 		//java::io::FileInputStream *in_file;
-        char *in_filename;
+        const char *in_filename;
         pANTLR3_INPUT_STREAM/*std::ifstream*/ /*ANTLR3_FDSC*/ in_fileobj;
 
 		/* Parsing apparatus */		
@@ -67,18 +68,23 @@ namespace cake
 		void toplevel();
 				
 		/* data structure instances */
-		std::map<std::string, boost::shared_ptr<module> > module_tbl;	
+		std::map<std::string, boost::shared_ptr<described_module> > module_tbl;	
 			// we use a shared ptr because otherwise, to do module_tbl[i] = blah,
 			// (or indeed any insertion into the map)
 			// we'd implicitly be constructing our module locally as a temporary
 			// and then copying it -- but it's very large, so we don't want that!
 		std::map<std::string, std::vector<std::string> > module_alias_tbl;
+        
+        std::vector<boost::shared_ptr<derivation> > derivation_tbl;
+        
+        /* makes an absolute pathname out of a filename mentioned in Cake source */
+        std::string make_absolute_pathname(std::string ref);
 		
 		/* processing alias declarations */
 		void pass1_visit_alias_declaration(antlr::tree::Tree *t);
 		
 		/* processing exists declarations */
-		void add_exists(std::string& module_constructor_name,
+		void add_existing_module(std::string& module_constructor_name,
 			std::string& quoted_filename,
 			std::string& module_ident);
 			
@@ -88,21 +94,30 @@ namespace cake
 			antlr::tree::Tree *derive_body);
 			
 		void extract_aliases();	
+        
 		void extract_inlines();
 		void build_inlines();
+	    described_module *create_existing_module(std::string& constructor,
+	    	std::string& filename);
+        
 		void extract_exists();
+		void add_exists(antlr::tree::Tree *n);
+        
 		void extract_supplementary();
+        
 		void extract_derivations();
-		
+        void add_derivation(antlr::tree::Tree *n);
+	    derivation *create_derivation(antlr::tree::Tree *t);	
+	    derived_module *create_derived_module(derivation& d, std::string& filename);      	
 		// derivations may have to happen in some order -- that doesn't mean
 		// we have to process them in that order, although it might if we
 		// end up supporting a derivation algebra (see below) since we might
 		// have to compute an "exists" block for intermediate results.
 		void compute_derivation_dependencies();
-		
+		void sort_derivations();
 					
 	public:
-		request(char *filename);
+		request(const char *filename);
 		int process();
 		
 		//static void print_abi_info(dwarf::abi_information& info, std::string& unescaped_filename);
@@ -111,11 +126,11 @@ namespace cake
 	class derivation
 	{	
 	protected:
-		request *r;
+		request& r;
 		antlr::tree::Tree *t;		
 		
 	public:
-		derivation(request *r, antlr::tree::Tree *t) : r(r), t(t) {}
+		derivation(request& r, antlr::tree::Tree *t) : r(r), t(t) {}
 		virtual void extract_definition() = 0;
 		virtual void write_makerules(std::ostream& out) = 0;
 		virtual std::vector<std::string> dependencies() = 0;
@@ -142,12 +157,12 @@ namespace cake
 		void output_wrappergens();
 		
 		void output_static_co_objects(); 
-		
-	protected:
-		void extract_definition();
 
 	public:
 		void write_makerules(std::ostream& out);	
+		void extract_definition();
+		std::vector<std::string> dependencies() { return std::vector<std::string>(); }
+        link_derivation(cake::request& r, antlr::tree::Tree *t);
 	};
 	
 	class rewrite_derivation : public derivation
