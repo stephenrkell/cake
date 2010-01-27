@@ -3,7 +3,7 @@ EXTRA_DEBUG_OPTS := -fno-eliminate-unused-debug-symbols -fno-eliminate-unused-de
 JAVA_OBJS := $(patsubst %.java,%.o,$(shell find java -name '*.java'))
 
 SRC := $(wildcard *.cpp) #$(wildcard *.hpp)
-DEPS := $(patsubst %.cpp,.%.d,$(SRC))
+DEPS = $(patsubst %.cpp,.%.d,$(SRC))
 # main.cpp cppcatch.cpp javacatch.cpp cake.cpp alias.cpp util.cpp module.cpp exists.cpp derive.cpp link.cpp supplementary.cpp
 
 #OBJS := $(JAVA_OBJS) 
@@ -14,7 +14,9 @@ OBJS += $(patsubst %.cpp,%.o,$(SRC))
 #OBJS += parser/cakeCLexer.o parser/cakeCParser.o
 $(warning OBJS is $(OBJS))
 
-LIBS := -lboost_system -lantlr3c -lsrk31c++ -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
+BOOST_LIB ?= $(shell ls /usr/lib/libboost*system.so | sed 's/.*lib\(.*\)\.so/\1/')
+
+LIBS := -l$(BOOST_LIB) -lantlr3c -lsrk31c++ -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
 
 INCLUDES += -Iparser/include -Iinclude -Ijava/include
 INCLUDES += -I../../dwarf/libdwarfpp/include -I../../libsrk31c++ -I../../c++-fileno/include
@@ -70,9 +72,18 @@ parser-recursive:
 # cancel builtin implicit rule
 %.o: %.cpp
 
-$(DEPS): .%.d : %.cpp
+.PHONY: clean
+clean:: 
+	rm -rf gcjh_generated
+	rm -f cake *.o *.so
+	rm -f $(DEPS)
+	$(MAKE) -C parser clean
+
+$(DEPS) : .%.d : %.cpp
 	g++ -MM $(CXXFLAGS) "$<"  > "$@"
+	
 include $(DEPS)
+
 # new implicit rule for compiling C++
 %.o: %.cpp  $(HDRS) 
 	g++ -c -o "$@" ${CXXFLAGS} "$<"
@@ -93,7 +104,6 @@ cake: parser $(OBJS) $(DWARFPP_PATH)/libdwarfpp.a # dependency only
 #stringtemplate.jar.so: stringtemplate-*.jar
 #	gcj $(GCJFLAGS) -shared -o "$@" "$<"
 
-
 JAVA_SRC := 
 CLASSFILES := $(CLASSES)
 include:: Makefile # our list of classes is in this file, so add a dependency
@@ -102,11 +112,6 @@ include Makerules.java.mk
 %.jar.so: %-*.jar.so
 	cp "$<" "$@"
 
-.PHONY: clean
-clean::
-	rm -rf gcjh_generated
-	rm -f cake *.o *.so
-	$(MAKE) -C parser clean
 
 .PHONY: test
 RUN_PREFIX := gdb --eval-command "source ../src/cake-test.gdb" --eval-command run --args

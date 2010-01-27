@@ -69,5 +69,6 @@ $(GRAMMAR_BASENAME)/%JavaLexer.java $(GRAMMAR_BASENAME)/%JavaParser.java: %Java.
 
 clean::
 	rm -f *.class *.h *.o *.a *.pyc *.d *{Py,Java,Cpp,C}.g 
+	rm -f *{Parser,Lexer}.c
 	rm -f $(GRAMMAR_BASENAME)/*{Parser,Lexer}.java $(GRAMMAR_BASENAME)/*.tokens
 	rm -f stamp

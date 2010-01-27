@@ -11,7 +11,7 @@
 #include "util.hpp"
 #include "module.hpp"
 #include <dwarfpp/encap.hpp>
-#include <boost/filesystem.hpp>
+#include <boost/filesystem/path.hpp>
 #include <stdio.h>
 #include <ext/stdio_filebuf.h>
 
@@ -111,7 +111,7 @@ namespace cake
         else
         {
         	// this means p is relative, so prepend the Cake file's dirname
-        	return (boost::filesystem::path(in_filename).parent_path() 
+        	return (boost::filesystem::path(in_filename).branch_path() 
             	/ boost::filesystem::path(ref)).string();
         }
     }
