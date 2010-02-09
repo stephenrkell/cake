@@ -71,14 +71,19 @@ namespace cake
 		}
 	}
 
-	elf_module::elf_module(std::string filename) :
-			ifstream_holder(filename),
-			module_described_by_dwarf(this->ds()),
+	/* We have two filenames to worry about: the name that must appear in Makefiles,
+     * i.e. relative to the directory containing the Cake source file,
+     * and the name that we must use within Cake, relative to our own working directory. */
+
+	elf_module::elf_module(std::string local_filename, std::string makefile_filename) :
+			ifstream_holder(local_filename),
+			module_described_by_dwarf(makefile_filename, this->ds()),
 			dwarf::encap::file(fileno())
 	{
 		// if no debug information was imported, set up a dummy compilation unit
-		if (dies[0UL].children().size() == 0)
+		if (dies[0UL]->children().size() == 0)
 		{
+        	std::cerr << "Creating a dummy CU!" << std::endl;
 			char cwdbuf[4096];
 			getcwd(cwdbuf, sizeof cwdbuf);
 
@@ -97,10 +102,21 @@ namespace cake
 					);			
 			std::vector<Dwarf_Off> no_children;
 			//create_new_die(0UL, DW_TAG_compile_unit, new_attribute_map, no_children);
-		}			
+		}
+        else
+        {
+        	std::cerr << "Toplevel children CUs at offsets: ";
+            for (dwarf::encap::die_off_list::iterator i = dies[0UL]->children().begin();
+            	i != dies[0UL]->children().end();
+                i++)
+            {
+				std::cerr << "0x" << std::hex << *i << std::dec << " ";
+            }
+            std::cerr << std::endl;
+        }
+        add_imported_function_descriptions();
 	}
-
-	
+    
 	bool module_described_by_dwarf::do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier)
 	{
 		debug_out << "DO_NOTHING found falsifiable claim " //<< CCP(falsifiable->getText())
@@ -131,9 +147,9 @@ namespace cake
 	{
 		debug_out << "DECLARE found falsifiable claim at token " //<< CCP(falsifiable->getText())
 			<< CCP(TO_STRING_TREE(falsifiable))
-			<< ", die offset " << falsifier << " (tag: " << get_spec().tag_lookup(dies[falsifier].tag())
-			<< ", name: " << (dies[falsifier].has_attr(DW_AT_name) ? 
-				dies[falsifier][DW_AT_name].get_string() : "no name") << ")"
+			<< ", die offset " << falsifier << " (tag: " << get_spec().tag_lookup(dies[falsifier]->get_tag())
+			<< ", name: " << (dies[falsifier]->has_attr(DW_AT_name) ? 
+				(*dies[falsifier])[DW_AT_name].get_string() : "no name") << ")"
 			<< ", proceeding to add module info" << std::endl;
 
 		bool retval = false;
@@ -146,9 +162,9 @@ namespace cake
 	{
 		debug_out << "OVERRIDE found falsifying module info, at token " //<< CCP(falsifiable->getText())
 			<< CCP(TO_STRING_TREE(falsifiable))
-			<< ", die offset " << falsifier << " (tag: " << get_spec().tag_lookup(dies[falsifier].tag())
-			<< ", name: " << (dies[falsifier].has_attr(DW_AT_name) ? 
-				dies[falsifier][DW_AT_name].get_string() : "no name") << ")"
+			<< ", die offset " << falsifier << " (tag: " << get_spec().tag_lookup(dies[falsifier]->get_tag())
+			<< ", name: " << (dies[falsifier]->has_attr(DW_AT_name) ? 
+				(*dies[falsifier])[DW_AT_name].get_string() : "no name") << ")"
 			<< ", proceeding to modify module info" << std::endl;
 			
 		bool retval = false;	
@@ -169,7 +185,7 @@ namespace cake
         // HACK: don't print anything if we're "do nothing" (avoid confusing things)
 		if (handler != &cake::module_described_by_dwarf::do_nothing_handler) debug_out 
         	<< "Evaluating claim " << CCP(TO_STRING_TREE(claim)) 
-			<< " on " << dies[current_die] << std::endl;
+			<< " on " << *(dies[current_die]) << std::endl;
 		INIT;
 		switch(GET_TYPE(claim))
 		{

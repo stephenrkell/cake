@@ -56,11 +56,10 @@ namespace cake
 		// topsort derive dependencies
         
 		// output makerules *and* source code for each derive
-		for (//each derive request...
-		/// ... output the Make rules that will build it
-		derivation *pd = 0; pd != 0; )
+		for (derivation_tbl_t::iterator pd = derivation_tbl.begin(); 
+        	pd != derivation_tbl.end(); pd++)
 		{
-			pd->write_makerules(std::cout);
+			(*pd)->write_makerules(std::cout);
 		}
 	}
 

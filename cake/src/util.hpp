@@ -13,6 +13,8 @@
 
 #include <dwarfpp/encap.hpp>
 
+#include "parser.hpp"
+
 namespace cake
 {
 	extern const char *guessed_system_library_path;
@@ -46,6 +48,18 @@ namespace cake
 	std::ostream& operator<<(std::ostream&, const definite_member_name&);
 	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName);
 
+	std::string get_event_pattern_call_site_name(antlr::tree::Tree *t);
+    
+    antlr::tree::Tree *make_simple_event_pattern_for_call_site(
+    	const std::string& name);
+    
+    antlr::tree::Tree *make_simple_sink_expression_for_event_pattern(
+    	const std::string& event_pattern);
+        
+    boost::optional<std::string> pattern_is_simple_function_name(antlr::tree::Tree *t);
+    boost::optional<std::string> source_pattern_is_simple_function_name(antlr::tree::Tree *t);
+    boost::optional<std::string> sink_expr_is_simple_function_name(antlr::tree::Tree *t);
+        
 // 	inline const char *jtocstring(java::lang::String *s)	
 // 	{
 // 		static char *buf;

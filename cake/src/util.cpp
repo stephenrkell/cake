@@ -217,6 +217,136 @@ namespace cake
 		}		
 	}
 	
+	std::string get_event_pattern_call_site_name(antlr::tree::Tree *t)
+    {
+    	INIT;
+        switch (GET_TYPE(t))
+        {
+        	case CAKE_TOKEN(EVENT_PATTERN): {
+		    	BIND3(t, eventContext, EVENT_CONTEXT);
+                BIND2(t, memberNameExpr);
+                definite_member_name mn;
+                switch (GET_TYPE(memberNameExpr))
+                {
+                	case CAKE_TOKEN(INDEFINITE_MEMBER_NAME):
+                    	RAISE_INTERNAL(memberNameExpr, "invoked events may not be indefinite");
+                    case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+                    	// the good case
+                        mn = read_definite_member_name(memberNameExpr);
+                        if (mn.size() != 1) RAISE(memberNameExpr, 
+                        	"invoked events may not contain `.'");
+                        else return mn.at(0);
+                    default: RAISE_INTERNAL(memberNameExpr, "not a member name expr");
+                }
+                // FOR_REMAINING_CHILDREN( ) // annotatedValuePattern 
+            } break;
+            default:
+            	RAISE_INTERNAL(t, "not an event pattern");
+        }
+	}   
+    
+    antlr::tree::Tree *make_simple_event_pattern_for_call_site(
+    	const std::string& name)
+    {
+		// We do this by building a string and feeding it to the parser.
+        // This avoids strong dependency on the parse tree data structure,
+        // at the cost of depending strongly on the Cake grammar. But we're
+        // not likely to make major changes to such a simple part of it.
+
+    	std::cerr << "creating event pattern for call-site name: " << name  << std::endl;
+
+		std::string fragment(name); fragment += "(...)";
+        char *dup = strdup(fragment.c_str());
+        pANTLR3_INPUT_STREAM ss = antlr3NewAsciiStringInPlaceStream(
+        	reinterpret_cast<uint8_t*>(dup), 
+        	fragment.size(), 0);
+        cakeCLexer *lexer = cakeCLexerNew(ss);
+        antlr::CommonTokenStream *tokenStream = antlr3CommonTokenStreamSourceNew(
+        	ANTLR3_SIZE_HINT, TOKENSOURCE(lexer));
+        cakeCParser *parser = cakeCParserNew(tokenStream); 
+        cakeCParser_eventPattern_return ret = parser->eventPattern(parser);
+        
+        // We should now have the tree in ret.tree. 
+        // Free all the other temporary stuff we created.
+        // FIXME: work out which bits I can free now and which to cleanup later!
+        //ss->free(ss);
+        //lexer->free(lexer);
+        //tokenStream->free(tokenStream);
+        //parser->free(parser);
+        //free(dup);
+        
+        return ret.tree;
+	}
+
+    antlr::tree::Tree *make_simple_sink_expression_for_event_pattern(
+    	const std::string& event_pattern)
+    {
+		// We do this by building a string and feeding it to the parser.
+        // This avoids strong dependency on the parse tree data structure,
+        // at the cost of depending strongly on the Cake grammar. But we're
+        // not likely to make major changes to such a simple part of it.
+
+    	std::cerr << "creating sink expression event pattern: " << event_pattern  << std::endl;
+
+		std::string fragment(event_pattern);
+        char *dup = strdup(fragment.c_str());
+        pANTLR3_INPUT_STREAM ss = antlr3NewAsciiStringInPlaceStream(
+        	reinterpret_cast<uint8_t*>(dup), 
+        	fragment.size(), 0);
+        cakeCLexer *lexer = cakeCLexerNew(ss);
+        antlr::CommonTokenStream *tokenStream = antlr3CommonTokenStreamSourceNew(
+        	ANTLR3_SIZE_HINT, TOKENSOURCE(lexer));
+        cakeCParser *parser = cakeCParserNew(tokenStream); 
+        cakeCParser_eventPatternRewriteExpr_return ret = parser->eventPatternRewriteExpr(parser);
+        
+        // We should now have the tree in ret.tree. 
+        // Free all the other temporary stuff we created.
+        // FIXME: work out which bits I can free now and which to cleanup later!
+        //ss->free(ss);
+        //lexer->free(lexer);
+        //tokenStream->free(tokenStream);
+        //parser->free(parser);
+        //free(dup);
+        
+        return ret.tree;
+	}
+    
+    boost::optional<std::string> source_pattern_is_simple_function_name(antlr::tree::Tree *t)
+    {
+    	return pattern_is_simple_function_name(t);
+    }
+
+    boost::optional<std::string> pattern_is_simple_function_name(antlr::tree::Tree *t)
+    {
+		assert(GET_TYPE(t) == CAKE_TOKEN(EVENT_PATTERN));
+        if (GET_CHILD_COUNT(t) > 2) return false;
+        INIT;
+        BIND2(t, eventContext);
+        BIND2(t, memberNameExpr);
+        if (GET_TYPE(memberNameExpr) != CAKE_TOKEN(DEFINITE_MEMBER_NAME)) return false;
+        else 
+        {
+        	if (GET_CHILD_COUNT(memberNameExpr) != 1) return false;
+            else return std::string(CCP(GET_TEXT(GET_CHILD(memberNameExpr, 0))));
+        }
+    }
+    
+    boost::optional<std::string> sink_expr_is_simple_function_name(antlr::tree::Tree *t)
+    {
+    	switch(GET_TYPE(t))
+        {
+        	case CAKE_TOKEN(EVENT_SINK_AS_PATTERN):
+                {
+                	INIT;
+                    BIND3(t, eventPattern, EVENT_PATTERN);
+                    return pattern_is_simple_function_name(eventPattern);
+                } 
+            case CAKE_TOKEN(EVENT_SINK_AS_STUB):
+            	return false;
+            default: assert(false); return false;
+        }
+    }
+
 	std::ostream& operator<<(std::ostream& o, const definite_member_name& n)
 	{
 		for (definite_member_name::const_iterator iter = n.begin();

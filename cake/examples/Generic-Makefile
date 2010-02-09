@@ -1,0 +1,15 @@
+CFLAGS += -g3 -fno-eliminate-unused-debug-types -fno-eliminate-unused-debug-symbols
+
+CAKE := ../../src/cake
+
+SRC := $(wildcard *.c)
+OBJS := $(patsubst %.c,%.o,$(SRC))
+$(warning OBJS are $(OBJS))
+BASENAME := $(shell basename $(shell readlink -f $(shell pwd)))
+
+default:: $(BASENAME).o cake-generated.mk
+
+cake-generated.mk $(BASENAME).o_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
+	$(CAKE) $(BASENAME).cake > "$@"
+
+include cake-generated.mk

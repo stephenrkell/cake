@@ -18,11 +18,18 @@
 //namespace cake { class cakeJavaParser; }
 // #include "cake/SemanticError.h"
 // #include "cake/InternalError.h"
+
+#ifndef __CAKE__REQUEST_HPP
+#define __CAKE__REQUEST_HPP
+
 #include <vector>
 #include <map>
 #include <memory>
 #include <boost/shared_ptr.hpp>
 #include <fstream>
+#include <functional>
+
+#include <selective_iterator.hpp>
 
 // our headers are too lazy to use the fully-qualified antlr namespace
 //namespace antlr = ::org::antlr::runtime;
@@ -34,8 +41,10 @@
 
 namespace cake
 {
-	class module;
+   	typedef boost::shared_ptr<module_described_by_dwarf> module_ptr;
+    //module_ptr make_module_ptr(described_module *arg) { return module_ptr(arg); }
     class derivation;
+    class wrapper_file; // in wrapper.hpp
 	class request
 	{
 		friend class derivation;
@@ -43,6 +52,7 @@ namespace cake
 		friend class rewrite_derivation;
 		friend class make_exec_derivation;
 		
+
 		/* Source file */
 		//jstring in_filename;
 		//java::io::File *in_fileobj;
@@ -68,14 +78,18 @@ namespace cake
 		void toplevel();
 				
 		/* data structure instances */
-		std::map<std::string, boost::shared_ptr<described_module> > module_tbl;	
-			// we use a shared ptr because otherwise, to do module_tbl[i] = blah,
+        typedef std::map<std::string, module_ptr> module_tbl_t;
+   		module_tbl_t module_tbl;	
+        typedef module_tbl_t::value_type module_tbl_entry_t;
+		
+        	// we use a shared ptr because otherwise, to do module_tbl[i] = blah,
 			// (or indeed any insertion into the map)
 			// we'd implicitly be constructing our module locally as a temporary
 			// and then copying it -- but it's very large, so we don't want that!
 		std::map<std::string, std::vector<std::string> > module_alias_tbl;
         
-        std::vector<boost::shared_ptr<derivation> > derivation_tbl;
+        typedef std::vector<boost::shared_ptr<derivation> > derivation_tbl_t;
+        derivation_tbl_t derivation_tbl;
         
         /* makes an absolute pathname out of a filename mentioned in Cake source */
         std::string make_absolute_pathname(std::string ref);
@@ -97,7 +111,7 @@ namespace cake
         
 		void extract_inlines();
 		void build_inlines();
-	    described_module *create_existing_module(std::string& constructor,
+	    module_ptr::pointer create_existing_module(std::string& constructor,
 	    	std::string& filename);
         
 		void extract_exists();
@@ -107,7 +121,7 @@ namespace cake
         
 		void extract_derivations();
         void add_derivation(antlr::tree::Tree *n);
-	    derivation *create_derivation(antlr::tree::Tree *t);	
+	    derivation *create_derivation(std::string&, antlr::tree::Tree *t);	
 	    derived_module *create_derived_module(derivation& d, std::string& filename);      	
 		// derivations may have to happen in some order -- that doesn't mean
 		// we have to process them in that order, although it might if we
@@ -127,43 +141,18 @@ namespace cake
 	{	
 	protected:
 		request& r;
-		antlr::tree::Tree *t;		
+		antlr::tree::Tree *t;
+        module_ptr output_module; // defaults to null
+        std::vector<module_ptr> input_modules; // defaults to empty
 		
 	public:
-		derivation(request& r, antlr::tree::Tree *t) : r(r), t(t) {}
+		derivation(request& r, antlr::tree::Tree *t)
+         : r(r), t(t) {}
 		virtual void extract_definition() = 0;
 		virtual void write_makerules(std::ostream& out) = 0;
 		virtual std::vector<std::string> dependencies() = 0;
 	};
 	
-	class link_derivation : public derivation
-	{
-		void extract_event_correspondences();		
-		void extract_value_correspondences();
-	
-		void compute_function_bindings();
-		void compute_form_value_correspondences(); 
-
-		void compute_static_value_correspondences();		
-		void compute_dwarf_type_compatibility(); 
-
-		void compute_rep_domains();
-		void output_rep_conversions();
-		
-		void compute_interposition_points();
-		void output_symbol_renaming_rules();
-		
-		void output_formgens();		
-		void output_wrappergens();
-		
-		void output_static_co_objects(); 
-
-	public:
-		void write_makerules(std::ostream& out);	
-		void extract_definition();
-		std::vector<std::string> dependencies() { return std::vector<std::string>(); }
-        link_derivation(cake::request& r, antlr::tree::Tree *t);
-	};
 	
 	class rewrite_derivation : public derivation
 	{
@@ -181,3 +170,5 @@ namespace cake
 	
 	//const char *token_name(jint t);
 }
+
+#endif

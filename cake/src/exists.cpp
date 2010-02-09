@@ -71,13 +71,14 @@ namespace cake
 		}
 	}
 
-	described_module *request::create_existing_module(std::string& constructor,
+	module_ptr::pointer request::create_existing_module(std::string& constructor,
     	std::string& filename)
     {
-		#define CASE(s, f) (constructor == #s ) ? static_cast<described_module*>(new s ## _module((f)))
+    	std::string unescaped_filename = unescape_string_lit(filename);
+		#define CASE(s, f, ...) (constructor == #s ) ? static_cast<module_ptr::pointer>(new s ## _module((f) , ##__VA_ARGS__))
         return	
-			CASE(elf_external_sharedlib, lookup_solib(unescape_string_lit(filename)))
-		:	CASE(elf_reloc, make_absolute_pathname(unescape_string_lit(filename)))
+			CASE(elf_external_sharedlib, lookup_solib(unescaped_filename), unescaped_filename)
+		:	CASE(elf_reloc, make_absolute_pathname(unescaped_filename), unescaped_filename)
 		:	0;
 		#undef CASE
         
@@ -91,12 +92,12 @@ namespace cake
 		std::string& filename,
 		std::string& module_ident) 
 	{
-		std::cout << "Told that exists a module, constructor name " << constructor
+		std::cerr << "Told that exists a module, constructor name " << constructor
 			<< " with quoted filename " << filename 
 			<< " and module identifier " << module_ident << std::endl;
 			
 		/* Add a module to the module table. */
-		module_tbl[module_ident] = boost::shared_ptr<described_module>(
+		module_tbl[module_ident] = module_ptr(
         	create_existing_module(constructor, filename));
 	}	
     

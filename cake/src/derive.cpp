@@ -5,7 +5,7 @@
 #include <cassert>
 #include "parser.hpp"
 #include "request.hpp"
-
+#include "link.hpp"
 
 namespace cake
 {
@@ -38,17 +38,13 @@ namespace cake
         << CCP(TO_STRING_TREE(derivedObjectExpression)) << std::endl;
 
 		/* Add a derivation to the derivation table. */
-        derivation *pd = create_derivation(derivedObjectExpression);
+        std::string unescaped_filename = unescape_string_lit(ocStrings.second);
+
+		// creating the derivation will create the output module
+        derivation *pd = create_derivation(unescaped_filename, derivedObjectExpression);
         derivation_tbl.push_back(
         	boost::shared_ptr<derivation>(pd)
             ); 
-
-		/* Add a derived module to the module table. */
-        boost::shared_ptr<described_module> old;
-		assert(module_tbl.find(ident) == module_tbl.end());
-        std::string unescaped_filename = unescape_string_lit(ocStrings.second);
-        module_tbl[ident] = boost::shared_ptr<described_module>(
-            create_derived_module(*pd, unescaped_filename));
     }
     
     derived_module *request::create_derived_module(derivation& d, std::string& filename)
@@ -56,7 +52,8 @@ namespace cake
     	return new derived_module(d, filename);
     }
     
-    derivation *request::create_derivation(antlr::tree::Tree *t)
+    derivation *request::create_derivation(std::string& output_filename, 
+    	antlr::tree::Tree *t)
     {
     	switch(GET_TYPE(t))
         {
@@ -72,7 +69,7 @@ namespace cake
                 assert(false); return 0;
         	case CAKE_TOKEN(KEYWORD_LINK): 
             {
-				return new link_derivation(*this, t);
+				return new link_derivation(*this, t, output_filename);
             }
             default: return 0;
 		}

@@ -25,7 +25,7 @@ INCLUDES += -I$(HOME)/opt/include
 CLASSPATH := ./java:$(CLASSPATH)
 $(warning CLASSPATH is $(CLASSPATH))
 
-CXXFLAGS += $(EXTRA_DEBUG_OPTS) -fPIC -g3 $(INCLUDES) -Wall #-D_STREAM_COMPAT
+CXXFLAGS += $(EXTRA_DEBUG_OPTS) -fPIC -g3 $(INCLUDES) -Wall -std=c++0x #-D_STREAM_COMPAT
 GCJFLAGS += $(EXTRA_DEBUG_OPTS) -findirect-dispatch -fno-indirect-classes -fPIC -g3 --classpath=$(CLASSPATH) -Wall 
 
 DWARFPP_PATH ?= ../../dwarf/libdwarfpp/src

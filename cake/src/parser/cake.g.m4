@@ -7,9 +7,10 @@ options {
 }
 
 tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; 
-VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; 
+ANNOTATED_VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; 
 OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; MEMBERSHIP_CLAIM; VALUE_DESCRIPTION; DWARF_BASE_TYPE; 
-DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; ANY_VALUE; PAIRWISE_BLOCK_LIST; }
+DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; ANY_VALUE; PAIRWISE_BLOCK_LIST; 
+EVENT_CORRESP; EVENT_SINK_AS_PATTERN; EVENT_SINK_AS_STUB; }
 
 
 @header {
@@ -224,13 +225,14 @@ pairwiseCorrespondenceBlock	:	IDENT /*(*/ BI_DOUBLE_ARROW^ /*| RL_DOUBLE_ARROW^ 
 pairwiseCorrespondenceBody	: '{' pairwiseCorrespondenceElement* '}' -> ^( CORRESP pairwiseCorrespondenceElement* )
 							;
                             
-pairwiseCorrespondenceElement	:	eventCorrespondence^
-								|	valueCorrespondenceBlock^
+pairwiseCorrespondenceElement	:	eventCorrespondence -> ^( EVENT_CORRESP eventCorrespondence )
+								|	valueCorrespondenceBlock 
+                                /* FIXME: support lone value correspondences */
                                 ;
                                 
 eventCorrespondence	:	(eventPattern LR_DOUBLE_ARROW)=> 	eventPattern	LR_DOUBLE_ARROW^ eventPatternRewriteExpr ';'!
-					|					eventPatternRewriteExpr RL_DOUBLE_ARROW^ eventPattern ';'!
-                    /*|	eventPattern	'<-->' eventPattern*/
+					|	(eventPatternRewriteExpr RL_DOUBLE_ARROW)=> eventPatternRewriteExpr RL_DOUBLE_ARROW^ eventPattern ';'!
+                    |	eventPattern	BI_DOUBLE_ARROW^ eventPattern ';'!
 					;
 
 eventContext	: ( '(' ( stackFramePattern SCOPE_RESOLUTION )+ ')' )? -> ^( EVENT_CONTEXT stackFramePattern* )
@@ -246,7 +248,7 @@ atomicEventPattern	: eventContext memberNameExpr '(' ( ( annotatedValuePattern (
 						-> ^( EVENT_PATTERN eventContext memberNameExpr annotatedValuePattern* )
 					;
 
-annotatedValuePattern 	: valuePattern valuePatternAnnotation? -> ^( VALUE_PATTERN valuePattern valuePatternAnnotation? )
+annotatedValuePattern 	: valuePattern valuePatternAnnotation? -> ^( ANNOTATED_VALUE_PATTERN valuePattern valuePatternAnnotation? )
 						;
 
 valuePatternAnnotation	: KEYWORD_AS^ memberNameExpr 
@@ -255,11 +257,11 @@ valuePatternAnnotation	: KEYWORD_AS^ memberNameExpr
 
 valuePattern		: memberNameExpr^ /* matches a named constant value -- also matches '_' */
 					| METAVAR^ /* matches any value, and names it */
-					| constantValueDescription^ /* matches that constant */
+					| constantValueDescription -> ^( KEYWORD_CONST constantValueDescription ) /* matches that constant */
                     ;
                 
-eventPatternRewriteExpr	: eventPattern^ /* shorthand for a trivial stub */
-						| stubDescription^
+eventPatternRewriteExpr	: eventPattern -> ^( EVENT_SINK_AS_PATTERN eventPattern ) /* shorthand for a trivial stub */
+						| stubDescription -> ^( EVENT_SINK_AS_STUB stubDescription )
                         ;
                         
 stubDescription		: '(' stubStatementBody ( ';' stubStatementBody )* ')' -> ^( STUB stubStatementBody* )

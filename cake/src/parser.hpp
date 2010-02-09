@@ -71,9 +71,9 @@ namespace tree {
 	antlr::tree::Tree *n; \
 	for (childcount = GET_CHILD_COUNT(__tree_head_pointer), \
 		n = ((childcount > 0) ? reinterpret_cast<antlr::tree::Tree*>(GET_CHILD(__tree_head_pointer, 0)) : 0), \
-		text = (n != 0) ? CCP(GET_TEXT(n)) : "(null)"; \
+		text = (n != 0 && ((GET_TEXT(n)) != 0)) ? CCP(GET_TEXT(n)) : "(null)"; \
 	i < childcount && ASSIGN_AS_COND(n, reinterpret_cast<antlr::tree::Tree*>(GET_CHILD(__tree_head_pointer, i))) && \
-		ASSIGN_AS_COND(text, (n != 0) ? CCP(GET_TEXT(n)) : "(null)"); \
+		ASSIGN_AS_COND(text, (n != 0 && ((GET_TEXT(n)) != 0)) ? CCP(GET_TEXT(n)) : "(null)"); \
 	i++)
 
 #define CHECK_TOKEN(node, token, tokenname) \
@@ -100,7 +100,7 @@ namespace tree {
 
 /* Make a C-style string out of a Java one. */
 //#define CCP(p) jtocstring_safe((p))
-#define CCP(p) (reinterpret_cast<char*>((p->chars)))
+#define CCP(p) ((p) ? reinterpret_cast<char*>((p->chars)) : "(no text)")
 
 /* Throw a semantic error for token n */
 #define SEMANTIC_ERROR(n) throw cake::SemanticError( \
@@ -111,8 +111,8 @@ namespace tree {
 	antlr::tree::Tree *& name = (node); \
 	CHECK_TOKEN(name, token, #token);
 
-#define RAISE(node, msg) throw cake::SemanticError((node), std::string( \
-					msg ": ") \
+#define RAISE(node, msg) throw cake::SemanticError((node), std::string(msg) \
+					+ ": " \
 						+ std::string(CCP(GET_TEXT(node))))
 
 #define RAISE_INTERNAL(node, msg) throw cake::InternalError((node), std::string( \
@@ -183,8 +183,6 @@ namespace cake {
             return s.str();
         }
     };
-
-
 }
 
 #endif

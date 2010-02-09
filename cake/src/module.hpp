@@ -33,6 +33,7 @@ namespace cake
 		static std::map<std::string, std::string> known_constructors;
         
     public:
+    	module(std::string& filename) : filename(filename) {}
 		std::string& get_filename() { return filename; }
 		static std::string extension_for_constructor(std::string& module_constructor_name)
 		{ return known_constructors[module_constructor_name]; }		
@@ -67,7 +68,8 @@ namespace cake
 		void process_supplementary_claim(antlr::tree::Tree *claimGroup);
 		virtual void process_claimgroup(antlr::tree::Tree *claimGroup) = 0;
 				
-		described_module() : debug_out(srk31::indenting_cerr) {}
+		described_module(std::string& filename) 
+         : 	module(filename), debug_out(srk31::indenting_cerr) {}
         
 	};
     
@@ -93,6 +95,8 @@ namespace cake
 		Dwarf_Off next_private_offset() { return private_offsets_next++; }
         virtual const dwarf::spec::abstract_def& get_spec() = 0;
 	public:        
+    	dwarf::encap::Die_encap_all_compile_units& all_compile_units() 
+        { return dies.all_compile_units(); }
 		bool do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
@@ -106,8 +110,8 @@ namespace cake
 		bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
 			Dwarf_Off current_die);
             
-        module_described_by_dwarf(dwarf::encap::dieset& ds) 
-         : 	dies(ds),
+        module_described_by_dwarf(std::string& filename, dwarf::encap::dieset& ds) 
+         : 	described_module(filename), dies(ds),
          	private_offsets_next(private_offsets_begin) {}
 	};
 
@@ -116,7 +120,7 @@ namespace cake
                         private dwarf::encap::file
 	{
 		boost::shared_ptr<std::ifstream> input_stream;
-					
+        					
 	protected:
 		static const dwarf::encap::die_off_list empty_child_list;
 		static const dwarf::encap::die::attribute_map empty_attribute_map;
@@ -128,7 +132,7 @@ namespace cake
         { return static_cast<dwarf::encap::file*>(this)->get_spec(); }
 	
 	public:
-		elf_module(std::string filename);
+		elf_module(std::string local_filename, std::string makefile_filename);
         //const dwarf::spec::abstract_def& get_spec() 
         //{ return static_cast<module_described_by_dwarf*>(this)->get_spec(); }
 	
@@ -139,7 +143,8 @@ namespace cake
 	{
 	
 	public:
-		elf_reloc_module(std::string filename) : elf_module(filename) {}
+		elf_reloc_module(std::string local_filename, std::string makefile_filename) 
+        : elf_module(local_filename, makefile_filename) {}
 		 
 	};
 	
@@ -147,11 +152,13 @@ namespace cake
 	{
 
 	public:
-		elf_external_sharedlib_module(std::string filename) : elf_module(filename) {}
+		elf_external_sharedlib_module(std::string local_filename, std::string libname) 
+        : elf_module(local_filename, libname) {}
 	};
     
     class derived_module : public module_described_by_dwarf
     {
+    	// here we actually instantiate a dieset; our base class just keeps a reference
     	dwarf::encap::dieset dies;
     	derivation& m_derivation;
     protected:
@@ -159,7 +166,7 @@ namespace cake
         
     public:
     	derived_module(derivation& d, std::string& filename) 
-         :	module_described_by_dwarf(dies),
+         :	module_described_by_dwarf(filename, dies),
          	dies(get_spec()),
             m_derivation(d)
          	 {}

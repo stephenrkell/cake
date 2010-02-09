@@ -1,4 +1,7 @@
+extern int bum;
 extern int bar(int);
+extern int crazy;
+int crazy = 42;
 
 int foo(int a)
 {
@@ -6,5 +9,10 @@ int foo(int a)
 	{
 		return bar(a-1);
 	}
-	else return 0;
+	else return bum;
+}
+
+static const char *not_external(void)
+{
+	return "Thou shalt not see this!";
 }
