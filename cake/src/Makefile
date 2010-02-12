@@ -14,9 +14,9 @@ OBJS += $(patsubst %.cpp,%.o,$(SRC))
 #OBJS += parser/cakeCLexer.o parser/cakeCParser.o
 $(warning OBJS is $(OBJS))
 
-BOOST_LIB ?= $(shell ls /usr/lib/libboost*system.so | sed 's/.*lib\(.*\)\.so/\1/')
+BOOST_LIBS ?= $(shell ls -1 /usr/lib/libboost*system.so | sed 's/.*lib\(.*\)\.so/-l\1/')
 
-LIBS := -l$(BOOST_LIB) -lantlr3c -lsrk31c++ -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
+LIBS := $(BOOST_LIBS) -lantlr3c -lsrk31c++ -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
 
 INCLUDES += -Iparser/include -Iinclude -Ijava/include
 INCLUDES += -I../../dwarf/libdwarfpp/include -I../../libsrk31c++ -I../../c++-fileno/include
