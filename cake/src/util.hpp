@@ -42,7 +42,10 @@ namespace cake
 			: std::vector<std::string>(first, last, a) {}
 		definite_member_name(const definite_member_name& x)
 			: std::vector<std::string>(x) {}
-		
+		definite_member_name(const std::vector<std::string>& x)
+			: std::vector<std::string>(x) {}
+        definite_member_name(antlr::tree::Tree *t);
+            
 		friend std::ostream& operator<<(std::ostream&, const definite_member_name&);
 	};
 	std::ostream& operator<<(std::ostream&, const definite_member_name&);
@@ -59,6 +62,9 @@ namespace cake
     boost::optional<std::string> pattern_is_simple_function_name(antlr::tree::Tree *t);
     boost::optional<std::string> source_pattern_is_simple_function_name(antlr::tree::Tree *t);
     boost::optional<std::string> sink_expr_is_simple_function_name(antlr::tree::Tree *t);
+
+    //boost::optional<definite_member_name> 
+    //dwarf_fq_member_name(dwarf::abstract::Die_abstract_base<>& d);
         
 // 	inline const char *jtocstring(java::lang::String *s)	
 // 	{

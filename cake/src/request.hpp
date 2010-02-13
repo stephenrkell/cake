@@ -51,6 +51,7 @@ namespace cake
 		friend class link_derivation;
 		friend class rewrite_derivation;
 		friend class make_exec_derivation;
+        friend class wrapper_file;
 		
 
 		/* Source file */
@@ -79,9 +80,14 @@ namespace cake
 				
 		/* data structure instances */
         typedef std::map<std::string, module_ptr> module_tbl_t;
-   		module_tbl_t module_tbl;	
+        typedef std::map<module_ptr, std::string> module_inverse_tbl_t;
+   		module_tbl_t module_tbl;
+        module_inverse_tbl_t module_inverse_tbl;
         typedef module_tbl_t::value_type module_tbl_entry_t;
-		
+
+	public:
+    	typedef module_inverse_tbl_t::value_type module_name_pair;
+        		
         	// we use a shared ptr because otherwise, to do module_tbl[i] = blah,
 			// (or indeed any insertion into the map)
 			// we'd implicitly be constructing our module locally as a temporary
@@ -121,8 +127,9 @@ namespace cake
         
 		void extract_derivations();
         void add_derivation(antlr::tree::Tree *n);
-	    derivation *create_derivation(std::string&, antlr::tree::Tree *t);	
-	    derived_module *create_derived_module(derivation& d, std::string& filename);      	
+	    derivation *create_derivation(const std::string&, const std::string&, antlr::tree::Tree *t);	
+	    derived_module *create_derived_module(derivation& d, 
+        	const std::string& id, const std::string& filename);      	
 		// derivations may have to happen in some order -- that doesn't mean
 		// we have to process them in that order, although it might if we
 		// end up supporting a derivation algebra (see below) since we might
@@ -149,8 +156,10 @@ namespace cake
 		derivation(request& r, antlr::tree::Tree *t)
          : r(r), t(t) {}
 		virtual void extract_definition() = 0;
+        virtual const std::string& namespace_name() = 0;
 		virtual void write_makerules(std::ostream& out) = 0;
 		virtual std::vector<std::string> dependencies() = 0;
+        module_ptr get_output_module() { return output_module; }
 	};
 	
 	

@@ -3,7 +3,7 @@
 GCJFLAGS ?= -fPIC -findirect-dispatch -fno-indirect-classes -g -Wno-unused -Wno-dead-code --classpath=$(CLASSPATH)
 
 ARCHIVE_NAME ?= $(shell basename $(shell readlink -f $(shell pwd)))
-$(warning ARCHIVE_NAME is $(ARCHIVE_NAME))
+#$(warning ARCHIVE_NAME is $(ARCHIVE_NAME))
 
 JAVA_SRC ?= $(shell find -name '*.java')
 #$(warning JAVA_SRC is $(JAVA_SRC))

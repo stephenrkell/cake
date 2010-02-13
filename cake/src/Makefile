@@ -4,6 +4,8 @@ JAVA_OBJS := $(patsubst %.java,%.o,$(shell find java -name '*.java'))
 
 SRC := $(wildcard *.cpp) #$(wildcard *.hpp)
 DEPS = $(patsubst %.cpp,.%.d,$(SRC))
+HDRS := $(wildcard *.hpp)
+HDR_DEPS = $(patsubst %.hpp,.%.hpp.d,$(HDRS))
 # main.cpp cppcatch.cpp javacatch.cpp cake.cpp alias.cpp util.cpp module.cpp exists.cpp derive.cpp link.cpp supplementary.cpp
 
 #OBJS := $(JAVA_OBJS) 
@@ -12,7 +14,7 @@ OBJS += $(patsubst %.cpp,%.o,$(SRC))
 #OBJS += parser/parser.a 
 #OBJS += antlr-runtime.jar.so stringtemplate.jar.so
 #OBJS += parser/cakeCLexer.o parser/cakeCParser.o
-$(warning OBJS is $(OBJS))
+#$(warning OBJS is $(OBJS))
 
 BOOST_LIBS ?= $(shell ls -1 /usr/lib/libboost*system.so | sed 's/.*lib\(.*\)\.so/-l\1/')
 
@@ -23,16 +25,16 @@ INCLUDES += -I../../dwarf/libdwarfpp/include -I../../libsrk31c++ -I../../c++-fil
 INCLUDES += -I$(HOME)/opt/include 
 
 CLASSPATH := ./java:$(CLASSPATH)
-$(warning CLASSPATH is $(CLASSPATH))
+#$(warning CLASSPATH is $(CLASSPATH))
 
-CXXFLAGS += $(EXTRA_DEBUG_OPTS) -fPIC -g3 $(INCLUDES) -Wall -std=c++0x #-D_STREAM_COMPAT
+CXXFLAGS += $(EXTRA_DEBUG_OPTS) -fPIC -g3 $(INCLUDES) -O0 -Wall -std=c++0x #-D_STREAM_COMPAT
 GCJFLAGS += $(EXTRA_DEBUG_OPTS) -findirect-dispatch -fno-indirect-classes -fPIC -g3 --classpath=$(CLASSPATH) -Wall 
 
 DWARFPP_PATH ?= ../../dwarf/libdwarfpp/src
 LIBPATHS += -L$(DWARFPP_PATH) -L$(HOME)/opt/lib -L../../c++-fileno/lib -L../../libsrk31c++
 
 CAKE_VERSION := 0.0$(shell hg log --template '{date|isodate}\n' $(CAKE_SRC) | head -n1 | sed 's/+.*//' | tr -cd '[:digit:]' )#$(shell if [[ -n $$( hg status $(patsubst %,cake/src/%,$(CAKE_SRC))) ]]; then echo "+local"; fi )
-$(warning Generated Cake version macro $(CAKE_VERSION))
+#$(warning Generated Cake version macro $(CAKE_VERSION))
 
 CFLAGS += -DCAKE_VERSION=\"$(CAKE_VERSION)\"
 CXXFLAGS += -DCAKE_VERSION=\"$(CAKE_VERSION)\"
@@ -79,19 +81,25 @@ clean::
 	rm -f $(DEPS)
 	$(MAKE) -C parser clean
 
+$(HDR_DEPS) : .%.hpp.d: %.hpp
+	g++ -MM -fpch-deps $(CXXFLAGS) "$<" > "$@"
+	
+include $(HDR_DEPS)
+
 $(DEPS) : .%.d : %.cpp
 	g++ -MM $(CXXFLAGS) "$<"  > "$@"
 	
 include $(DEPS)
 
+
 # new implicit rule for compiling C++
-%.o: %.cpp  $(HDRS) 
+%.o: %.cpp
 	g++ -c -o "$@" ${CXXFLAGS} "$<"
 
 # cancel builtin implicit rule
 %: %.o
 
-$(warning OBJS is $(OBJS))
+#$(warning OBJS is $(OBJS))
 cake: parser $(OBJS) $(DWARFPP_PATH)/libdwarfpp.a # dependency only
 	gcj $(GCJFLAGS) $(LIBPATHS) -Wl,-R. $(OBJS) parser/cakeC{Parser,Lexer}.o $(LIBS) -lstdc++ -o "$@" 
 

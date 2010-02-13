@@ -99,6 +99,7 @@ namespace cake
 		/* Add a module to the module table. */
 		module_tbl[module_ident] = module_ptr(
         	create_existing_module(constructor, filename));
+        module_inverse_tbl[module_tbl[module_ident]] = module_ident;
 	}	
     
     std::string request::make_absolute_pathname(std::string ref)

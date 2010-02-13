@@ -55,8 +55,12 @@ namespace cake {
     public:
 		typedef std::multimap<iface_pair, ev_corresp> ev_corresp_map_t;
         typedef std::multimap<iface_pair, val_corresp> val_corresp_map_t;
-        typedef std::vector<ev_corresp_map_t::value_type *> wrapper_corresp_list;
-        typedef std::map<std::string, wrapper_corresp_list> wrappers_map_t;
+        
+        typedef ev_corresp_map_t::value_type ev_corresp_entry;
+        typedef val_corresp_map_t::value_type val_corresp_entry;
+        
+        typedef std::vector<ev_corresp_map_t::value_type *> ev_corresp_pair_ptr_list;
+        typedef std::map<std::string, ev_corresp_pair_ptr_list> wrappers_map_t;
     private:
     	// correspondences
     	ev_corresp_map_t ev_corresps;
@@ -66,11 +70,15 @@ namespace cake {
         // a corresp is in the list iff it activates the wrapper
         // i.e. its source event 
         wrappers_map_t wrappers;
-        
+        std::string output_namespace; // namespace in which code is emitted
+
+        std::string wrap_file_makefile_name;
+        std::string wrap_file_name;
+        std::ofstream wrap_file;
+                
         wrapper_file *p_wrap_code; // FIXME: this should be a contained subobject...
         wrapper_file& wrap_code;	// but is a pointer because of...
         	// stupid C++ inability to resolve circular include dependency
-        std::ofstream wrap_file;
     
     protected:
     	// process a pairwise block
@@ -87,7 +95,6 @@ namespace cake {
                 bool free_source = false,
                 bool free_sink = false);
 		void compute_wrappers();
-
     /**** these are just notes-to-self ***/
 //		void compute_rep_domains();
 //		void output_rep_conversions();
@@ -104,8 +111,10 @@ namespace cake {
 		void write_makerules(std::ostream& out);	
 		void extract_definition();
 		std::vector<std::string> dependencies() { return std::vector<std::string>(); }
-        link_derivation(cake::request& r, antlr::tree::Tree *t, std::string& output_filename);
+        link_derivation(cake::request& r, antlr::tree::Tree *t, 
+        	const std::string& id, const std::string& output_filename);
         virtual ~link_derivation();
+        const std::string& namespace_name() { return output_namespace; }
 	};
 }
 

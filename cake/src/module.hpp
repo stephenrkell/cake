@@ -33,7 +33,7 @@ namespace cake
 		static std::map<std::string, std::string> known_constructors;
         
     public:
-    	module(std::string& filename) : filename(filename) {}
+    	module(const std::string& filename) : filename(filename) {}
 		std::string& get_filename() { return filename; }
 		static std::string extension_for_constructor(std::string& module_constructor_name)
 		{ return known_constructors[module_constructor_name]; }		
@@ -68,7 +68,7 @@ namespace cake
 		void process_supplementary_claim(antlr::tree::Tree *claimGroup);
 		virtual void process_claimgroup(antlr::tree::Tree *claimGroup) = 0;
 				
-		described_module(std::string& filename) 
+		described_module(const std::string& filename) 
          : 	module(filename), debug_out(srk31::indenting_cerr) {}
         
 	};
@@ -110,7 +110,7 @@ namespace cake
 		bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
 			Dwarf_Off current_die);
             
-        module_described_by_dwarf(std::string& filename, dwarf::encap::dieset& ds) 
+        module_described_by_dwarf(const std::string& filename, dwarf::encap::dieset& ds) 
          : 	described_module(filename), dies(ds),
          	private_offsets_next(private_offsets_begin) {}
 	};
@@ -163,13 +163,15 @@ namespace cake
     	derivation& m_derivation;
     protected:
     	const dwarf::spec::abstract_def& get_spec() { return dwarf::spec::dwarf3; }
+        const std::string m_id;
         
     public:
-    	derived_module(derivation& d, std::string& filename) 
+    	derived_module(derivation& d, const std::string id, const std::string& filename) 
          :	module_described_by_dwarf(filename, dies),
          	dies(get_spec()),
-            m_derivation(d)
-         	 {}
+            m_derivation(d),
+            m_id(id)
+         	{}
     };
 }
 

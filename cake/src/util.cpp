@@ -190,33 +190,33 @@ namespace cake
 		return std::make_pair(fst, snd);
 	}
 	
-	// FIXME: lots of copying here, along with other functions which return complex objects
-	// as their return values. Consider a widespread adoption of heap-returning these, using
-	// auto_ptr<> in the callers, or smarted shared pointers if copying happens.
-	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName)
-	{
-		definite_member_name name;
-		switch(GET_TYPE(memberName))
+//	// FIXME: lots of copying here, along with other functions which return complex objects
+//	// as their return values. Consider a widespread adoption of heap-returning these, using
+//	// auto_ptr<> in the callers, or smarted shared pointers if copying happens.
+//	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName)
+//	{
+//	}
+	definite_member_name::definite_member_name(antlr::tree::Tree *t)
+    {
+		switch(GET_TYPE(t))
 		{
 			case '_':
-				RAISE_INTERNAL(memberName, "expecting a definite memberName, found indefinite `_'");
+				RAISE_INTERNAL(t, "expecting a definite memberName, found indefinite `_'");
 			// no break
 			case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
-				definite_member_name vec(GET_CHILD_COUNT(memberName));
-				definite_member_name::iterator iter = vec.begin();
-				FOR_ALL_CHILDREN(memberName)
+				INIT;
+				FOR_ALL_CHILDREN(t)
 				{
-					*iter = std::string(CCP(GET_TEXT(n)));
-					iter++;
+					push_back(std::string(CCP(GET_TEXT(n))));
 				}
-				return vec;
 			}
-			// no break
-			default: RAISE_INTERNAL(memberName, "bad syntax tree for memberName");			
-			// no break
-		}		
-	}
-	
+            break;
+			default: RAISE_INTERNAL(t, "bad syntax tree for memberName");			
+		}
+	}			
+	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName)
+    { return definite_member_name(memberName); }
+
 	std::string get_event_pattern_call_site_name(antlr::tree::Tree *t)
     {
     	INIT;
@@ -385,7 +385,7 @@ namespace cake
 		}
 		return std::string("");
 	}
-	
+	    
 	std::string solib_constructor = std::string("elf_external_sharedlib");
 	const char *guessed_system_library_path = "/usr/lib:/lib";
 	const char *guessed_system_library_prefix = "lib";

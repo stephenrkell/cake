@@ -41,18 +41,21 @@ namespace cake
         std::string unescaped_filename = unescape_string_lit(ocStrings.second);
 
 		// creating the derivation will create the output module
-        derivation *pd = create_derivation(unescaped_filename, derivedObjectExpression);
+        derivation *pd = create_derivation(std::string(CCP(GET_TEXT(id))), 
+        	unescaped_filename, derivedObjectExpression);
         derivation_tbl.push_back(
         	boost::shared_ptr<derivation>(pd)
             ); 
     }
     
-    derived_module *request::create_derived_module(derivation& d, std::string& filename)
+    derived_module *request::create_derived_module(derivation& d, 
+    	const std::string& id, const std::string& filename)
     {
-    	return new derived_module(d, filename);
+    	return new derived_module(d, id, filename);
     }
     
-    derivation *request::create_derivation(std::string& output_filename, 
+    derivation *request::create_derivation(const std::string& module_name, 
+    	const std::string& output_filename, 
     	antlr::tree::Tree *t)
     {
     	switch(GET_TYPE(t))
@@ -69,7 +72,7 @@ namespace cake
                 assert(false); return 0;
         	case CAKE_TOKEN(KEYWORD_LINK): 
             {
-				return new link_derivation(*this, t, output_filename);
+				return new link_derivation(*this, t, module_name, output_filename);
             }
             default: return 0;
 		}

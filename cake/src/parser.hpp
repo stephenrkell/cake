@@ -41,6 +41,7 @@ namespace tree {
 #include <sstream>
 #include "util.hpp"
 #define GET_TEXT(node) (node)->getText((node))
+#define TO_STRING(node) (node)->toString((node))
 #define GET_TYPE(node) (node)->getType((node))
 #define GET_CHILD_COUNT(node) (node)->getChildCount((node))
 #define TO_STRING_TREE(node) (node)->toStringTree((node))
@@ -67,8 +68,8 @@ namespace tree {
 #define FOR_BODY(t) \
 	antlr::tree::Tree *__tree_head_pointer = reinterpret_cast<antlr::tree::Tree *>(t); /* because our tree may well alias 'n' */ \
 	unsigned childcount; \
-	const char * text; \
-	antlr::tree::Tree *n; \
+	const char *text = 0; \
+	antlr::tree::Tree *n = 0; \
 	for (childcount = GET_CHILD_COUNT(__tree_head_pointer), \
 		n = ((childcount > 0) ? reinterpret_cast<antlr::tree::Tree*>(GET_CHILD(__tree_head_pointer, 0)) : 0), \
 		text = (n != 0 && ((GET_TEXT(n)) != 0)) ? CCP(GET_TEXT(n)) : "(null)"; \
