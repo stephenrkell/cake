@@ -121,6 +121,31 @@ namespace tree {
 						+std::string(CCP(GET_TEXT(node))))
 
 namespace cake {
+	
+//     inline boost::optional<std::string> 
+//     value_pattern_as_definite_member_name(antlr::tree::Tree *t)
+//     {
+//     
+//     }
+//     
+//     inline boost::optional<std::string>
+//     value_pattern_as_indefinite_member_name(antlr::tree::Tree *t)
+//     {
+//     
+//     }
+//     
+//     inline boost::optional<std::string>
+//     value_pattern_as_metavar(antlr::tree::Tree *t)
+//     {
+//         
+// 	}
+//     
+//     inline boost::optional<std::string>
+//     value_pattern_as_const(antlr::tree::Tree *t)
+//     {
+//     
+//     }
+
 	class TreewalkError
     {
     	antlr::tree::Tree *m_t;
@@ -148,6 +173,7 @@ namespace cake {
         std::string m_msg;
     public:
     	SemanticError(antlr::tree::Tree *t, std::string msg) : m_t(t), m_msg(msg) {}
+    	SemanticError(std::string msg) : m_t(0), m_msg(msg) {}
         std::string message() {
         	std::ostringstream s;
             s << "SemanticError";

@@ -67,6 +67,11 @@ namespace cake
         void emit_constant_expr(
         	antlr::tree::Tree *constant_expr,
     	    const request::module_name_pair& request_context);
+            
+        long double eval_const_expr(
+	    	antlr::tree::Tree *expr,
+    	    const request::module_name_pair& request_context);
+
 
 
     public:

@@ -59,7 +59,7 @@ CXXFLAGS += -DCAKE_VERSION=\"$(CAKE_VERSION)\"
 #		org.antlr.runtime.ClassicToken 
 		
 .PHONY: default
-default: cake
+default: $(patsubst %.hpp,%.hpp.gch,$(HDRS)) cake
 
 java: java/stamp
 java/stamp: 
@@ -98,6 +98,9 @@ include $(DEPS)
 
 # cancel builtin implicit rule
 %: %.o
+
+%.hpp.gch: %.hpp
+	g++ -o "$@" ${CXXFLAGS} "$<"
 
 #$(warning OBJS is $(OBJS))
 cake: parser $(OBJS) $(DWARFPP_PATH)/libdwarfpp.a # dependency only

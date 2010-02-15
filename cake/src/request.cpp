@@ -13,7 +13,10 @@ namespace cake
 		: 	in_filename(filename),
             in_fileobj(antlr3AsciiFileStreamNew(
                 reinterpret_cast<uint8_t*>(
-                    const_cast<char*>(filename)))) {}
+                    const_cast<char*>(filename)))) 
+    {
+    	if (!in_fileobj) throw cake::SemanticError("error opening input file");
+    }
 
 	int request::process()
 	{

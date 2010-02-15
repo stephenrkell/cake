@@ -10,7 +10,7 @@ tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; 
 ANNOTATED_VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; 
 OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; MEMBERSHIP_CLAIM; VALUE_DESCRIPTION; DWARF_BASE_TYPE; 
 DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; ANY_VALUE; PAIRWISE_BLOCK_LIST; 
-EVENT_CORRESP; EVENT_SINK_AS_PATTERN; EVENT_SINK_AS_STUB; }
+EVENT_CORRESP; EVENT_SINK_AS_PATTERN; EVENT_SINK_AS_STUB; CONST_ARITH; }
 
 
 @header {
@@ -124,7 +124,8 @@ constantOrVoidValueDescription	:	constantValueDescription^
 constantValueDescription	: STRING_LIT^
                             | KEYWORD_NULL^
                             | constantSetExpression
-							| constantIntegerArithmeticExpression
+							| constantIntegerArithmeticExpression 
+                            	-> ^( CONST_ARITH constantIntegerArithmeticExpression )
                             ;
                             
 constantSetExpression	: '{' ( IDENT ( ',' IDENT* )* )? '}' -> ^( SET_CONST IDENT* )

@@ -4,6 +4,7 @@
 #include "link.hpp"
 #include "wrapsrc.hpp"
 #include <sstream>
+#include <cmath>
 
 namespace cake
 {
@@ -212,7 +213,49 @@ namespace cake
             antlr::tree::Tree *pattern,
             const request::module_name_pair& request_context)
     {
-        m_out << "true"; //CCP(GET_TEXT(corresp_pair.second.source_pattern));
+        //m_out << "true"; //CCP(GET_TEXT(corresp_pair.second.source_pattern));
+        // for each position in the pattern, emit a test
+        bool emitted = false;
+        INIT;
+        ALIAS3(pattern, eventPattern, EVENT_PATTERN);
+        {
+        	INIT;
+            BIND2(pattern, eventContext);
+            BIND2(pattern, memberNameExpr);
+            FOR_REMAINING_CHILDREN(eventPattern)
+            {
+            	int argnum = i;
+        	    ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
+                {
+                	INIT;
+                    BIND2(annotatedValuePattern, valuePattern);
+                    switch(GET_TYPE(valuePattern))
+				    {
+                	    case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+                    	    // could match anything, so continue
+                            continue;
+                        break;
+                        case CAKE_TOKEN(INDEFINITE_MEMBER_NAME):
+                    	    // means don't care, so continue
+                    	    continue;
+                        break;
+                        case CAKE_TOKEN(METAVAR):
+                    	    // FIXME: bind something here
+                            continue;
+                        break;
+                        case CAKE_TOKEN(KEYWORD_CONST):
+                        	if (emitted) m_out << " && ";
+                    	    m_out << "arg" << argnum << " == ";
+                            emit_constant_expr(valuePattern, request_context);
+                            emitted = true;
+                        break;
+                        default: assert(false); 
+                        break;
+                    }
+	            }
+            }
+	    }
+        if (!emitted) m_out << "true";
     }
 
     void wrapper_file::emit_sink_action(
@@ -281,7 +324,55 @@ namespace cake
         	antlr::tree::Tree *constant_expr,
     	    const request::module_name_pair& request_context)
     {
-    	m_out << CCP(TO_STRING_TREE(constant_expr));
+    	//m_out << CCP(TO_STRING_TREE(constant_expr));
+        assert(GET_TYPE(constant_expr) == CAKE_TOKEN(KEYWORD_CONST));
+        INIT;
+        BIND2(constant_expr, child);
+        switch(GET_TYPE(child))
+        {
+        	case CAKE_TOKEN(STRING_LIT):
+            	m_out << CCP(GET_TEXT(child));
+                break;
+            case CAKE_TOKEN(KEYWORD_NULL):
+            	m_out << "0";
+                break;
+            case CAKE_TOKEN(SET_CONST):
+            	RAISE(child, "set constants not yet supported"); // FIXME            
+            //case CAKE_TOKEN(CONST_ARITH):
+            case CAKE_TOKEN(CONST_ARITH):
+            {
+            	long double result = eval_const_expr(constant_expr, request_context);
+                m_out << result;
+                break;
+            }            
+            default: 
+            	RAISE(child, "expected a constant expression");
+        }
+    }
+    
+    // FIXME: something better than this naive long double implementation please
+    long double wrapper_file::eval_const_expr(
+    	antlr::tree::Tree *expr,
+        const request::module_name_pair& request_context)
+    {
+    	switch (GET_TYPE(expr))
+        {
+        	case CAKE_TOKEN(INT):
+            	return atoi(CCP(GET_TEXT(expr)));
+            case CAKE_TOKEN(SHIFT_LEFT): 
+            	return 
+                	eval_const_expr(GET_CHILD(expr, 0), request_context) 
+                    	* powl(2.0, eval_const_expr(GET_CHILD(expr, 0), request_context));
+            case CAKE_TOKEN(SHIFT_RIGHT):
+            	return 
+                	eval_const_expr(GET_CHILD(expr, 0), request_context) 
+                    	* powl(2.0, eval_const_expr(GET_CHILD(expr, 0), request_context));
+
+            case CAKE_TOKEN(KEYWORD_CONST):
+            case CAKE_TOKEN(CONST_ARITH):
+            	return eval_const_expr(GET_CHILD(expr, 0), request_context);
+            default: RAISE(expr, "unsupported constant expression syntax");
+        }
     }
     
     void wrapper_file::emit_symbol_reference_expr_from_dwarf_ident(
