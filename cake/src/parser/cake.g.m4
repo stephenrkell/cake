@@ -10,7 +10,7 @@ tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; 
 ANNOTATED_VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; 
 OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; MEMBERSHIP_CLAIM; VALUE_DESCRIPTION; DWARF_BASE_TYPE; 
 DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; ANY_VALUE; PAIRWISE_BLOCK_LIST; 
-EVENT_CORRESP; EVENT_SINK_AS_PATTERN; EVENT_SINK_AS_STUB; CONST_ARITH; }
+EVENT_CORRESP; EVENT_SINK_AS_PATTERN; EVENT_SINK_AS_STUB; CONST_ARITH; KEYWORD_PATTERN; }
 
 
 @header {
@@ -247,7 +247,11 @@ eventPattern	:	atomicEventPattern
            
 atomicEventPattern	: eventContext memberNameExpr '(' ( ( annotatedValuePattern ( ',' annotatedValuePattern )* ) | ELLIPSIS )? ')'
 						-> ^( EVENT_PATTERN eventContext memberNameExpr annotatedValuePattern* )
+                    | eventContext identPattern '(' ( ( annotatedValuePattern ( ',' annotatedValuePattern )* ) | ELLIPSIS )? ')'
+						-> ^( EVENT_PATTERN eventContext identPattern annotatedValuePattern* )
 					;
+                    
+identPattern : KEYWORD_PATTERN^ PATTERN_IDENT; 
 
 annotatedValuePattern 	: valuePattern valuePatternAnnotation? -> ^( ANNOTATED_VALUE_PATTERN valuePattern valuePatternAnnotation? )
 						;
@@ -265,7 +269,7 @@ eventPatternRewriteExpr	: eventPattern -> ^( EVENT_SINK_AS_PATTERN eventPattern 
 						| stubDescription -> ^( EVENT_SINK_AS_STUB stubDescription )
                         ;
                         
-stubDescription		: '(' stubStatementBody ( ';' stubStatementBody )* ')' -> ^( STUB stubStatementBody* )
+stubDescription		: ('{' | CONT_LBRACE) stubStatementBody ( ';' stubStatementBody )* ('}' | CONT_RBRACE) -> ^( STUB stubStatementBody* )
 					;
           
 stubStatementBody	:	assignment
@@ -467,6 +471,7 @@ KEYWORD_PTR : 'ptr';
 KEYWORD_CLASS_OF : 'class_of';
 KEYWORD_ENUM : 'enum';
 KEYWORD_ENUMERATOR : 'enumerator';
+KEYWORD_PATTERN : 'pattern';
 SHIFT_LEFT : '<<';
 SHIFT_RIGHT : '>>';
 KEYWORD_LINK : 'link';
@@ -520,22 +525,29 @@ GREATER : '>';
 BITWISE_XOR : '^';
 //BAR : '|';
 BITWISE_OR : '|';
+CONT_LBRACE : '--{';
+CONT_RBRACE : '}--';
 
 /* Fallback (interesting) tokens */
 INT :   '0'..'9'+ ;
+FLOAT : '0'..'9'+ '.''0'..'9'+ ;
 NEWLINE:'\r'? '\n' {antlr_m4_newline_action} ;
 WS  :   (' '|'\t')+ {antlr_m4_skip_action} ;
 LINECOMMENT : '/' '/'( ~ '\n' )* {antlr_m4_skip_action} ;
 BLOCKCOMMENT : '/' '*' ( ~ '/' | ( ~ '*' ) '/' )* '*' '/' {antlr_m4_skip_action} ;
 STRING_LIT : '\"' ( ~'\"'|'\\\"' )* '\"' ;
-IDENT  :   ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9'|'\\'.) /* begin with a-zA-Z or non-terminating '_' */
-(
-	('a'..'z'|'A'..'Z'|'0'..'9'|'\\'.|'_'|'-'|'.'/*'0'..'9'*/)*('a'..'z'|'A'..'Z'|'0'..'9'|'\\'.|'_')
-   /*|('.''0'..'9') /* ending with dot-digit is okay */
-)? ;
+//IDENT  :   ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9'|'\\'.) /* begin with a-zA-Z or non-terminating '_' */
+//(
+//	('a'..'z'|'A'..'Z'|'0'..'9'|'\\'.|'_'|'-'|('.'('0'..'9')+))*('a'..'z'|'A'..'Z'|'0'..'9'|'\\'.|'_')
+//   /*|('.''0'..'9') /* ending with dot-digit is okay */
+//)? ;
+/* FIXME: scrapped the fancy IDENT rule until antlr does maximum munch. GRR! */
+IDENT : ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'\\'.)*;
+PATTERN_IDENT : '/'('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'|'|'*'|'('|')'|'.')*'/';
 METAVAR	: '@'('a'..'z'|'A'..'Z')('a'..'z'|'A'..'Z'|'0'..'9'|'_')* ;
 /* The ident rule is a bit different from the conventional -- idents must be at
- * least two characters, and may embed '-' and '.' characters (not at the start or end). 
+ * least two characters, and may embed '-' characters, and '.' preceding a number.
+ * (but not at the start or end). 
  * The first of these quirks reduces ambiguity, since '_' is given a unique and special
  * meaning. On the other hand, symbols which are only one character will cause problems.
  * The second quirk is really odd, but I'm running with it so that we can use library names

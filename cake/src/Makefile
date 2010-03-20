@@ -16,7 +16,7 @@ OBJS += $(patsubst %.cpp,%.o,$(SRC))
 #OBJS += parser/cakeCLexer.o parser/cakeCParser.o
 #$(warning OBJS is $(OBJS))
 
-BOOST_LIBS ?= $(shell ls -1 /usr/lib/libboost*system.so | sed 's/.*lib\(.*\)\.so/-l\1/')
+BOOST_LIBS ?= $(shell ls -1 /usr/lib/libboost*system.so | sed 's/.*lib\(.*\)\.so/-l\1/') -lboost_regex
 
 LIBS := $(BOOST_LIBS) -lantlr3c -lsrk31c++ -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
 
@@ -59,7 +59,8 @@ CXXFLAGS += -DCAKE_VERSION=\"$(CAKE_VERSION)\"
 #		org.antlr.runtime.ClassicToken 
 		
 .PHONY: default
-default: $(patsubst %.hpp,%.hpp.gch,$(HDRS)) cake
+#default: $(patsubst %.hpp,%.hpp.gch,$(HDRS)) cake
+default: cake
 
 java: java/stamp
 java/stamp: 
@@ -103,8 +104,9 @@ include $(DEPS)
 	g++ -o "$@" ${CXXFLAGS} "$<"
 
 #$(warning OBJS is $(OBJS))
-cake: parser $(OBJS) $(DWARFPP_PATH)/libdwarfpp.a # dependency only
-	gcj $(GCJFLAGS) $(LIBPATHS) -Wl,-R. $(OBJS) parser/cakeC{Parser,Lexer}.o $(LIBS) -lstdc++ -o "$@" 
+cake: parser $(OBJS) $(DWARFPP_PATH)/libdwarfpp.so # dependency only
+	gcj $(GCJFLAGS) $(LIBPATHS) -Wl,-R. -Wl,-R$(realpath $(DWARFPP_PATH)) \
+	 $(OBJS) parser/cakeC{Parser,Lexer}.o $(LIBS) -lstdc++ -o "$@" 
 
 #antlr-runtime.jar.so: antlr-runtime-3*.jar 
 #	gcj -shared -o "$@" "$<"

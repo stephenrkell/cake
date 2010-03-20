@@ -10,19 +10,19 @@ namespace cake {
 	class link_derivation : public derivation
 	{
     	typedef std::pair<module_ptr,module_ptr> iface_pair;
-        struct is_provided : public std::unary_function<dwarf::encap::die::subprograms_iterator, bool>
+        struct is_provided : public std::unary_function<dwarf::encap::subprograms_iterator, bool>
         {
-            bool operator()(dwarf::encap::die::subprograms_iterator i_subp) const
+            bool operator()(dwarf::encap::subprograms_iterator i_subp) const
             { return (!((*i_subp)->get_declaration()) || (!(*((*i_subp)->get_declaration())))); }
         };
-        struct is_required : public std::unary_function<dwarf::encap::die::subprograms_iterator, bool>
+        struct is_required : public std::unary_function<dwarf::encap::subprograms_iterator, bool>
         {
-            bool operator()(dwarf::encap::die::subprograms_iterator i_subp) const
+            bool operator()(dwarf::encap::subprograms_iterator i_subp) const
             { is_provided is_p; return !(is_p(i_subp)); }
         };
-        typedef selective_iterator<dwarf::encap::die::subprograms_iterator, is_provided>
+        typedef selective_iterator<dwarf::encap::subprograms_iterator, is_provided>
         	 provided_funcs_iter;
-        typedef selective_iterator<dwarf::encap::die::subprograms_iterator, is_required>
+        typedef selective_iterator<dwarf::encap::subprograms_iterator, is_required>
         	 required_funcs_iter;
         
         struct ev_corresp

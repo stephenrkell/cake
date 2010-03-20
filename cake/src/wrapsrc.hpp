@@ -17,6 +17,23 @@ namespace cake
         dwarf::tool::cxx_compiler compiler;
         derivation& m_d;
         std::ostream& m_out;
+        const std::string ns_prefix;
+        
+        // We need a structure to hold bound names. What can be bound?
+        // - Formal parameters of a wrapper's caller.
+        // - Intermediate results in a stub
+        struct bound_var_info
+        {
+        	boost::optional<dwarf::encap::Die_encap_is_type&> type;
+            const request::module_name_pair& module;
+            dwarf::encap::Die_encap_is_program_element& origin;
+            bound_var_info(boost::optional<dwarf::encap::Die_encap_is_type&> type,
+	            const request::module_name_pair& module,
+	            dwarf::encap::Die_encap_is_program_element& origin)
+                : type(type), module(module), origin(origin) {}
+        };
+        typedef std::map<std::string, bound_var_info> environment;
+        typedef environment::value_type binding;
         
         // About context:
 
@@ -31,26 +48,52 @@ namespace cake
         // DWARF info, e.g. tuple field names are resolved against
         // the relevant type DIE.
         
-        void emit_wrapper_body(
+		bool subprogram_returns_void(
+        	const dwarf::encap::Die_encap_subprogram& subprogram);
+            
+		bool treat_subprogram_as_untyped(
+        	const dwarf::encap::Die_encap_subprogram& subprogram);
+            
+		void emit_wrapper_body(
         	const std::string& wrapped_symname, 
+            const dwarf::encap::Die_encap_subprogram& wrapper_sig, 
 	        link_derivation::ev_corresp_pair_ptr_list& corresps,
             const request::module_inverse_tbl_t& request_context);
 
 		// Cake high-level constructs
 	    void emit_pattern_condition(
             antlr::tree::Tree *pattern,
-            const request::module_name_pair& request_context); 
+            const request::module_name_pair& request_context,
+            environment *out_env); 
             // FIXME: also need context about naming environment, to determine 
             // which names are new (to bind) and which denote preexisting values.
 //        	const link_derivation::ev_corresp_entry& corresp_pair);
 
 	    void emit_sink_action(
         	antlr::tree::Tree *action,
-            const request::module_name_pair& context);
+            const dwarf::encap::Die_encap_subprogram& wrapper_sig, 
+            const request::module_name_pair& sink_context,
+            const request::module_name_pair& source_context,
+            environment env);
+
+    	void emit_type_name(
+            const dwarf::encap::Die_encap_is_type& t,
+            const std::string& namespace_prefix);
             
-        void emit_event_pattern_as_function_call(
+        void open_value_conversion(
+    	    boost::optional<dwarf::encap::Die_encap_is_type&> from_type,
+            const std::string& from_namespace,
+            boost::optional<dwarf::encap::Die_encap_is_type&> to_type,
+            const std::string& to_namespace);
+        
+        void close_value_conversion();
+
+    	void emit_event_pattern_as_function_call(
         	antlr::tree::Tree *pattern,
-            const request::module_name_pair& context);
+            const request::module_name_pair& sink_context, // sink module
+            const request::module_name_pair& source_context,
+            const dwarf::encap::Die_encap_subprogram& source_signature,
+            environment env);
         
         // C++ primitives.
 		void emit_function_header(
@@ -77,7 +120,7 @@ namespace cake
     public:
         wrapper_file(derivation& d, std::ostream& out) 
         : 	compiler(std::vector<std::string>(1, std::string("g++"))),
-        	m_d(d), m_out(out) {}
+        	m_d(d), m_out(out), ns_prefix("cake::" + m_d.namespace_name()) {}
 
         void emit_wrapper(
         	const std::string& wrapped_symname, 

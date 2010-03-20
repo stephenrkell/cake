@@ -10,6 +10,7 @@
 #include <fileno.hpp>
 #include <dwarfpp/lib.hpp>
 #include <dwarfpp/encap.hpp>
+#include <dwarfpp/encap_adt.hpp>
 #include <indenting_ostream.hpp>
 #include "parser.hpp"
 

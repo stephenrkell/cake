@@ -1,4 +1,6 @@
 CFLAGS += -g3 -fno-eliminate-unused-debug-types -fno-eliminate-unused-debug-symbols
+CFLAGS += -I${HOME}/opt/include
+CXXFLAGS += $(CFLAGS) -std=c++0x
 
 CAKE := ../../src/cake
 
@@ -10,7 +12,7 @@ BASENAME := $(shell basename $(shell readlink -f $(shell pwd)))
 default: $(BASENAME).o
 
 $(BASENAME).o: cake-generated.mk
-	$(MAKE) -f cake-generated.mk "$@"
+	$(MAKE) CXXFLAGS="$(CXXFLAGS)" -f cake-generated.mk "$@"
 
 cake-generated.mk $(BASENAME).o_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
 	$(CAKE) $(BASENAME).cake > "$@"
