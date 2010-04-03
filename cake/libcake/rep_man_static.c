@@ -5,8 +5,8 @@
 #include "rep_man_tables.h"
 
 /* extern const struct co_object_group *const STATIC_HEAD; */
-extern const struct co_object_group cog_rightclick;
-struct co_object_group *head = &cog_rightclick; /* hard-wire the static entries */
+extern const struct co_object_group __libcake_first_co_object_group __attribute__((weak));
+struct co_object_group *head = &__libcake_first_co_object_group; /* hard-wire the static entries */
 
 int invalidate_co_object(void *object, int rep)
 {
@@ -64,7 +64,7 @@ void *find_co_object(void *object, int object_rep, int co_object_rep,
 				{
 					fprintf(stderr, "Warning: co-object at %p has only %d words stored (form %s, rep %d), less than %d expected by the caller!\n",
 							co_object, p->co_object_info[co_object_rep].length_words,
-							object_forms[p->form], co_object_rep, expected_size_words);
+							get_object_form(p->form), co_object_rep, expected_size_words);
 				}
 				return co_object;
 			}
@@ -90,7 +90,8 @@ void sync_all_co_objects(int from_rep, int to_rep)
 	{
 		if (p->reps[from_rep] != NULL && p->reps[to_rep] != NULL)
 		{
-			rep_conv_funcs[from_rep][to_rep][p->form](p->reps[from_rep], p->reps[to_rep]);
+			/*rep_conv_funcs[from_rep][to_rep][p->form](p->reps[from_rep], p->reps[to_rep]);*/
+            get_rep_conv_func(from_rep, to_rep, p->form)(p->reps[from_rep], p->reps[to_rep]);
 		}
 		prev = p;
 	}
@@ -107,9 +108,10 @@ void allocate_co_object_idem(int do_not_use, void *object, int form, int object_
 	if (co_object != NULL) return; /* the co-object already exists */	
 	
 	/* the co-object doesn't exist, so allocate it -- use calloc for harmless defaults */
-	co_object = calloc(1, object_rep_layout_sizes[co_object_rep][form]);
+	co_object = calloc(1, get_object_rep_layout_size(co_object_rep, form));
 	if (co_object == NULL) { fprintf(stderr, "Error: malloc failed\n"); exit(42); }
-	fprintf(stderr, "Allocating a co-object in rep %d for object at %p (rep %d, form %s)\n", co_object_rep, object, object_rep, object_forms[form]);
+	fprintf(stderr, "Allocating a co-object in rep %d for object at %p (rep %d, form %s)\n", 
+            co_object_rep, object, object_rep, get_object_form(form));
 	/* also add it to the list! */
 	if (co_object_rec == NULL)
 	{
@@ -144,7 +146,7 @@ void init_co_object_from_object(int object_rep, void *object,
 	 * deep-copying by assuming that a co-object has already been allocated, that it may
 	 * or may not have been initialised (but eventually will be); they simply look it up. */
 	
-	rep_conv_funcs[object_rep][co_object_rep][form](object, co_object);
+	get_rep_conv_func(object_rep, co_object_rep, form)(object, co_object);
 }
 
 void init_co_object(int do_not_use, void *object, int form, int from_rep, int to_rep)
@@ -156,91 +158,4 @@ void init_co_object(int do_not_use, void *object, int form, int from_rep, int to
 int object_is_live(struct co_object_group *rec)
 {
 	return 1;
-	/* This function tells us whether a co-object (any rep) represents a live object.
-	 * When retrieving a co-object, we should check that it represents a live object.
-	 * An object is not live if any of its representations has been deallocated. For
-	 * heap objects, this happens when free() is called. For stack objects, this happens
-	 * when the creating stack frame is deallocated. For static objects, this never
-	 * happens. 
-	 
-	 * We detect stack deallocation approximately by testing whether the allocating
-	 * frame still exists at a given address, and still refers to an instance of the
-	 * same function. This fails to detect cases where another instance of the same
-	 * function has started up again at the same place on the stack. We believe this
-	 * can safely be ignored. The only harm (apart from wasted memory) could come if
-	 * we write to the stack location, believing it to be the co-object that has actually
-	 * been deallocated. The only way this could happen is if we're
-	 
-	 * HMM. Actually this is a problem. Suppose a call-out and return leaves us with a
-	 * co-object allocated for a particular stack object, but that stack object was
-	 * deallocated after the return. Now we do a sync_all on the return path of some 
-	 * completely unrelated call-out ***from the same calling function*** 
-	 * (but taking a different path within that function) and clobber the stack location,
-	 * just because it happens to
-	 * - be at the same location as a previous stack frame activation of that function
-	 * - and therefore contain the same kind of object, but one completely unrelated
-	 *     as far as the program logic is concerned.
-	 *
-	 /* void f()
-		{
-			struct my_object o;
-			if (some_cond)
-			{
-				o.field = blah;
-				call_rep_mismatched_library(&o); // redirects to __wrap_..., and allocates co_o
-				return; // o is deallocated, but co_o still hangs around
-			}
-			else
-			{
-				o.field = some_other_blah;
-				another_call_to_rep_mismatched_library(); // may or may not pass o....
-				local_call(&o); // this call will see a clobbered version of o! (o.field == blah)
-					// ... assuming we did sync_all on the return, being conservative
-					// If instead we were precise with our sync, then there *would* be no
-					// problem, because (hint: this reasoning is WRONG! there IS a problem)
-					// -- only objects that were mutated were synced, and
-					// -- if we mutated co_o, then it's because
-					//    -- we were passed the new o, in which case co_o got updated from that; *** but which fields? all fields? opacity comes in again
-					//	  -- the target code saved a pointer to co_o from earlier, which is a bug because
-					//       the earlier o got deallocated (so it wasn't okay to save this ptr)
-					//       *** could use a pointer annotation to capture this interface characteristic:
-					//			 for each pointer argument,
-					//			 we want a flag to say "okay to save"
-					//			(strictly speaking "okay to save until frame X deallocated")
-					//			(this is a statement about the *future validity* of a pointer, i.e.
-					//			 its lifetime, and can be expressed by linking it to the lifetime of
-					//			 another object, where stack frames (activations) are objects)
-					}
-		}
-		int main ()
-		{
-			f();
-			f();
-		}
-					
-	 *
-	
-	 */
 }
-
-int stack_object_is_live(void *object, struct co_object_group *rec, int rep)
-{
-	return 1;
-}
-
-int heap_object_is_live(void *object, struct co_object_group *rec, int rep)
-{
-	return 1;
-}
-int static_object_is_live(void *object, struct co_object_group *rec, int rep)
-{
-	return 1;
-}
-
-
-/*
-void init_callee_co_object_from_caller_object(int do_not_use, void *object, int form)
-{
-	init_co_object_from_object(CALLER_REP, object, CALLEE_REP, 
-			find_co_object(object, CALLER_REP, CALLEE_REP, NULL, FORM_STORED_SIZE(CALLEE_REP, form)), form);
-}*/

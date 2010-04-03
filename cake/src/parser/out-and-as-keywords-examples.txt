@@ -1,0 +1,22 @@
+use of "out" and "as":
+
+        puffs_fs_fhtonode : (_, _, _, out puffs_newinfo as puffs_full_newinfo) -> _;
+
+                        (.cookie as vnode_unlocked ptr)  
+
+    puffs_node_link(mount, vn as vnode_bump_no_unlk, targ_vn as void ptr, cn)
+    --> RUMP_VOP_LINK(vn, targ_vn, cn);
+
+    values uio_outbuf ((out uint8_t)[] as buf, size_t as resid, const off_t as off) -->
+	    (rump_uio_setup(that->buf, that->resid, that->offset, RUMPUIO_READ)) uio;
+
+    puffs_node_readdir(mount, vn as vnode_lkshared, uio as uio_outbuf(dent, *reslen, *readoff), 
+	    /* readoff */ _ out_as uio_outres_len_off(readoff, reslen), /* reslen */ _, 
+        cr, inout eofflag, 
+        out cookies as (out off_t)[out ncookies], /* ncookies */ _)
+        // TODO: check strange bug in p2k code: no size given for "cookies" buffer!
+    --> RUMP_VOP_READDIR(vn, uio, cr, eofflag, cookies, cookies == null ? null : out ncookies);
+
+    puffs_node_write(mount, vn, uio as uio_inbuf(buf, *resid, offset), 
+	    _, _ out_as uio_inresult, cr, ioflag)
+--> RUMP_VOP_WRITE(vn, uio, ioflag, cr);

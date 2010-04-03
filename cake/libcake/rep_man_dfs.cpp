@@ -3,14 +3,9 @@
 extern "C" {
 void walk_bfs(int object_rep, void *object, int object_form, int co_object_rep,
 	void (*on_blacken)(int, void*, int, int, int), int arg_n_minus_1, int arg_n);
-
-extern const size_t **subobject_offsets[];
-extern const int **subobject_forms[];
-extern const size_t **derefed_offsets[];
-extern const int **derefed_forms[];
-
-extern const char *object_forms[]; /* table of strings */
 }
+#include "rep_man-shared.h"
+#include "rep_man_tables.h"
 
 #include <map>
 #include <deque>
@@ -120,12 +115,15 @@ void build_adjacency_list_recursive(
 	/* We start with the deepest subobject(s), so make a recursive call
 	 * for each subobject at the top-level. */
 	for (int i = 0; 
-		subobject_offsets[rep][start_subobject_form][i] != (size_t) -1;
+    	get_subobject_offset(rep, start_subobject_form, i) != (size_t) -1;
+//		subobject_offsets[rep][start_subobject_form][i] != (size_t) -1;
 		i++)
 	{
 		build_adjacency_list_recursive(adj_u, obj_u, rep,
-			start_byte_offset + subobject_offsets[rep][start_subobject_form][i],
-			subobject_forms  [rep][start_subobject_form][i]);
+			start_byte_offset + //subobject_offsets[rep][start_subobject_form][i],
+            				get_subobject_offset(rep, start_subobject_form, i),
+			//subobject_forms  [rep][start_subobject_form][i]);
+            get_subobject_form(rep, start_subobject_form, i));
 	}
 
 	//fprintf(stderr, "Finished recursive descent of object at %08x, ",
@@ -135,17 +133,21 @@ void build_adjacency_list_recursive(
 	/* Now add node_recs for all the pointers in fields defined by
 	 * the current subobject. */
 	for  (int i = 0;
-		derefed_offsets[rep][start_subobject_form][i] != (size_t) -1;
+		//derefed_offsets[rep][start_subobject_form][i] != (size_t) -1;
+        get_derefed_offset(rep, start_subobject_form, i) != (size_t) -1;
 		i++)
 	{
 		// get the address of the pointed-to object
 		void *pointed_to_object = 
-			(void*)*(unsigned*)((char*)obj_u + start_byte_offset + derefed_offsets[rep][start_subobject_form][i]);
+			(void*)*(unsigned*)((char*)obj_u + start_byte_offset + //derefed_offsets[rep][start_subobject_form][i]);
+            													get_derefed_offset(rep, start_subobject_form, i));
 		if (pointed_to_object != 0)
 		{
 			DEBUG_GUARD(fprintf(debug_out, "\t%s_rep%d_at_%p -> %s_rep%d_at_%p;\n", 
-				object_forms[start_subobject_form], rep, obj_u, 
-				object_forms[derefed_forms[rep][start_subobject_form][i]], rep, pointed_to_object))
+				//object_forms[start_subobject_form], rep, obj_u, 
+                get_object_form(start_subobject_form), rep, obj_u,
+//				object_forms[derefed_forms[rep][start_subobject_form][i]], rep, pointed_to_object))
+				get_object_form(get_derefed_form(rep, start_subobject_form, i)), rep, pointed_to_object))
 
 			adj_u.push_back(std::make_pair(
 				// the pointer value within structure u
@@ -154,7 +156,8 @@ void build_adjacency_list_recursive(
 						// the rep of this value
 						rep,
 						// the form of this value
-						derefed_forms[rep][start_subobject_form][i]
+						//derefed_forms[rep][start_subobject_form][i]
+                        get_derefed_form(rep, start_subobject_form, i)
 					)
 				)
 			);
