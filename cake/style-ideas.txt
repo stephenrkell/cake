@@ -1,0 +1,47 @@
+Error-handling:
+
+- return status versus error global (see libdwarfpp)
+- zero-is-success versus nonzero-is-success
+
+Return values:
+
+- out argument style versus returning style (see libdwarfpp)
+
+Behaviour:
+
+- asynchronous versus synchronous style
+- virtual dispatch style (i.e. interpret a vtable as an entry point)
+
+Symbol renaming:
+
+- name mangling style
+
+Cake-primitive data types:
+
+- strings
+- sets
+
+Iteration styles
+
+- arrays, lists, ...
+
+Mux/demux-based styles:
+
+- write/read as request-write and response-read for some proto
+- connect/close for the same
+- layering (composable) versions of the same, i.e. HTTP style then GET/POST style?
+- REPL/ftp-like style: mux a set of functions into an ftp-like read/write console interface
+
+It seems like mux/demux-based styles are really doing something different from the other stuff.
+They're neat because they're composable -- they're like mixins.
+
+** They're better than mixins because they're declarative -- they simply define an interpretation,
+and no run-time instantiation is involved.
+
+** See what I wrote on the back of the Pidgin paper.
+
+** I think the minimum demonstration of styles in Cake should be a make-like inference application,
+where at least two hops of "inference" a.k.a. interpretation are involved, and where the same
+interpretation step (mixin) is applied to at least two base components, and where one component is
+interpreted in at least two different ways [in the same composition?].
+
