@@ -12,7 +12,12 @@ CXXFLAGS += -I${HOME}/work/devel/c++-fileno/include
 CXXFLAGS += -I${HOME}/scratch/opt/include
 CXXFLAGS += -I${HOME}/opt/include
 
+.PHONY: default
 default: libcake.so
+
+.PHONY: clean
+clean:
+	rm -f *.o *.so
 
 libcake.so: $(OBJS)
 	$(CXX) -shared -o "$@"  $(OBJS) -ldl

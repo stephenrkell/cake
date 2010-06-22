@@ -8,7 +8,10 @@
 //#define _GNU_SOURCE
 #include <link.h>
 #include <gelf.h>
-#include <libunwind.h>
+
+#ifndef ELF_MAX_SEGMENTS
+#define ELF_MAX_SEGMENTS 50
+#endif
 
 using namespace dwarf;
 /*using namespace dwarf::lib;*/ // omitted to remove Elf ambiguity
@@ -194,7 +197,7 @@ void *process_image::get_library_base_local(const std::string& path)
 	}
 }
 
-void *process_image::get_library_base_remote(const std::string& path)
+void process_image::init_rdbg()
 {
 	/* We should have the executable open already -- find it. */
     std::ostringstream filename;
@@ -258,7 +261,9 @@ void *process_image::get_library_base_remote(const std::string& path)
     int done = 0, i = 0;
 	ElfW(Dyn) entry;
     
-	unw_read_ptr<ElfW(Dyn)> search_ptr(this->unw_as, this->unw_priv, dyn_addr);
+	unw_read_ptr<ElfW(Dyn)> search_ptr(
+    	this->unw_as, this->unw_priv, 
+        static_cast<ElfW(Dyn)*>(dyn_addr));
 	
     void *dbg_addr;
     do
@@ -266,24 +271,50 @@ void *process_image::get_library_base_remote(const std::string& path)
      	entry = *search_ptr;
 		if (entry.d_tag == DT_DEBUG) {
 			done = 1;
-			dbg_addr = static_cast<void*>(entry.d_un.d_val);
+			dbg_addr = reinterpret_cast<void*>(entry.d_un.d_val);
 		}
-        search_ptr += sizeof (entry);
+        search_ptr++; // += sizeof (entry);
     } while (!done && entry.d_tag != DT_NULL && 
-                ++i < ELF_MAX_SEGMENTS);
+                ++i < ELF_MAX_SEGMENTS); // HACK: tolerate .dynamic sections not terminated by DT_NULL
     
-    r_debug *rdbg = new r_debug();
-	if (!rdbg) {
-		return NULL;
-	}
-    unw_read_ptr<r_debug> dbg_ptr(this->unw_as, this->unw_priv, dbg_addr);
-    *rdbg = *dbg_ptr;
+    unw_read_ptr<r_debug> dbg_ptr(this->unw_as, this->unw_priv, 
+    	static_cast<r_debug*>(dbg_addr));
+    rdbg = *dbg_ptr;
 	/* If we don't have a r_debug, this might segfault! */
-    fprintf(stderr, "Found r_debug structure at %p\n", rdbg);
+    /*fprintf(stderr, "Found r_debug structure at %p\n", dbg_addr);*/
+}
 
-	/*return rdbg;*/
+void *process_image::get_library_base_remote(const std::string& path)
+{
+	init_rdbg();
+    /* Now crawl the link map. */
+    struct link_map rlm;
+    typedef unw_read_ptr<link_map> lm_ptr_t;
+    typedef unw_read_ptr<char> remote_char_ptr_t;
+	for(lm_ptr_t p_lm(this->unw_as, this->unw_priv, rdbg.r_map);
+    	p_lm != 0; p_lm = p_lm->l_next)
+    {
+    	if (p_lm->l_name == NULL)
+        {
+			//fprintf(stderr, "Invalid library name referenced in dynamic linker map\n");
+			return 0;
+		}
+
+		if (*remote_char_ptr_t(this->unw_as, this->unw_priv, p_lm->l_name) == '\0') {
+			//fprintf(stderr, "Library name is an empty string\n");
+			continue;
+		}
+        
+        remote_char_ptr_t beginning_of_string(this->unw_as, this->unw_priv, p_lm->l_name);
+        remote_char_ptr_t end_of_string(this->unw_as, this->unw_priv, p_lm->l_name);
+        while (*++end_of_string != '\0');
+        std::string name(beginning_of_string, end_of_string);
+
+		//fprintf(stderr,
+        //	"Library %s is loaded at 0x%x\n", name.c_str(), p_lm->l_addr);
+        if (path == name) return reinterpret_cast<void*>(p_lm->l_addr);
+	}
     return 0;
-    
 }
 
 void *
