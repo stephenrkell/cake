@@ -19,34 +19,36 @@ using std::string;
 
 void process_image::update()
 {
-    std::ostringstream filename;
-    filename << "/proc/" << m_pid << "/maps";
-    std::vector<std::string> map_contents;
+	bool changed = rebuild_map();
+	if (changed)
     {
-    	string line;
-	    std::ifstream map_file(filename.str());
-        while (map_file)
-        {
-        	std::getline(map_file, line, '\n'); 
-            map_contents.push_back(line);
-        }
-    }
-    
-    if (map_contents == seen_map_lines) return;
-    else
-    {
-    	seen_map_lines = map_contents;
-        rebuild_map(seen_map_lines);
+    	update_i_executable();
+	    update_executable_elf();
     }
 }
 
-void process_image::rebuild_map(const std::vector<string>& lines)
+bool process_image::rebuild_map()
 {
+    std::ostringstream filename;
+    filename << "/proc/" << m_pid << "/maps";
+    std::vector<std::string> map_contents;
+    // read the maps file
+    string line;
+	std::ifstream map_file(filename.str());
+    while (map_file)
+    {
+        std::getline(map_file, line, '\n'); 
+        map_contents.push_back(line);
+    }
+    // has it changed since last update?
+    if (map_contents == seen_map_lines) return false;
+	// else... do the update
+    seen_map_lines = map_contents;
 	// open the process map for the file
     char seg_descr[PATH_MAX + 1];
 	std::map<entry_key, entry> new_objects; // replacement map
     
-    for (auto i = lines.begin(); i != lines.end(); i++)
+    for (auto i = seen_map_lines.begin(); i != seen_map_lines.end(); i++)
     {
 		#undef NUM_FIELDS
 		#define NUM_FIELDS 11
@@ -58,7 +60,7 @@ void process_image::rebuild_map(const std::vector<string>& lines)
             seg_descr);
 
 		// we should only get an empty line at the end
-		if (fields_read == EOF) { assert(++i == lines.end()); return; }
+		if (fields_read == EOF) { assert(++i == seen_map_lines.end()); return true; }
         if (fields_read < (NUM_FIELDS-1)) throw string("Bad maps data! ") + *i;
 
         if (fields_read == NUM_FIELDS) e.seg_descr = seg_descr;
@@ -99,9 +101,61 @@ void process_image::rebuild_map(const std::vector<string>& lines)
         new_objects[k] = e;
     }
     objects = new_objects;
-    
+    return true;
+}
+
+void process_image::update_i_executable()
+{
     /* FIXME: if a mapping goes away, we remove its entry but leave its 
      * file open. This does no harm, but would be nice to delete it. */
+    	/* We should have the executable open already -- find it. */
+    std::ostringstream filename;
+    filename << "/proc/" << m_pid << "/exe";
+    //char link_target[PATH_MAX];
+    //int retval;
+    //retval = readlink(filename.str().c_str(), link_target, PATH_MAX);
+    //assert(retval != -1);
+    char real_exec[PATH_MAX];
+    char *retpath;
+    retpath = realpath(/*link_target*/filename.str().c_str(), real_exec);
+    assert(retpath != NULL);
+    i_executable = files.end();
+    // HACK: we may have to go round twice, if we're racing
+    // with a child about to exec(): we won't find the executable
+    // first time, but assuming /proc/.../maps is replaced
+    // atomically, we will find it second time.
+    for (int j = 0; j < 2; j++)
+    {
+        for (auto i = files.begin(); i != files.end(); i++)
+        {
+    	    if (i->first == std::string(real_exec))
+            {
+			    /* Found the executable */
+                i_executable = i;
+                return;
+		    }
+	    }
+        if (i_executable == files.end() && j == 0)
+        {
+    	    rebuild_map();
+	    }    
+    }
+    assert(false);
+}
+
+void process_image::update_executable_elf()
+{
+    assert(i_executable != files.end());
+    int fd = fileno(*i_executable->second.p_if);
+    assert(fd != -1);
+    if (elf_version(EV_CURRENT) == EV_NONE)
+	{
+		/* library out of date */
+		/* recover from error */
+        assert(0);
+	}
+	this->executable_elf = elf_begin(fd, ELF_C_READ, NULL);
+		
 }
 
 /* Utility function: search multiple diesets for the first 
@@ -197,42 +251,13 @@ void *process_image::get_library_base_local(const std::string& path)
 	}
 }
 
-void process_image::init_rdbg()
+void process_image::update_rdbg()
 {
-	/* We should have the executable open already -- find it. */
-    std::ostringstream filename;
-    filename << "/proc/" << m_pid << "/exe";
-    //char link_target[PATH_MAX];
-    //int retval;
-    //retval = readlink(filename.str().c_str(), link_target, PATH_MAX);
-    //assert(retval != -1);
-    char real_exec[PATH_MAX];
-    char *retpath;
-    retpath = realpath(/*link_target*/filename.str().c_str(), real_exec);
-    assert(retpath != NULL);
-    files_iterator found = files.end();
-    for (auto i = files.begin(); i != files.end(); i++)
-    {
-    	if (i->first == std::string(real_exec))
-        {
-			/* Found the executable */
-            found = i;
-            break;
-		}
-	}
-    assert(found != files.end());
-    int fd = fileno(*found->second.p_if);
-    assert(fd != -1);
 	void *dyn_addr = 0;
-    if (elf_version(EV_CURRENT) == EV_NONE)
-	{
-		/* library out of date */
-		/* recover from error */
-        assert(0);
-	}
-	Elf *e = elf_begin(fd, ELF_C_READ, NULL);
 	GElf_Ehdr ehdr;
-	if (e != NULL && elf_kind(e) == ELF_K_ELF && gelf_getehdr(e, &ehdr))
+	if (this->executable_elf != NULL 
+        && elf_kind(executable_elf) == ELF_K_ELF 
+        && gelf_getehdr(executable_elf, &ehdr))
     {
 	    for (int i = 1; i < ehdr.e_shnum; ++i) 
         {
@@ -240,10 +265,10 @@ void process_image::init_rdbg()
 		    GElf_Shdr shdr;
 		    const char *name;
 
-		    scn = elf_getscn(e, i);
+		    scn = elf_getscn(executable_elf, i);
 		    if (scn != NULL && gelf_getshdr(scn, &shdr))
             {
-			    name = elf_strptr(e, ehdr.e_shstrndx, shdr.sh_name);
+			    name = elf_strptr(executable_elf, ehdr.e_shstrndx, shdr.sh_name);
                 switch(shdr.sh_type)
                 {
                     case SHT_DYNAMIC:
@@ -286,7 +311,7 @@ void process_image::init_rdbg()
 
 void *process_image::get_library_base_remote(const std::string& path)
 {
-	init_rdbg();
+	update_rdbg();
     /* Now crawl the link map. */
     struct link_map rlm;
     typedef unw_read_ptr<link_map> lm_ptr_t;
@@ -307,6 +332,7 @@ void *process_image::get_library_base_remote(const std::string& path)
         
         remote_char_ptr_t beginning_of_string(this->unw_as, this->unw_priv, p_lm->l_name);
         remote_char_ptr_t end_of_string(this->unw_as, this->unw_priv, p_lm->l_name);
+        // advance remote pointer to end of string
         while (*++end_of_string != '\0');
         std::string name(beginning_of_string, end_of_string);
 
@@ -768,4 +794,69 @@ process_image::find_file_by_realpath(const std::string& path)
 {
 	return std::find_if(this->files.begin(), this->files.end(), 
     	realpath_file_entry_cmp(path.c_str()));
+}
+
+std::pair<GElf_Shdr, GElf_Phdr> process_image::get_static_memory_elf_headers(void *addr)
+{
+	assert(this->executable_elf != NULL 
+        && elf_kind(executable_elf) == ELF_K_ELF);
+	std::pair<GElf_Shdr, GElf_Phdr> retval; //= std::make_pair(SHT_NULL, PT_NULL);
+    retval.first.sh_type = SHT_NULL;
+    retval.second.p_type = PT_NULL;
+            
+    GElf_Ehdr ehdr;
+    if (gelf_getehdr(executable_elf, &ehdr))
+    {
+	    for (int i = 1; i < ehdr.e_shnum; ++i) 
+        {
+		    Elf_Scn *scn;
+		    GElf_Shdr shdr;
+
+		    scn = elf_getscn(executable_elf, i);
+		    if (scn != NULL && gelf_getshdr(scn, &shdr))
+            {
+                void *section_begin_addr = reinterpret_cast<void*>(shdr.sh_addr);
+                void *section_end_addr = reinterpret_cast<void*>(
+                    reinterpret_cast<char*>(shdr.sh_addr) + shdr.sh_size);
+                if (addr >= section_begin_addr && addr < section_end_addr)
+                {
+                    /* Found it! */
+                    retval.first = shdr/*.sh_type*/;
+                }
+            }
+        }
+    } 
+    else assert(false); // we assume gelf_getehdr won't fail
+
+	GElf_Phdr phdr;
+    if (gelf_getphdr(executable_elf, 0, &phdr))
+    {
+        // we got the first phdr
+        assert(phdr.p_type == PT_PHDR);
+        unsigned num_entries = phdr.p_memsz / sizeof (ElfW(Phdr));
+        for (int i = 1; i < num_entries; i++)
+        {
+        	GElf_Phdr *success = gelf_getphdr(executable_elf, i, &phdr);
+            if (success)
+            {
+				void *segment_begin_vaddr = reinterpret_cast<void*>(phdr.p_vaddr);
+                void *segment_end_vaddr = reinterpret_cast<void*>(
+                	reinterpret_cast<char*>(segment_begin_vaddr) + phdr.p_memsz);
+            	if (addr >= segment_begin_vaddr && addr < segment_end_vaddr)
+                {
+                	retval.second = phdr/*.p_type*/;
+                }
+			}
+            else
+            {
+            	fprintf(stderr, "Error getting program header at index %d.\n", i);
+            }
+        }
+    }
+
+    // every static addr should be accounted for by shdrs
+    if (retval.first.sh_type != SHT_NULL && retval.second.p_type != PT_NULL) return retval; 
+    assert(this->discover_object_memory_kind(addr) != STATIC);
+    // call didn't respect precondition
+    assert(false);
 }

@@ -11,6 +11,8 @@
 
 #include <boost/shared_ptr.hpp>
 
+#include <gelf.h>
+
 #include <dwarfpp/spec.hpp>
 #include <dwarfpp/attr.hpp>
 #include <dwarfpp/lib.hpp>
@@ -147,7 +149,8 @@ struct process_image
 	/* We maintain a map of loaded objects, so that we can maintain
      * a dieset open on each one. We must keep this map in sync with the
      * actual process map. */
-	typedef std::pair<void*, void*> entry_key;
+    typedef void *addr;
+	typedef std::pair<addr, addr> entry_key;
 
     struct entry
     {
@@ -177,6 +180,22 @@ struct process_image
     std::map<entry_key, entry>::iterator objects_iterator;
     std::map<std::string, file_entry> files;
     typedef std::map<std::string, file_entry>::iterator files_iterator;
+    
+    /* Problem: all addresses could have i_file be the executable;
+     * do we want to support i_file being libraries too? Do we want
+     * a single vaddr to have multiple section_ and segment_addresses? */
+    struct section_address
+    { 
+    	files_iterator i_file;
+        std::string section_name;
+        GElf_Off offset; // offset in file? or in vaddr-space defined by ELF file?
+    };
+    struct segment_address
+    { 
+    	files_iterator i_file;
+        std::string segment_name;
+        GElf_Off offset; // offset in file? or in vaddr-space defined by ELF file?
+    };
 
 private:
 	pid_t m_pid;
@@ -186,12 +205,15 @@ private:
     unw_context_t unw_context;
     r_debug rdbg;
     std::vector<std::string> seen_map_lines;
+    files_iterator i_executable; // points to the files entry representing the executable
+    Elf *executable_elf;
 public:
     process_image(pid_t pid = -1) 
     : m_pid(pid == -1 ? getpid() : pid),
       unw_as(pid == -1 ? 
       	unw_local_addr_space : 
-        unw_create_addr_space(&_UPT_accessors/*&unw_accessors*/, 0))
+        unw_create_addr_space(&_UPT_accessors/*&unw_accessors*/, 0)),
+        executable_elf(0)
     {
     	int retval = unw_getcontext(&unw_context);
         assert(retval == 0);
@@ -208,6 +230,8 @@ public:
     	update();
     }
     void update();
+    ~process_image() { if (executable_elf) elf_end(executable_elf); }
+    
     std::map<std::string, file_entry>::iterator find_file_by_realpath(const std::string& path);
     memory_kind discover_object_memory_kind(void *addr);
     void *get_dieset_base(dwarf::lib::abstract_dieset& ds);
@@ -215,7 +239,10 @@ public:
 private:
     void *get_library_base_local(const std::string& path);
     void *get_library_base_remote(const std::string& path);
-    void init_rdbg();
+    bool rebuild_map();
+    void update_rdbg();
+    void update_i_executable();
+    void update_executable_elf();
 public:
 	void *get_object_from_die(boost::shared_ptr<dwarf::spec::with_runtime_location_die> d,
 		dwarf::lib::Dwarf_Addr vaddr);
@@ -230,8 +257,16 @@ public:
     boost::shared_ptr<dwarf::spec::with_runtime_location_die> discover_object(
     	void *addr,
         void **out_object_start_addr);
-private:
-    void rebuild_map(const std::vector<std::string>& map_data);
+    std::pair<GElf_Shdr, GElf_Phdr> get_static_memory_elf_headers(void *addr);
+    // various ELF conveniences
+    bool is_linker_code(void *addr)
+    {	
+    	auto kind = get_static_memory_elf_headers(addr);
+    	return kind.first.sh_type == SHT_PROGBITS 
+         && kind.second.p_type == PT_LOAD
+         && (kind.second.p_flags & PF_X);
+    }
+    std::string nearest_preceding_symbol(void *addr);
 };
 
 std::ostream& operator<<(std::ostream& s, const process_image::memory_kind& k);
