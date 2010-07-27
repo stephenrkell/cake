@@ -18,11 +18,9 @@ OBJS += $(patsubst %.cpp,%.o,$(SRC))
 
 BOOST_LIBS ?= $(shell ls -1 /usr/lib/libboost*system.so | sed 's/.*lib\(.*\)\.so/-l\1/') -lboost_regex
 
-LIBS := $(BOOST_LIBS) -lantlr3c -lsrk31c++ -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lfileno -lelf
+LIBS := $(BOOST_LIBS) -lantlr3c -lsrk31c++ -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldwarfpp -lc++fileno -lelf
 
 INCLUDES += -Iparser/include -Iinclude -Ijava/include
-INCLUDES += -I../../dwarf/libdwarfpp/include -I../../libsrk31c++ -I../../c++-fileno/include
-INCLUDES += -I$(HOME)/opt/include 
 
 CLASSPATH := ./java:$(CLASSPATH)
 #$(warning CLASSPATH is $(CLASSPATH))
@@ -30,8 +28,10 @@ CLASSPATH := ./java:$(CLASSPATH)
 CXXFLAGS += $(EXTRA_DEBUG_OPTS) -fPIC -g3 $(INCLUDES) -O0 -Wall -std=c++0x #-D_STREAM_COMPAT
 GCJFLAGS += $(EXTRA_DEBUG_OPTS) -findirect-dispatch -fno-indirect-classes -fPIC -g3 --classpath=$(CLASSPATH) -Wall 
 
-DWARFPP_PATH ?= ../../dwarf/libdwarfpp/src
-LIBPATHS += -L$(DWARFPP_PATH) -L$(HOME)/opt/lib -L../../c++-fileno/lib -L../../libsrk31c++
+ifeq($(DWARFPP_PATH),)
+$(warning Defaulting DWARFPP_PATH to ../../libdwarfpp/src -- set DWARFPP_PATH if this is not right)
+DWARFPP_PATH ?= ../../libdwarfpp/src
+endif
 
 CAKE_VERSION := 0.0$(shell hg log --template '{date|isodate}\n' $(CAKE_SRC) | head -n1 | sed 's/+.*//' | tr -cd '[:digit:]' )#$(shell if [[ -n $$( hg status $(patsubst %,cake/src/%,$(CAKE_SRC))) ]]; then echo "+local"; fi )
 #$(warning Generated Cake version macro $(CAKE_VERSION))

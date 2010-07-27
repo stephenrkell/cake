@@ -1,5 +1,3 @@
-CFLAGS ?=
-CFLAGS += -I$(HOME)/opt/include
 CFLAGS += -I./include
 
 GRAMMAR_BASENAME := cake
@@ -30,17 +28,31 @@ ANTLR ?= java -classpath $(CLASSPATH) org.antlr.Tool
 .PHONY: test
 test: cakePyParser.py
 	while read line; do \
-		eval python cakePyParser.py $$line || break; \
+		case "$$line" in \
+			(\#*) continue ;; \
+			(*) eval python cakePyParser.py $$line  || break ;; \
+		esac; \
 	done < cake.g.tests
+	$(MAKE) test-samples
+	
+test-samples: cakePyParser.py # samples/mpeg2ffplay.cake samples/p2k.cake samples/xcl.cake
+	for fname in samples/ephy.cake  ; do \
+		python cakePyParser.py --rule=toplevel < "$$fname"; \
+	done | ~/work/devel/antlr/parens-filter.sh
+		
+test-lexer-samples: cakePyLexer.py # samples/ephy.cake samples/xcl.cake
+	for fname in samples/ephy.cake ; do \
+		python cakePyLexer.py < "$$fname"; \
+	done 
 
 %Py.g: %.g.m4 $(INCS)
-	m4 -Dantlr_m4_include_file=antlr-m4-py.inc "$<" > "$@"
+	( test ! -e "$@" || chmod +w "$@" ) && m4 -Dantlr_m4_include_file=antlr-m4-py.inc "$<" > "$@" && chmod ugo-w "$@"
 
 %PyLexer.py %PyParser.py: %Py.g 
 	$(ANTLR) "$<"
 
 %C.g: %.g.m4 $(INCS)
-	m4 -Dantlr_m4_include_file=antlr-m4-c.inc "$<" > "$@"
+	( test ! -e "$@" || chmod +w "$@" ) && m4 -Dantlr_m4_include_file=antlr-m4-c.inc "$<" > "$@" && chmod ugo-w "$@"
 	
 %CLexer.c %CParser.c: %C.g 
 	$(ANTLR) "$<"
@@ -53,7 +65,7 @@ test: cakePyParser.py
 	$(ANTLR) "$<"
 
 %Java.g: %.g.m4 $(INCS)
-	m4 -Dantlr_m4_include_file=antlr-m4-java.inc -Dantlr_m4_java_package=$$(echo "$<" | sed 's/\.g\.m4$$//') "$<" > "$@"
+	( test ! -e "$@" || chmod +w "$@" ) && m4 -Dantlr_m4_include_file=antlr-m4-java.inc -Dantlr_m4_java_package=$$(echo "$<" | sed 's/\.g\.m4$$//') "$<" > "$@" && chmod ugo-w "$@"
 
 # HACK: we have to use this GRAMMAR_BASENAME thing because make has
 # no way of expressing <pattern>/<the-same-pattern>blah.foo

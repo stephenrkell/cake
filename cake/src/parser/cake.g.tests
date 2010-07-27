@@ -1,18 +1,49 @@
---rule='toplevel' < switch-simple.cake 
---input='(preview_window ::) .gtk_signal_connect_object(i, d, c_h, data) --> .g_signal_connect_data(i, d, c_h, data, null, {});' --rule='eventCorrespondence'
+--input='f <- fopen (fname, "rb")[0], ..., dec <- mpeg2_init(), ..., size <- fread(_, _, nmemb, f)' --rule='eventPatternEOFHack'
+--input='f <- fopen (fname, "rb")[0]' --rule='contextBindingEventPattern'
+--input='as packed_luma_line[height] ptr' --rule='valueInterpretation'
+--input='let blah = foo(42), blah(37)' --rule='eventPatternEOFHack'
+--input='blah(37)' --rule='atomicEventPattern'
+--input='let blah = foo(42)' --rule='contextBindingEventPattern'
+--input='let blah = 42' --rule='binding'
+--input='let blah =' --rule='bindingPrefix'
+--input='let (res) = init(), do_stuff(res) --> { void };' --rule='eventCorrespondence'
+--input='baz->foo(blah)' --rule='postfixExpression'
+--input='foo(blah)->baz' --rule='postfixExpression'
+--input='foo(blah, bum)->baz' --rule='postfixExpression'
+--input='baz->foo(blah, bum)' --rule='postfixExpression'
+--input='blah->blah->blah.foo' --rule='stubLangExpression'
+--input='let rvp in_as vn_no_lk = puffs_getroot(mount)->pn_data' --rule='binding'
+--input='(preview_window ::) gtk_signal_connect_object(i, d, c_h, data) --> g_signal_connect_data(i, d, c_h, data, null, set []);' --rule='eventCorrespondence'
 --input='blah . blah . blah' --rule='memberNameExpr'
 --input='first . second . third' --rule='memberNameExpr'
 --input='.first .second .third' --rule='memberNameExpr'
 --input='int ptr ptr' --rule='valueDescriptionExpr'
 --input='opaque int ptr ptr' --rule='valueDescriptionExpr'
---input='(opaque int ptr) ptr' --rule='valueDescriptionExpr'
---input='int -> int' --rule='valueDescriptionExpr'
---input='int -> int' --rule='functionValueDescription'
---input='int ptr -> int ptr' --rule='functionValueDescription'
---input='int ptr -> opaque int ptr' --rule='functionValueDescription'
---input='int ptr -> opaque int ptr' --rule='primitiveOrFunctionValueDescription'
---input='int ptr -> opaque int ptr -> int' --rule='primitiveOrFunctionValueDescription'
---input='(int ptr -> opaque int ptr) -> int' --rule='primitiveOrFunctionValueDescription'
---input='_ -> GtkDialog ptr' --rule='primitiveOrFunctionValueDescription'
+#--input='(opaque int ptr) ptr' --rule='valueDescriptionExpr'
+--input='(int) => int' --rule='valueDescriptionExpr'
+--input='(int) => int' --rule='primitiveOrFunctionValueDescription'
+--input='(int ptr) => int ptr' --rule='primitiveOrFunctionValueDescription'
+--input='(int ptr) => opaque int ptr' --rule='primitiveOrFunctionValueDescription'
+--input='(int ptr) => opaque int ptr' --rule='primitiveOrFunctionValueDescription'
+--input='(int ptr) => opaque int ptr => int' --rule='primitiveOrFunctionValueDescription'
+--input='((int ptr) => opaque int ptr) => int' --rule='primitiveOrFunctionValueDescription'
+--input='(_) => GtkDialog ptr' --rule='primitiveOrFunctionValueDescription'
 --input='opaque _ ptr' --rule='primitiveOrFunctionValueDescription'
---input='_ -> object { .vbox: opaque _ ptr; _ : ignored _; } ptr' --rule='primitiveOrFunctionValueDescription'
+--input='(_) => object { .vbox: opaque _ ptr; _ : ignored _; } ptr' --rule='primitiveOrFunctionValueDescription'
+# vvv---  this means 'out ( puffs_newinfo as puffs_full_newinfo )'
+#--input='out puffs_newinfo as puffs_full_newinfo' --rule='primitiveValueDescription'
+# ------  do we also want to be able to write '(out puffs_newinfo) as puffs_full_newinfo'?
+# ------  I'd say no---it doesn't make sense to change the mode within an interpretation, so...
+#         interpretations always bind more tightly than modes
+# BUT what about these?
+# "cookies, an output parameter, to be interpreted as an array, ncookies long, of 
+# off_t values" --- is the second "out" redundant?
+#--input='out cookies as (invalid off_t)[ncookies]' --rule='optionallyNamedWithModeValueDescription'
+# ^^^ can we just write 'out cookies as off_t[ncookies]' ?
+# pointerwise this gets interpreted as pointer to array of off_t, length ncookies
+# "an array, unspecified length, of uint8_t values, each of which is an output only."
+#(invalid uint8_t)[] --rule='optionallyNamedWithModeValueDescription'
+# can we just write 'buf: out uint8_t[]'?
+# ^^^
+# 
+# more tests

@@ -12,6 +12,10 @@ CXXFLAGS += -I${HOME}/work/devel/c++-fileno/include
 CXXFLAGS += -I${HOME}/scratch/opt/include
 CXXFLAGS += -I${HOME}/opt/include
 
+C_DEPS := $(patsubst %.c,.%.c.d,$(C_SRC)) 
+CXX_DEPS := $(patsubst %.cpp,.%.cpp.d,$(CXX_SRC))
+
+
 .PHONY: default
 default: libcake.so
 
@@ -21,3 +25,13 @@ clean:
 
 libcake.so: $(OBJS)
 	$(CXX) -shared -o "$@"  $(OBJS) -ldl
+
+$(CXX_DEPS): .%.cpp.d : %.cpp
+	g++ -MM $(CXXFLAGS) "$<"  > "$@"
+$(C_DEPS): .%.c.d : %.c
+	gcc -MM $(CFLAGS) "$<"  > "$@"
+	
+include $(DEPS)
+
+%.o: %.cpp #$(HDRS)
+	g++ $(CXXFLAGS) -c -o "$@" "$<"

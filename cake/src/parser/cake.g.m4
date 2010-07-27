@@ -2,6 +2,7 @@ include(antlr_m4_include_file)
 grammar antlr_m4_make_grammar_name(cake,antlr_m4_grammar_name_suffix);
 options {
     output=AST;
+    backtrack=true; /* seems to be necessary for C-style postfix operators.... */
     language=antlr_m4_language;
     antlr_m4_extra_options
 }
@@ -11,7 +12,8 @@ ANNOTATED_VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT
 OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; MEMBERSHIP_CLAIM; VALUE_DESCRIPTION; DWARF_BASE_TYPE; 
 DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; ANY_VALUE; PAIRWISE_BLOCK_LIST; 
 EVENT_CORRESP; EVENT_SINK_AS_PATTERN; EVENT_SINK_AS_STUB; CONST_ARITH; KEYWORD_PATTERN; INFIX_STUB_EXPR; 
-IDENTS_TO_BIND; ARRAY; VALUE_CONSTRUCT; }
+IDENTS_TO_BIND; ARRAY; VALUE_CONSTRUCT; EVENT_PATTERN_REWRITE_EXPR; RETURN_EVENT; INVOKE_WITH_ARGS; 
+EVENT_WITH_CONTEXT_SEQUENCE; CONTEXT_SEQUENCE; EVENT_COUNT_PREDICATE; ARRAY_SUBSCRIPT; FORM_ASSOCIATION; }
 
 
 @header {
@@ -21,23 +23,238 @@ antlr_m4_header
 antlr_m4_header
 }
 
-/* The whole input */
+/**************************
+ *      DWARF syntax      *
+ **************************/
+ 
+/* FIXME: rename this to something more neutral
+ * like "named element definition" */
+/* FIXME: provide explicit compile units */
+/* FIXME: allow offset labelling here using the "@" prefix e.g.
+ * @ 11: _: compile_unit { ... }; */
+membershipClaim		: (memberNameExpr ':' KEYWORD_CLASS_OF)=> 
+                    	memberNameExpr ':' KEYWORD_CLASS_OF valueDescriptionExpr SEMICOLON
+						-> ^( MEMBERSHIP_CLAIM memberNameExpr ^( KEYWORD_CLASS_OF  valueDescriptionExpr ) )
+                    | (memberNameExpr ':' KEYWORD_CONST)=>
+                        memberNameExpr ':' KEYWORD_CONST namedDwarfTypeDescription '=' constantValueDescription SEMICOLON
+                        -> ^( MEMBERSHIP_CLAIM memberNameExpr ^( KEYWORD_CONST namedDwarfTypeDescription constantValueDescription ) )
+                    | namedValueDescription SEMICOLON
+						-> ^( MEMBERSHIP_CLAIM namedValueDescription )
+					| ELLIPSIS ':' valueDescriptionExpr SEMICOLON
+                    	-> ^( MEMBERSHIP_CLAIM REMAINING_MEMBERS valueDescriptionExpr )
+                    ;/* FIXME: ellipsis is Cake-specific, or at least Dwarf Predicate -specific...
+                      * note that you can just insert extra alternatives easily in ANTLR by doing
+                      * myRuleName : mySmallerRuleName
+                                   | ELLIPSIS ...;  */
+                                          
+memberNameExpr		: '.'? IDENT ( '.' IDENT )* -> ^( DEFINITE_MEMBER_NAME IDENT* )
+					| INDEFINITE_MEMBER_NAME^ 
+                    ;
+
+/* The following alternatives are in precedence order, highest to lowest */
+valueDescriptionExpr		: primitiveOrFunctionValueDescription 
+	-> ^( VALUE_DESCRIPTION primitiveOrFunctionValueDescription)
+                            /*| functionValueDescription*/
+                            ;
+
+primitiveOrFunctionValueDescription	: 
+	| (argumentMultiValueDescription FUNCTION_ARROW)=> 
+    	argumentMultiValueDescription FUNCTION_ARROW primitiveOrFunctionValueDescription 
+			-> ^(FUNCTION_ARROW argumentMultiValueDescription primitiveOrFunctionValueDescription )
+	| primitiveValueDescription
+	; 
+
+primitiveValueDescription	: KEYWORD_CONST^ constantValueDescription
+                            | valueIntrinsicAnnotation? unannotatedValueDescription valueInterpretation?
+                        	;
+
+/*** FIXME: the following is Cake-specific, not Dwarf! ***/
+valueInterpretation : KEYWORD_AS^ unannotatedValueDescription valueConstructionExpression
+                    | KEYWORD_OUT_AS^ unannotatedValueDescription valueConstructionExpression
+                    | KEYWORD_INTERPRET_AS^ unannotatedValueDescription valueConstructionExpression
+                    | KEYWORD_IN_AS^ unannotatedValueDescription valueConstructionExpression
+					;
+/*** FIXME: the following is Cake-specific, not Dwarf! ***/
+/*valueConstructionExpression : '(' stubStatementBody ( ',' stubStatementBody )* ')' 
+								-> ^( VALUE_CONSTRUCT stubStatementBody* )
+                            | -> ^( VALUE_CONSTRUCT )
+                            ;*/
+valueConstructionExpression : '(' stubNonSequencingExpression ( ',' stubNonSequencingExpression )* ')' 
+								-> ^( VALUE_CONSTRUCT stubNonSequencingExpression* )
+                            | -> ^( VALUE_CONSTRUCT )
+                            ;
+
+valueIntrinsicAnnotation : KEYWORD_OPAQUE^ valueIntrinsicAnnotation?
+                         | KEYWORD_IGNORED^ valueIntrinsicAnnotation?
+                         | KEYWORD_INVALID^ valueIntrinsicAnnotation?
+                         | KEYWORD_CALLER_FREE^ '('! IDENT ')'! valueIntrinsicAnnotation?
+                         ;
+
+valueModeAnnotation : KEYWORD_OUT -> ^( KEYWORD_OUT) //^ valueAnnotation?
+                    | KEYWORD_IN -> ^( KEYWORD_IN ) //^ valueAnnotation?
+                    | KEYWORD_INOUT -> ^(KEYWORD_INOUT) //^ valueAnnotation?
+                    ;
+                            
+unannotatedValueDescription : /*unspecifiedValueDescription^
+							|*/ simpleOrObjectOrPointerValueDescription^
+                            ;
+
+
+/* the multiValueDescription for argument specs: needn't have names, may have modes! 
+ * -- at the moment this is the same as multiValueDescription */
+argumentMultiValueDescription : multiValueDescription
+                              ; 
+
+multiValueDescription	: '(' optionallyNamedWithModeValueDescription (',' optionallyNamedWithModeValueDescription )*  ')'
+								-> ^( MULTIVALUE optionallyNamedWithModeValueDescription* )
+                                ;
+
+optionallyNamedWithModeValueDescription: valueModeAnnotation^? optionallyNamedValueDescription
+                                    ;
+      
+optionallyNamedValueDescription 	: (namedValueDescription)=>namedValueDescription
+									| primitiveOrFunctionValueDescription
+                                    ;
+
+namedValueDescription 	: memberNameExpr ':'! valueDescriptionExpr
+						;
+/* the multiValueDescription for tuples: must have names! */
+namedMultiValueDescription : '(' namedValueDescription (',' namedValueDescription )*  ')'
+								-> ^( MULTIVALUE namedValueDescription* )
+                           ;
+                           
+							                            
+structuredValueDescription	: KEYWORD_OBJECT '{' membershipClaim* '}'
+								-> ^(KEYWORD_OBJECT membershipClaim* )
+                            /*| multiValueDescription*/
+                            ;
+                            
+simpleOrObjectOrPointerValueDescription : structuredValueDescription^ ( valueDescriptionModifierSuffix^ )*
+                                        | simpleValueDescription^ ( valueDescriptionModifierSuffix^ )*
+                                        | enumValueDescription^ ( valueDescriptionModifierSuffix^ )*
+                                        | KEYWORD_VOID^ ( valueDescriptionModifierSuffix^ )*
+                                        | '('! primitiveValueDescription ')'! ( valueDescriptionModifierSuffix^ )*
+                                        ;
+
+valueDescriptionModifierSuffix : KEYWORD_PTR
+                               | '[' arraySizeExpr? ']' -> ^( ARRAY arraySizeExpr? )
+                               ;
+
+arraySizeExpr : /*  memberNameExpr | INT */ constantIntegerArithmeticExpression;
+
+simpleValueDescription		: namedDwarfTypeDescription^
+                            | INDEFINITE_MEMBER_NAME -> ANY_VALUE
+							/*| '('! primitiveOrFunctionValueDescription^ ')'!*/
+							;
+
+byteSizeParameter			: '<'! INT '>'!
+							;
+
+namedDwarfTypeDescription	: KEYWORD_BASE^ dwarfBaseTypeDescription
+							| IDENT
+                            ;
+                
+dwarfBaseTypeDescription	: encoding=IDENT byteSizeParameter? dwarfBaseTypeAttributeList
+							-> ^( DWARF_BASE_TYPE $encoding dwarfBaseTypeAttributeList byteSizeParameter?  )
+							;
+
+dwarfBaseTypeAttributeList : ( '{' ( dwarfBaseTypeAttributeDefinition )* '}' )?
+								-> ^( DWARF_BASE_TYPE_ATTRIBUTE_LIST dwarfBaseTypeAttributeDefinition* )
+                              ;
+
+dwarfBaseTypeAttributeDefinition 	: attr=IDENT '=' ( value=IDENT | value=INT ) SEMICOLON
+									-> ^( DWARF_BASE_TYPE_ATTRIBUTE $attr $value )
+									;
+/*enumValueDescription	: KEYWORD_ENUM^ ( ( ( IDENT | '_' ) byteSizeParameter? enumDefinition? ) | ( byteSizeParameter? enumDefinition ) )*/
+enumValueDescription    : KEYWORD_ENUM^ dwarfBaseTypeDescription enumDefinition
+                        | KEYWORD_ENUM enumDefinition
+                         -> ^( KEYWORD_ENUM ^( DWARF_BASE_TYPE ) enumDefinition ) /* empty base type => int */
+                        ;
+
+enumDefinition	: '{'! enumElement* '}'!
+				;
+
+enumElement : 
+            (KEYWORD_ENUMERATOR IDENT EQ)=>
+            KEYWORD_ENUMERATOR name=IDENT EQ constantIntegerArithmeticExpression SEMICOLON
+            -> ^( KEYWORD_ENUMERATOR ^( KEYWORD_LET ^( IDENTS_TO_BIND $name ) constantIntegerArithmeticExpression ) )
+            | ident=IDENT SEMICOLON
+            -> ^( KEYWORD_ENUMERATOR IDENT ) /* using an ident defined elsewhere (must be constant value!) */
+            ;
+
+/*********************************************************
+ * literal values and compile-time constant expressions  *
+ * -- could be useful in DWARF syntax? Or just for Cake? *
+ * -- certainly useful in Dwarf Predicates....           *
+ *********************************************************/
+
+patternConstantValueDescription : STRING_LIT^
+                                | INT ELLIPSIS^ INT
+                                ;
+
+constantOrVoidValueDescription	:	constantValueDescription^
+								|	KEYWORD_VOID^
+                                ;
+
+constantValueDescription	: STRING_LIT^ /* FIXME: need IDENTS here too? depends what we use these for */
+                            | KEYWORD_NULL^
+                            | constantSetExpression
+							| constantIntegerArithmeticExpression 
+                            	-> ^( CONST_ARITH constantIntegerArithmeticExpression )
+                            ;
+                            
+/* FIXME: lists are like these but without the "set" keyword */
+constantSetExpression	: KEYWORD_SET '[' ( constantValueDescription ( ',' constantValueDescription* )* )? ']' -> ^( SET_CONST constantValueDescription* )
+						;
+
+setExpression           : KEYWORD_SET '[' ( stubLangExpression ( ',' stubLangExpression* )* )? ']' -> ^( KEYWORD_SET stubLangExpression* )
+						;
+           
+constantIntegerArithmeticExpression	: constantShiftingExpression^
+									;
+/* FIXME: rather than repeating these rules, just use stub expressions
+ * and push the compile-time-const detection to semantic analysis
+ * (where it has to be anyway, because we use memberNameExpr which
+ * might actually be referencing non-compile-time-const values). */
+
+primitiveIntegerArithmeticExpression	: INT^
+                                        | memberNameExpr /* HACK: so we can use this rule in array suffix */
+										| '('! constantIntegerArithmeticExpression^ ')'!
+                                        ;
+constantUnaryOperatorExpression	: (MINUS^|PLUS^)* primitiveIntegerArithmeticExpression
+                        ;
+                                        
+constantMultiplicativeOperatorExpression	: constantUnaryOperatorExpression ( ( MULTIPLY^ | DIVIDE^ | MODULO^ ) constantUnaryOperatorExpression )*
+									;
+constantAdditiveOperatorExpression 	: constantMultiplicativeOperatorExpression ( ( PLUS^ | MINUS^ ) constantMultiplicativeOperatorExpression )*
+							;
+constantShiftingExpression	: constantAdditiveOperatorExpression ( ( SHIFT_LEFT^ | SHIFT_RIGHT^ ) constantAdditiveOperatorExpression )* 
+					;
+ 
+
+
+
+/**************************
+ *       Cake syntax      *
+ **************************/
+
+/* the whole input */
 toplevel:   declaration* //-> ^( TOPLEVEL<ToplevelNode> declaration* )
 			/*{sys.stdout.write($objectExpr.tree.toStringTree() + '\n');} */
         ;
 
-declaration		: existsDeclaration ';'!?
-				| aliasDeclaration ';'!?
-                | supplementaryDeclaration ';'!?
-                | inlineDeclaration ';'!?
-                | deriveDeclaration ';'!?
+declaration		: existsDeclaration SEMICOLON!?
+				| aliasDeclaration SEMICOLON!?
+                | supplementaryDeclaration SEMICOLON!?
+                | inlineDeclaration SEMICOLON!?
+                | deriveDeclaration SEMICOLON!?
 				;
 
 /* Because ANTLR is *stupid*, I have taken care not to include any literals that
  * would make their way into the AST. Since these are assigned an unpredictable
  * token type, they are not testable-for at runtime. This is so annoying. */
 
-aliasDeclaration	: KEYWORD_ALIAS^ aliasDescription IDENT ';'!
+aliasDeclaration	: KEYWORD_ALIAS^ aliasDescription IDENT SEMICOLON!
 					;
                     
 aliasDescription	: IDENT^
@@ -63,10 +280,10 @@ objectSpec			: (objectConstructor IDENT)=> objectConstructor IDENT
 existsDeclaration	: KEYWORD_EXISTS^ objectSpec existsBody
 					;
 existsBody			: '{' ( claimGroup | globalRewrite )* '}' -> ^( EXISTS_BODY claimGroup* globalRewrite* )
-					| ';' -> ^( EXISTS_BODY )
+					| SEMICOLON -> ^( EXISTS_BODY )
 					;
                     
-globalRewrite		: KEYWORD_STATIC? valueDescriptionExpr LR_DOUBLE_ARROW^ valueDescriptionExpr ';'!
+globalRewrite		: KEYWORD_STATIC? valueDescriptionExpr LR_DOUBLE_ARROW^ valueDescriptionExpr SEMICOLON!
 					;
 
 claimGroup			: KEYWORD_CHECK^ '{'! claim* '}'!
@@ -76,245 +293,105 @@ claimGroup			: KEYWORD_CHECK^ '{'! claim* '}'!
 
 claim				: membershipClaim
 					;
-                    
-/*membershipClaim		:  memberNameExpr ':' KEYWORD_CLASS_OF valueDescriptionExpr ';'
-						-> ^( MEMBERSHIP_CLAIM memberNameExpr ^( KEYWORD_CLASS_OF  valueDescriptionExpr ) )
-					|  memberNameExpr ':' valueDescriptionExpr ';'
-						-> ^( MEMBERSHIP_CLAIM memberNameExpr valueDescriptionExpr )
-                    | ELLIPSIS ':' valueDescriptionExpr ';'
-                    	-> ^( MEMBERSHIP_CLAIM REMAINING_MEMBERS valueDescriptionExpr )
-					;*/
-                    
-membershipClaim		: (memberNameExpr ':' KEYWORD_CLASS_OF)=> 
-                    	memberNameExpr ':' KEYWORD_CLASS_OF valueDescriptionExpr ';'
-						-> ^( MEMBERSHIP_CLAIM memberNameExpr ^( KEYWORD_CLASS_OF  valueDescriptionExpr ) )
-                    | namedValueDescription ';'
-						-> ^( MEMBERSHIP_CLAIM namedValueDescription )
-					| ELLIPSIS ':' valueDescriptionExpr ';'
-                    	-> ^( MEMBERSHIP_CLAIM REMAINING_MEMBERS valueDescriptionExpr )
-                    ;
-                                          
-memberNameExpr		: '.'? IDENT ( '.' IDENT )* -> ^( DEFINITE_MEMBER_NAME IDENT* )
-					| INDEFINITE_MEMBER_NAME^ 
-                    ;
 
-namedValueDescription 	: memberNameExpr ':'! valueDescriptionExpr
-						;
-      
-optionallyNamedValueDescription 	: (namedValueDescription)=>namedValueDescription
-									| primitiveOrFunctionValueDescription
-                                    ;
-      
-/*functionDescriptionExpr	: 
-						;*/
-
-/* The following alternatives are in precedence order, highest to lowest */
-
-valueDescriptionExpr		: primitiveOrFunctionValueDescription 
-	-> ^( VALUE_DESCRIPTION primitiveOrFunctionValueDescription)
-                            /*| functionValueDescription*/
-                            ;
-                            
-/*optionallyAnnotatedValueDescription: valueAnnotation^? primitiveOrFunctionValueDescription;*/
-
-primitiveOrFunctionValueDescription	: 
-	(multiValueDescription FUNCTION_ARROW)=> 
-    	multiValueDescription FUNCTION_ARROW primitiveOrFunctionValueDescription 
-			-> ^(FUNCTION_ARROW multiValueDescription primitiveOrFunctionValueDescription )
-	| primitiveValueDescription
-	; 
-
-primitiveValueDescription	: KEYWORD_CONST^ constantValueDescription
-                            | valueAnnotation? unannotatedValueDescription valueInterpretation?
-                        	;
-
-valueInterpretation : KEYWORD_AS^ unannotatedValueDescription valueConstructionExpression
-                    | KEYWORD_OUT_AS^ unannotatedValueDescription valueConstructionExpression
-                    | KEYWORD_INTERPRET_AS^ unannotatedValueDescription valueConstructionExpression
-                    | KEYWORD_IN_AS^ unannotatedValueDescription valueConstructionExpression
-					;
-
-valueConstructionExpression : '(' stubStatementBody ( ',' stubStatementBody )* ')' 
-								-> ^( VALUE_CONSTRUCT stubStatementBody* )
-                            | -> ^( VALUE_CONSTRUCT )
-                            ;
-
-valueAnnotation : KEYWORD_OPAQUE^ valueAnnotation?
-                | KEYWORD_IGNORED^ valueAnnotation?
-                | KEYWORD_OUT^ valueAnnotation?
-                | KEYWORD_IN^ valueAnnotation?
-                | KEYWORD_INOUT^ valueAnnotation?
-                | KEYWORD_CALLER_FREE^ '('! IDENT ')'! valueAnnotation?
-                ;
-                            
-unannotatedValueDescription : /*unspecifiedValueDescription^
-							|*/ simpleOrObjectOrPointerValueDescription^
-                            ;
-multiValueDescription	: '(' optionallyNamedValueDescription (',' optionallyNamedValueDescription )*  ')'
-								-> ^( MULTIVALUE optionallyNamedValueDescription* )
-						;
-namedMultiValueDescription : '(' namedValueDescription (',' namedValueDescription )*  ')'
-								-> ^( MULTIVALUE namedValueDescription* )
-                           ;
-							                            
-structuredValueDescription	: KEYWORD_OBJECT '{' membershipClaim* '}'
-								-> ^(KEYWORD_OBJECT membershipClaim* )
-                            | multiValueDescription
-                            ;
-                            
-simpleOrObjectOrPointerValueDescription : structuredValueDescription^ ( valueDescriptionModifierSuffix^ )*
-									    | simpleValueDescription^ ( valueDescriptionModifierSuffix^ )*
-                                        | enumValueDescription^ ( valueDescriptionModifierSuffix^ )*
-                                        | KEYWORD_VOID^ ( valueDescriptionModifierSuffix^ )*                                        
-									    ;
-
-valueDescriptionModifierSuffix : KEYWORD_PTR
-								| '[' arraySizeExpr? ']' -> ^( ARRAY arraySizeExpr? )
-                                ;
-                                
-arraySizeExpr : memberNameExpr | INT ;
-
-simpleValueDescription		: namedDwarfTypeDescription^
-                            | INDEFINITE_MEMBER_NAME -> ANY_VALUE
-							/*| '('! primitiveOrFunctionValueDescription^ ')'!*/
-							;
-
-byteSizeParameter			: '<'! INT '>'!
-							;
-
-namedDwarfTypeDescription	: KEYWORD_BASE^ dwarfBaseTypeDescription
-							| IDENT
-                            ;
-                
-dwarfBaseTypeDescription	: encoding=IDENT byteSizeParameter? dwarfBaseTypeAttributeList
-							-> ^( DWARF_BASE_TYPE $encoding dwarfBaseTypeAttributeList byteSizeParameter?  )
-							;
-
-constantOrVoidValueDescription	:	constantValueDescription^
-								|	KEYWORD_VOID^
-                                ;
-
-constantValueDescription	: STRING_LIT^
-                            | KEYWORD_NULL^
-                            | constantSetExpression
-							| constantIntegerArithmeticExpression 
-                            	-> ^( CONST_ARITH constantIntegerArithmeticExpression )
-                            ;
-                            
-constantSetExpression	: '{' ( IDENT ( ',' IDENT* )* )? '}' -> ^( SET_CONST IDENT* )
-						;
-
-
-dwarfBaseTypeAttributeList : ( '{' ( dwarfBaseTypeAttributeDefinition )* '}' )?
-								-> ^( DWARF_BASE_TYPE_ATTRIBUTE_LIST dwarfBaseTypeAttributeDefinition* )
-                              ;
-
-dwarfBaseTypeAttributeDefinition 	: attr=IDENT '=' ( value=IDENT | value=INT ) ';'
-									-> ^( DWARF_BASE_TYPE_ATTRIBUTE $attr $value )
-									;
-
-/*enumValueDescription	: KEYWORD_ENUM^ ( ( ( IDENT | '_' ) byteSizeParameter? enumDefinition? ) | ( byteSizeParameter? enumDefinition ) )*/
-enumValueDescription	: KEYWORD_ENUM^ dwarfBaseTypeDescription enumDefinition 
-						;
-                           
-enumDefinition	: '{'! enumElement* '}'!
-				;
-
-enumElement : KEYWORD_ENUMERATOR^ IDENT EQ constantIntegerArithmeticExpression ';'!
-			;
-            
-constantIntegerArithmeticExpression	: constantShiftingExpression^
-									;
-
-primitiveIntegerArithmeticExpression	: INT^
-										| '('! constantIntegerArithmeticExpression^ ')'!
-                                        ;
-                                        
-constantShiftingExpression	: primitiveIntegerArithmeticExpression ( ( SHIFT_LEFT^ | SHIFT_RIGHT^ ) primitiveIntegerArithmeticExpression )* 
-					;
-                           
-/*functionValueDescription	: 
-	(functionArgumentDescriptionExpr FUNCTION_ARROW)=> 
-    	functionArgumentDescriptionExpr FUNCTION_ARROW functionResultDescriptionExpr
-        	-> ^(FUNCTION_ARROW functionArgumentDescriptionExpr functionResultDescriptionExpr )
-	| valueDescriptionExpr^ 
-							;
-
-functionArgumentDescriptionExpr	: ('(')=> multiValueDescription^
-								| primitiveValueDescription^
-								;
-
-functionResultDescriptionExpr	: ('(')=> multiValueDescription^
-								| primitiveValueDescription^
-								;
-
-functionValueDescription	: 
-	(multiValueDescription FUNCTION_ARROW)=> 
-    	multiValueDescription FUNCTION_ARROW valueDescriptionExpr
-        	-> ^(FUNCTION_ARROW multiValueDescription valueDescriptionExpr )
-	| valueDescriptionExpr^ 
-							;*/
-
-/*functionArgumentDescriptionExpr	: ('(')=> multiValueDescription^
-								| primitiveValueDescription^
-								;
-
-functionResultDescriptionExpr	: ('(')=> multiValueDescription^
-								| primitiveValueDescription^
-								;*/
-                               
-
-deriveDeclaration	: KEYWORD_DERIVE^ objectConstructor IDENT '='! derivedObjectExpression ';'!
+deriveDeclaration	: KEYWORD_DERIVE^ objectConstructor IDENT '='! derivedObjectExpression SEMICOLON!
 					;
                     
-derivedObjectExpression	: IDENT^ ( '('! derivedObjectExpression (','! derivedObjectExpression)* ')'! )?
+derivedObjectExpression	: IDENT^ ( '('! derivedObjectFunctionArgument (','! derivedObjectFunctionArgument)* ')'! )?
 						| KEYWORD_LINK^ identList linkRefinement
 						;
+                        
+derivedObjectFunctionArgument: derivedObjectExpression
+                             | STRING_LIT
+                             ;
 
 linkRefinement	: '{' pairwiseCorrespondenceBlock* '}' -> ^( PAIRWISE_BLOCK_LIST pairwiseCorrespondenceBlock* )
 				| -> ^( PAIRWISE_BLOCK_LIST );
                 
-pairwiseCorrespondenceBlock	:	IDENT /*(*/ BI_DOUBLE_ARROW^ /*| RL_DOUBLE_ARROW^ | LR_DOUBLE_ARROW^ )*/ IDENT pairwiseCorrespondenceBody
+pairwiseCorrespondenceBlock	:	IDENT BI_DOUBLE_ARROW^ IDENT pairwiseCorrespondenceBody
 							;
                             
 pairwiseCorrespondenceBody	: '{' pairwiseCorrespondenceElement* '}' -> ^( CORRESP pairwiseCorrespondenceElement* )
 							;
                             
 pairwiseCorrespondenceElement	:	eventCorrespondence -> ^( EVENT_CORRESP eventCorrespondence )
+								|	(KEYWORD_VALUES '{')=>valueCorrespondenceBlock 
 								|   singleValueCorrespondence
-								|	valueCorrespondenceBlock 
-                                /* FIXME: support lone value correspondences */
                                 ;
                                 
-eventCorrespondence	:	(eventPattern LR_DOUBLE_ARROW)=> 	eventPattern	LR_DOUBLE_ARROW^ eventPatternRewriteExpr ';'!
-					|	(eventPatternRewriteExpr RL_DOUBLE_ARROW)=> eventPatternRewriteExpr RL_DOUBLE_ARROW^ eventPattern ';'!
-                    |	eventPattern	BI_DOUBLE_ARROW^ eventPattern ';'!
+eventCorrespondence	:	
+ (eventPattern infixStubExpression LR_DOUBLE_ARROW)=>            
+  eventPattern            infixStubExpression LR_DOUBLE_ARROW^ infixStubExpression eventPatternRewriteExpr leftRightEventCorrespondenceTerminator
+|(eventPatternRewriteExpr infixStubExpression RL_DOUBLE_ARROW)=> 
+  eventPatternRewriteExpr infixStubExpression RL_DOUBLE_ARROW^ infixStubExpression eventPattern            rightLeftEventCorrespondenceTerminator
+|(atomicEventPattern infixStubExpression BI_DOUBLE_ARROW)=>            
+  atomicEventPattern      infixStubExpression BI_DOUBLE_ARROW^ infixStubExpression atomicEventPattern      bidirectionalEventCorrespondenceTerminator
                     /*| KEYWORD_PATTERN eventCorrespondence -> ^(KEYWORD_PATTERN eventCorrespondence)*/
 					;
-
-eventContext	: ( '(' ( stackFramePattern SCOPE_RESOLUTION )+ ')' )? -> ^( EVENT_CONTEXT stackFramePattern* )
-				;
+                    
+bidirectionalEventCorrespondenceTerminator : SEMICOLON -> ^( RETURN_EVENT )
+                                           ;
+leftRightEventCorrespondenceTerminator: SEMICOLON -> ^( RETURN_EVENT )
+                             | '<--' stubNonSequencingExpression SEMICOLON
+                               -> ^( RETURN_EVENT stubNonSequencingExpression )
+                             | '<--' CONT_LBRACE sequencingExpression ';'? '}' SEMICOLON
+                               -> ^( RETURN_EVENT sequencingExpression )
+                             ;
+rightLeftEventCorrespondenceTerminator: SEMICOLON -> ^( RETURN_EVENT )
+                             | '-->' stubNonSequencingExpression SEMICOLON
+                               -> ^( RETURN_EVENT stubNonSequencingExpression )
+                             | '-->' CONT_LBRACE sequencingExpression ';'? '}' SEMICOLON
+                               -> ^( RETURN_EVENT sequencingExpression )
+                             ;
+eventContext    : ( '(' ( stackFramePattern SCOPE_RESOLUTION )+ ')' )? -> ^( EVENT_CONTEXT stackFramePattern* )
+                ;
                 
-stackFramePattern 	: IDENT^
-					;
+stackFramePattern   : IDENT^
+                    ;
 
-eventPattern	:	atomicEventPattern
-				; /* TODO: add composite (sequence) event patterns */
-           
-atomicEventPattern	: eventContext memberNameExpr eventParameterNamesAnnotation ( '(' ( ( annotatedValueBindingPattern ( ',' annotatedValueBindingPattern )* ) | ELLIPSIS )? ')' )?
-						-> ^( EVENT_PATTERN eventContext memberNameExpr eventParameterNamesAnnotation annotatedValueBindingPattern* )
-                    | eventContext identPattern eventParameterNamesAnnotation ( '(' ( ( annotatedValueBindingPattern ( ',' annotatedValueBindingPattern )* ) | ELLIPSIS )? ')' )?
-						-> ^( EVENT_PATTERN eventContext identPattern eventParameterNamesAnnotation annotatedValueBindingPattern* )
-					;
+eventPatternEOFHack: eventPattern^ EOF!;
+eventPattern    :   atomicEventPattern
+                |   contextBindingEventPattern ( ',' contextBindingEventPattern )* ',' atomicEventPattern
+                  -> ^( EVENT_WITH_CONTEXT_SEQUENCE ^( CONTEXT_SEQUENCE contextBindingEventPattern* ) atomicEventPattern )
+                ;
+                
+contextBindingEventPattern : bindingPrefix^ atomicEventPattern
+                           | ELLIPSIS
+                           ;
+
+atomicEventPattern	: 
+	eventContext memberNameExpr eventParameterNamesAnnotation ( '(' ( ( annotatedValueBindingPattern ( ',' annotatedValueBindingPattern )* ) | ELLIPSIS )? ')' eventCountPredicate? )?
+		-> ^( EVENT_PATTERN eventContext memberNameExpr ^( EVENT_COUNT_PREDICATE eventCountPredicate? ) eventParameterNamesAnnotation annotatedValueBindingPattern* )
+    | eventContext identPattern eventParameterNamesAnnotation ( '(' ( ( annotatedValueBindingPattern ( ',' annotatedValueBindingPattern )* ) | ELLIPSIS )? ')' eventCountPredicate? )?
+		-> ^( EVENT_PATTERN eventContext identPattern ^( EVENT_COUNT_PREDICATE eventCountPredicate? ) eventParameterNamesAnnotation annotatedValueBindingPattern* )
+	;
+
+eventCountPredicate : '['! ( INT | IDENT )^ ']'!
+                    ;
+
+                
+//eventPatternRewriteExpr	: simpleEventPatternRewriteExpr 
+//                             -> ^( EVENT_SINK_AS_PATTERN simpleEventPatternRewriteExpr ) /* shorthand for a trivial stub */
+//                        | stubDescription 
+//                             -> ^( EVENT_SINK_AS_STUB stubDescription )
+eventPatternRewriteExpr : stubNonSequencingExpression
+                        -> ^( EVENT_SINK_AS_STUB stubNonSequencingExpression )
+                        | '{' sequencingExpression ';'? CONT_RBRACE
+                        -> ^( EVENT_SINK_AS_STUB sequencingExpression )
+                        ;
+//simpleEventPatternRewriteExpr:	memberNameExpr ( '(' ( stubLangExpression ( ',' stubLangExpression )* )  ')' )?
+//                                   -> ^( EVENT_PATTERN_REWRITE_EXPR memberNameExpr stubLangExpression* )
+//                             ;
+
                     
 identPattern : KEYWORD_PATTERN^ PATTERN_IDENT; 
 
-annotatedValueBindingPattern 	: valueAnnotation? valuePattern valueBindingPatternAnnotation? 
+annotatedValueBindingPattern 	: valueModeAnnotation? valuePattern valueBindingPatternAnnotation? 
 								-> ^( ANNOTATED_VALUE_PATTERN valuePattern valueBindingPatternAnnotation?  )
 						;
-/* valueAnnotations are things like opaque, ignored, etc., and can appear in valueDescriptions
- * (but we reference them here because we allow only a very restricted form of valueDescriptions
- * to appear in patterns).
+/* valueModeAnnotations are "in", "out", "inout" and can be specified here as a convenience
+ * instead of declaring these annotations in an exists block. 
+ *
  * Meanwhile, valueBindingPatternAnnotations are things like "as" and "names" and refer to the
  * particular treatment of a value captured by a pattern.
  * The line is not particularly clean... note how "names" might reasonably be made into a
@@ -327,65 +404,200 @@ valueBindingPatternAnnotation	: valueInterpretation
 eventParameterNamesAnnotation	: ('{')=> '{'! KEYWORD_NAMES^ namedMultiValueDescription '}'!
 								| -> ^( KEYWORD_NAMES )
 								;
-
-valuePattern		: memberNameExpr^ /* matches a named constant value -- also matches '_' */
+/* valuePatterns are used 
+ * - in eventCorrespondences, when matching *source* or bidirectional argument values etc.
+ * - in valueCorrespondences, when matching *target* or bidirectional corresponded values
+ * ... are the requirements of these different?
+ *     -- the latter wants to support valueInterpretations
+ *        -- this is a mechanism for selecting an alternative value correspondences
+ *        -- therefore it should be available for event correspondences
+ *     -- the latter also wants to support array subscripting
+ *        -- this is only (so far) with compile-time-constant subscripts, so...
+ *           ... is just like member selection, and should be available for event corresps too
+ * */
+valuePattern		: (memberNameExpr '[')=>
+                      memberNameExpr '[' constantIntegerArithmeticExpression ']' valueInterpretation?
+                      -> ^( memberNameExpr ^( ARRAY_SUBSCRIPT constantIntegerArithmeticExpression ) valueInterpretation? )
+                    | memberNameExpr valueInterpretation? /* matches a named constant value -- also matches '_' */
+                      -> ^( memberNameExpr valueInterpretation? )
 					/*| METAVAR^ */ /* matches any value, and names it */
 					| constantValueDescription -> ^( KEYWORD_CONST constantValueDescription ) /* matches that constant */
+                    | KEYWORD_VOID^ /* used for "no value" correspondences & inserting "arbitrary" code */
+                    | KEYWORD_THIS^ /* only for correspondences nested in refinement blocks -- see ephy.cake */
+                    | KEYWORD_PATTERN^ patternConstantValueDescription
                     ;
-                
-eventPatternRewriteExpr	: eventPattern -> ^( EVENT_SINK_AS_PATTERN eventPattern ) /* shorthand for a trivial stub */
-						| stubDescription -> ^( EVENT_SINK_AS_STUB stubDescription )
-                        ;
+
+bindingEOFHack: binding EOF; /* HACK: see stubLangExpressionEOFHack */
+binding 	: bindingPrefix^ stubLangExpression
+            ; /*           | bindingPrefix stubLangExpression
+              -> ^( KEYWORD_LET bindableIdentSet stubLangExpression )
+			;*/
+
+bindingPrefix : bindingKeyword^ bindableIdentSet '='!
+              | bindableIdentSet RL_SINGLE_ARROW
+                -> ^( KEYWORD_LET bindableIdentSet )
+              ;
+            
+bindableIdentSet 	: bindableIdentWithOptionalInterpretation 
+                        -> ^( IDENTS_TO_BIND bindableIdentWithOptionalInterpretation )
+					| '(' bindableIdentWithOptionalInterpretation ( ',' bindableIdentWithOptionalInterpretation )+ ')' 
+                        -> ^( IDENTS_TO_BIND bindableIdentWithOptionalInterpretation* )
+                    | lhs=IDENT ELLIPSIS rhs=IDENT
+                        -> ^( FORM_ASSOCIATION $lhs $rhs )
+                    ;
+
+bindableIdentWithOptionalInterpretation: IDENT valueInterpretation? -> ^( IDENT valueInterpretation? )
+                                       ;
+            
+bindingKeyword : KEYWORD_LET | KEYWORD_OUT ;
+            
+//emitStatement	:	/*KEYWORD_EMIT^*/ KEYWORD_OUT stubLangExpression
+//				;
+            
+valueCorrespondenceBlock	: KEYWORD_VALUES^ '{'! valueCorrespondence* '}'!
+							;
+                            
+singleValueCorrespondence 	: KEYWORD_VALUES^ valueCorrespondence
+							;
+                            
+valueCorrespondence	: valueCorrespondenceBase^ valueCorrespondenceTerminator;
+
+valueCorrespondenceTerminator: SEMICOLON! 
+                             | valueCorrespondenceRefinement
+                             ;
+
+/*reinterpretation 	: KEYWORD_AS memberNameExpr
+					;*/
                         
-stubDescription		: ('{' | CONT_LBRACE) stubStatementBody ( ';' stubStatementBody )* ('}' | CONT_RBRACE) 
-						-> ^( STUB stubStatementBody* )
+	  /*annotatedValueBindingPattern infixStubExpression correspondenceOperator^ infixStubExpression valuePattern*/
+valueCorrespondenceBase	: 
+    (valuePattern infixStubExpression leftToRightCorrespondenceOperator)=>
+     valuePattern infixStubExpression leftToRightCorrespondenceOperator^ infixStubExpression stubNonSequencingExpression
+  | (stubNonSequencingExpression infixStubExpression rightToLeftCorrespondenceOperator)=>
+  	stubNonSequencingExpression infixStubExpression rightToLeftCorrespondenceOperator^ infixStubExpression /*annotatedValueBindingPattern*/ valuePattern
+  | (valuePattern infixStubExpression bidirectionalCorrespondenceOperator)=>
+  	valuePattern infixStubExpression bidirectionalCorrespondenceOperator^ infixStubExpression valuePattern
+  | (namedMultiValueDescription bidirectionalCorrespondenceOperator)=>
+    namedMultiValueDescription bidirectionalCorrespondenceOperator^ namedMultiValueDescription
+  ;
+
+//		valueCorrespondenceSide rightToLeftCorrespondenceOperator^ correspondenceOperatorModifier? valueCorrespondenceSide*/
+//    | memberNameExpr infixStubExpression? rightToLeftCorrespondenceOperator infixStubExpression? valuePattern
+//    | memberNameExpr infixStubExpression? bidirectionalCorrespondenceOperator infixStubExpression? memberNameExpr
+//    ;
+
+/*valueCorrespondenceSide	: memberNameExpr valueInterpretation? 
+						| KEYWORD_CONST! constantValueDescription 
+                        | KEYWORD_VOID
+                        | stubDescription
+                        ;*/
+
+/*valuePattern ('<-->'|'-->'|'<--')^ valuePattern
+						;*/
+
+correspondenceOperator 	: bidirectionalCorrespondenceOperator
+						| leftToRightCorrespondenceOperator
+                        | rightToLeftCorrespondenceOperator
+						;
+
+infixStubExpression	: ('(')=> '(' stubNonSequencingExpression ')' -> ^( INFIX_STUB_EXPR stubNonSequencingExpression )
+					| -> ^( INFIX_STUB_EXPR )
 					;
+                            
+bidirectionalCorrespondenceOperator	:	BI_DOUBLE_ARROW^
+									;
+                            
+leftToRightCorrespondenceOperator	: LR_DOUBLE_ARROW^
+                            		| LR_DOUBLE_ARROW_Q^
+                                    ;
+                                    
+rightToLeftCorrespondenceOperator	: RL_DOUBLE_ARROW^
+									| RL_DOUBLE_ARROW_Q^
+                                    ;
+                                    
+/*correspondenceOperatorModifier	:	'{'! stubDescription '}'!
+								|	'['!  ']'!
+								;*/
+                    
+valueCorrespondenceRefinement	:	'{'! valueCorrespondence* '}'! ';'!
+								;
+                                
+/*valueCorrespondenceRefinementElement	: */
+                        
+/*stubDescription		: ('{' | CONT_LBRACE) stubStatementBody SEMICOLON? ('}' | CONT_RBRACE) 
+						-> ^( STUB stubStatementBody )
+					;*/
           
-stubStatementBody	:	binding
-                	| 	stubLangExpression
-                    |	stubDescription
-                    |	KEYWORD_SKIP
-                	;
-                
+/*stubStatementBody	:	binding^
+                	| 	stubLangExpression^
+                    |	stubDescription^
+                    |	KEYWORD_SKIP^
+                	;*/
+  
+stubLangExpressionEOFHack: stubLangExpression EOF; /* HACK for testing. See gUnit documentation:
+<http://www.antlr.org/wiki/display/ANTLR3/gUnit+-+Grammar+Unit+Testing> */
 stubLangExpression	/*: constantOrVoidValueDescription^
 					| ifThenElseExpression^
                     | booleanArithmeticExpression^
 					| invocation^
                     | runtimeValueIdentExpr^*/
 					/*| stubDescription^ /* sequence */
-                    : conditionalExpression /* lowest precedence operator */
+                    /*: conditionalExpression^*/
+                    : sequencingExpression^ /* lowest precedence operator */
                     ;
 
-stubLiteralExpression	: STRING_LIT
-						| INT
-                        | KEYWORD_VOID
-                        | KEYWORD_NULL
-                        | KEYWORD_TRUE
-                        | KEYWORD_FALSE
+stubLiteralExpression	: STRING_LIT^
+						| INT^
+                        | KEYWORD_VOID^
+                        | KEYWORD_NULL^
+                        | KEYWORD_TRUE^
+                        | KEYWORD_FALSE^
                         ;
             
-stubPrimitiveExpression	: stubLiteralExpression
-						| METAVAR
-                        | memberNameExpr
-                        | '('! stubLangExpression ')'!
+stubPrimitiveExpression	: stubLiteralExpression^
+                        | setExpression^
+						/*| METAVAR*/
+                        | IDENT^
+                        | KEYWORD_THIS^
+                        | KEYWORD_THAT^
+                        | KEYWORD_SUCCESS^
+                        /*| memberNameExpr*/
+                        | KEYWORD_OUT^ /*memberNameExpr*/ IDENT /* for threading output parameters to function calls */
+                        | KEYWORD_OUT^ INDEFINITE_MEMBER_NAME /* ditto */
+                        | '('! stubNonSequencingExpression^ ')'!
+                        | '{'! sequencingExpression^ ';'!? '}'!
                         ;
 
-memberSelectionExpression	: stubPrimitiveExpression (memberSelectionOperator^ stubPrimitiveExpression )*
-							; /* left-associative 
-                               * FIXME: Note this subsumes memberNameExpr, so we don't need it. */
+memberSelectionOperator : MEMBER_SELECT | INDIRECT_MEMBER_SELECT | ELLIPSIS; /* ellipsis is 'access associated' */
 
-memberSelectionOperator : MEMBER_SELECT | INDIRECT_MEMBER_SELECT ;
+memberSelectionSuffix : memberSelectionOperator^ IDENT ;
 
-functionInvocationExpression	: (memberSelectionExpression '(') => memberSelectionExpression '(' ( stubLangExpression (',' stubLangExpression )* )? ')'
-									-> ^( INVOCATION memberSelectionExpression stubLangExpression* )
-                                | memberSelectionExpression
-    							;
-         
-/* Here MULTIPLY is actually unary * (dereference) */
-unaryOperatorExpression	: (COMPLEMENT^|NOT^|MINUS^|PLUS^|MULTIPLY^)* functionInvocationExpression
-						;
+/*functionInvocationInfix : '('! ( stubLangExpression (','! stubLangExpression )* )? ')'! 
+						;*/
+postfixExpressionEOFHack: postfixExpression EOF;
+postfixExpression : stubPrimitiveExpression^ ( suffix^ )* /* raising SUFFIX will bring ...                      */
+                  ;                                       /* ...a function invocation arglist...                */
+                                                          /* up so that the func name (stubPrimitiveExpression) */
+                                                          /* sits after it in the same tree node,               */
+                                                          /* although I'm not sure why.                         */
+                                                          /* Same deal for array subscripting. */
+suffix : '(' ( stubLangExpression (',' stubLangExpression )* )? ')' 
+         -> ^(INVOKE_WITH_ARGS ^( MULTIVALUE stubLangExpression* ) )
+       | memberSelectionOperator IDENT
+         -> ^( memberSelectionOperator IDENT )
+       | '[' stubLangExpression ']'
+         -> ^( ARRAY_SUBSCRIPT stubLangExpression )
+       ;
+
+/* Here MULTIPLY is actually unary * (dereference) 
+ * and BITWISE_AND is actually unary & (address-of) -- mea culpa */
+unaryOperatorExpression	: (COMPLEMENT^|NOT^|MINUS^|PLUS^|MULTIPLY^|KEYWORD_DELETE^|BITWISE_AND^)* postfixExpression
+                        | KEYWORD_NEW^ memberNameExpr
+                        ;
+tieExpression : unaryOperatorExpression ( KEYWORD_TIE^ postfixExpression )? /* "tie" is quite general syntactically, but... */
+              ;                                                             /* only semantically valid on pointers.*/
                         
-castExpression	: unaryOperatorExpression valueInterpretation?
+castExpression	: tieExpression valueInterpretation?
 				;
                                         
 multiplicativeOperatorExpression	: castExpression ( ( MULTIPLY^ | DIVIDE^ | MODULO^ ) castExpression )*
@@ -400,7 +612,7 @@ shiftingExpression	: additiveOperatorExpression ( (SHIFT_LEFT^ | SHIFT_RIGHT^ ) 
 magnitudeComparisonExpression 	: shiftingExpression ( ( LESS^ | GREATER^ | LE^ | GE^ ) shiftingExpression )?
 								;
                                 
-equalityComparisonExpression	: magnitudeComparisonExpression ( ( EQ^ | NEQ^ ) magnitudeComparisonExpression )*
+equalityComparisonExpression	: magnitudeComparisonExpression ( ( EQ^ | NEQ^ ) magnitudeComparisonExpression )?
 								;
                                 
 bitwiseAndExpression	: equalityComparisonExpression ( BITWISE_AND^ equalityComparisonExpression )*
@@ -422,6 +634,25 @@ conditionalExpression	: logicalOrExpression
 						| KEYWORD_IF cond=conditionalExpression KEYWORD_THEN caseTrue=conditionalExpression KEYWORD_ELSE caseFalse=conditionalExpression
                         	-> ^( CONDITIONAL $cond $caseTrue $caseFalse )
                         ;
+optionalBindingExpression : binding
+                          | conditionalExpression
+                          ;
+                        
+optionalLambdaExpression : KEYWORD_FN^ bindableIdentSet FUNCTION_ARROW! optionalLambdaExpression
+                         | optionalBindingExpression^
+                         ;
+                         
+stubNonSequencingExpression : optionalLambdaExpression
+                            ;
+                        
+sequencingExpression : stubNonSequencingExpression ( stubSequenceOperator^ stubNonSequencingExpression )*
+                     ;
+                     
+stubSequenceOperator : SEMICOLON
+                     | ANDALSO_THEN
+                     | ORELSE_THEN
+                     ;
+
                         
 /* FIXME: now add actionExpression and sequenceExpression, then get rid of the separate Statement thing
  * ... and check that ( ... ) notation works like expected! as in, it denotes a separate stub?
@@ -456,87 +687,11 @@ runtimeValueIdentExpr	: memberNameExpr^
 ifThenElseExpression	:	'if'^ stubLangExpression 'then'! stubLangExpression 'else'! stubLangExpression
 						;  
 */
-binding 	: bindingKeyword^ bindableIdentSet '='! stubLangExpression
-			;
-            
-bindableIdentSet 	: IDENT -> ^( IDENTS_TO_BIND IDENT )
-					| '(' IDENT ( ',' IDENT )+ ')' -> ^( IDENTS_TO_BIND IDENT* )
-                    ;
-            
-bindingKeyword : KEYWORD_LET | KEYWORD_OUT ;
-            
-emitStatement	:	/*KEYWORD_EMIT^*/ KEYWORD_OUT stubLangExpression
-				;
-            
-valueCorrespondenceBlock	: KEYWORD_VALUES^ '{'! valueCorrespondence* '}'!
-							;
-                            
-singleValueCorrespondence 	: KEYWORD_VALUES^ valueCorrespondence
-							;
-                            
-valueCorrespondence	: valueCorrespondenceBase^ ( ';'! | valueCorrespondenceRefinement )
-					;
-
-/*reinterpretation 	: KEYWORD_AS memberNameExpr
-					;*/
-                        
-	  /*annotatedValueBindingPattern infixStubExpression correspondenceOperator^ infixStubExpression valuePattern*/
-valueCorrespondenceBase	: 
-	annotatedValueBindingPattern infixStubExpression leftToRightCorrespondenceOperator^ infixStubExpression valuePattern
-  | (valuePattern infixStubExpression rightToLeftCorrespondenceOperator)=>
-  	valuePattern infixStubExpression rightToLeftCorrespondenceOperator^ infixStubExpression annotatedValueBindingPattern
-  | (valuePattern infixStubExpression bidirectionalCorrespondenceOperator)=>
-  	valuePattern infixStubExpression bidirectionalCorrespondenceOperator^ infixStubExpression valuePattern
-  ;
-
-//		valueCorrespondenceSide rightToLeftCorrespondenceOperator^ correspondenceOperatorModifier? valueCorrespondenceSide*/
-//    | memberNameExpr infixStubExpression? rightToLeftCorrespondenceOperator infixStubExpression? valuePattern
-//    | memberNameExpr infixStubExpression? bidirectionalCorrespondenceOperator infixStubExpression? memberNameExpr
-//    ;
-
-/*valueCorrespondenceSide	: memberNameExpr valueInterpretation? 
-						| KEYWORD_CONST! constantValueDescription 
-                        | KEYWORD_VOID
-                        | stubDescription
-                        ;*/
-
-/*valuePattern ('<-->'|'-->'|'<--')^ valuePattern
-						;*/
-
-correspondenceOperator 	: bidirectionalCorrespondenceOperator
-						| leftToRightCorrespondenceOperator
-                        | rightToLeftCorrespondenceOperator
-						;
-
-infixStubExpression	: ('(')=> '(' stubStatementBody ')' -> ^( INFIX_STUB_EXPR stubStatementBody )
-					| -> ^( INFIX_STUB_EXPR )
-					;
-                            
-bidirectionalCorrespondenceOperator	:	BI_DOUBLE_ARROW^
-									;
-                            
-leftToRightCorrespondenceOperator	: LR_DOUBLE_ARROW^
-                            		| LR_DOUBLE_ARROW_Q^
-                                    ;
-                                    
-rightToLeftCorrespondenceOperator	: RL_DOUBLE_ARROW^
-									| RL_DOUBLE_ARROW_Q^
-                                    ;
-                                    
-/*correspondenceOperatorModifier	:	'{'! stubDescription '}'!
-								|	'['!  ']'!
-								;*/
-                    
-valueCorrespondenceRefinement	:	'{'! valueCorrespondence* '}'!
-								;
-                                
-/*valueCorrespondenceRefinementElement	: */
-                    
 
 inlineDeclaration			:	KEYWORD_INLINE^ objectSpec wellNestedTokenBlock
 							;
                             
-wellNestedTokenBlock : '{' ( INT | STRING_LIT | IDENT | 'alias' | 'any' | ';' | '[' | ',' | ']' | 'exists' | 'check' | 'declare' | 'override' | ':' | '.' | '_' | '->' | 'object' | 'ptr' | '<' | '>' | '=' | 'enum' | 'enumerator' | '==' | '<<' | '>>' | wellNestedTokenBlock | '<-->' | '<--' | '-->' | '#' | '::' | '?' | '+' | '-' | '/' | '|' | '(' | ')' | 'let' )* '}';
+wellNestedTokenBlock : '{' ( INT | STRING_LIT | IDENT | 'alias' | 'any' | SEMICOLON | '[' | ',' | ']' | 'exists' | 'check' | 'declare' | 'override' | ':' | '.' | '_' | '->' | 'object' | 'ptr' | '<' | '>' | '=' | 'enum' | 'enumerator' | '==' | '<<' | '>>' | wellNestedTokenBlock | '<-->' | '<--' | '-->' | '#' | '::' | '?' | '+' | '-' | '/' | '|' | '(' | ')' | 'let' )* '}';
 
 /* Lexer */
 
@@ -552,15 +707,18 @@ KEYWORD_OVERRIDE : 'override';
 KEYWORD_CONST : 'const';
 KEYWORD_OPAQUE : 'opaque';
 KEYWORD_IGNORED : 'ignored';
+KEYWORD_INVALID : 'invalid';
 KEYWORD_VOID : 'void';
 KEYWORD_NULL : 'null';
 FUNCTION_ARROW : '=>';
+KEYWORD_FN : 'fn';
 KEYWORD_BASE : 'base' ;
 KEYWORD_OBJECT : 'object';
 KEYWORD_PTR : 'ptr';
 KEYWORD_CLASS_OF : 'class_of';
 KEYWORD_ENUM : 'enum';
 KEYWORD_ENUMERATOR : 'enumerator';
+KEYWORD_SET : 'set';
 SHIFT_LEFT : '<<';
 SHIFT_RIGHT : '>>';
 KEYWORD_LINK : 'link';
@@ -583,6 +741,12 @@ KEYWORD_PATTERN : 'pattern' ;
 KEYWORD_SKIP : 'skip';
 KEYWORD_TRUE : 'true';
 KEYWORD_FALSE : 'false';
+KEYWORD_SUCCESS : 'success';
+KEYWORD_NEW: 'new';
+KEYWORD_DELETE: 'delete';
+KEYWORD_TIE: 'tie';
+KEYWORD_THIS: 'this';
+KEYWORD_THAT: 'that';
 LE : '<=';
 GE : '>=';
 EQ : '==';
@@ -603,6 +767,7 @@ INDEFINITE_MEMBER_NAME : '_';
 // DOT : '.';
 MEMBER_SELECT : '.';
 INDIRECT_MEMBER_SELECT : '->';
+RL_SINGLE_ARROW: '<-';
 //TILDE : '~';
 COMPLEMENT : '~';
 //EXCLAMATION : '!';
@@ -625,6 +790,9 @@ BITWISE_XOR : '^';
 BITWISE_OR : '|';
 CONT_LBRACE : '--{';
 CONT_RBRACE : '}--';
+SEMICOLON : ';';
+ANDALSO_THEN : ';&';
+ORELSE_THEN : ';|';
 
 /* Fallback (interesting) tokens */
 INT :   '0'..'9'+ ;
