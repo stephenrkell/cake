@@ -10,11 +10,12 @@ Return values:
 Behaviour:
 
 - asynchronous versus synchronous style
-- virtual dispatch style (i.e. interpret a vtable as an entry point)
+- virtual dispatch style (i.e. interpret a vtable as a single entry point, as if doing switch(){})
 
 Symbol renaming:
 
 - name mangling style
+- casing style: use to induce additional name-matching (as in XCL)
 
 Cake-primitive data types:
 
@@ -31,12 +32,18 @@ Mux/demux-based styles:
 - connect/close for the same
 - layering (composable) versions of the same, i.e. HTTP style then GET/POST style?
 - REPL/ftp-like style: mux a set of functions into an ftp-like read/write console interface
+- exec()-based invocation of a command-line tool
 
 It seems like mux/demux-based styles are really doing something different from the other stuff.
 They're neat because they're composable -- they're like mixins.
 
 ** They're better than mixins because they're declarative -- they simply define an interpretation,
 and no run-time instantiation is involved.
+
+** To apply them, we need to specialise them with the lower-layer stuff that we want to "pull out",
+e.g. an XMLRPC description of the interface that we want to pull out of fwrite() etc. This is best
+done in a meta-DWARF fashion, i.e. defining a mapping between Dwarf and XMLRPC interfaces, then in
+the Cake source just using the DWARF version.
 
 ** See what I wrote on the back of the Pidgin paper.
 
@@ -45,3 +52,7 @@ where at least two hops of "inference" a.k.a. interpretation are involved, and w
 interpretation step (mixin) is applied to at least two base components, and where one component is
 interpreted in at least two different ways [in the same composition?].
 
+** Surely other styles are potentially composable too? It's just that we tend not to get, say, style
+interpretations which reveal new encodings of integers which might then be interperable as bitfield
+sets or whatever. One example though: integers interperable as object identities (like Dwarf_Off
+values!) which can be lifted to linked structures and then traversed just as if they were pointers).

@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <boost/shared_ptr.hpp>
+#include <boost/enable_shared_from_this.hpp>
 #include <boost/optional.hpp>
 #include <fstream>
 #include <fileno.hpp>
@@ -87,7 +88,9 @@ namespace cake
 		int fileno() { return ::fileno(this_ifstream);  }
 	};
 
-	class module_described_by_dwarf : public described_module
+	class module_described_by_dwarf 
+    : public described_module,  
+      public boost::enable_shared_from_this<module_described_by_dwarf>
 	{
     protected:
 		static const Dwarf_Off private_offsets_begin; 
@@ -95,7 +98,8 @@ namespace cake
 		Dwarf_Off private_offsets_next;
 		Dwarf_Off next_private_offset() { return private_offsets_next++; }
         virtual const dwarf::spec::abstract_def& get_spec() = 0;
-	public:        
+	public: 
+        boost::shared_ptr<module_described_by_dwarf> shared_this() { return this->shared_from_this(); }
     	dwarf::encap::Die_encap_all_compile_units& all_compile_units() 
         { return dies.all_compile_units(); }
 		bool do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
@@ -110,7 +114,9 @@ namespace cake
 
 		bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
 			Dwarf_Off current_die);
-            
+        
+        virtual dwarf::spec::abstract_dieset& get_ds() = 0;
+        
         module_described_by_dwarf(const std::string& filename, dwarf::encap::dieset& ds) 
          : 	described_module(filename), dies(ds),
          	private_offsets_next(private_offsets_begin) {}
@@ -136,6 +142,9 @@ namespace cake
 		elf_module(std::string local_filename, std::string makefile_filename);
         //const dwarf::spec::abstract_def& get_spec() 
         //{ return static_cast<module_described_by_dwarf*>(this)->get_spec(); }
+        
+        dwarf::spec::abstract_dieset& get_ds() 
+        { return static_cast<dwarf::encap::file*>(this)->get_ds(); }
 	
 		//void print_abi_info();
 	};
@@ -173,6 +182,7 @@ namespace cake
             m_derivation(d),
             m_id(id)
          	{}
+	    dwarf::spec::abstract_dieset& get_ds() { return dies; }
     };
 }
 

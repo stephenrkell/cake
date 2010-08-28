@@ -14,7 +14,13 @@ int main(void)
 	return 0;
 }
 
-char *wider_still(int a, int b, int c_unused)
+/* FIXME: we can't call this just "wider_still" because then the compiler
+ * will omit an internal reference which is impervious to the linker's
+ * --wrap option, so our wrapper code won't get run. By avoiding name-
+ * -matching in this compilation unit, we can defer the binding until 
+ * link time. A better Cake compiler would emit make rules that undid the
+ * binding, perhaps using my patched objcopy's --unbind-sym feature. */
+char *__real_wider_still(int a, int b, int c_unused)
 {
 	return "fell through to the real wider_still!";   
 }

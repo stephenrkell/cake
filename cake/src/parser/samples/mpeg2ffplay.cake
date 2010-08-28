@@ -30,35 +30,35 @@ derive elf_reloc("mpeg2play2ffmpeg.o") program = link[
        ;& avcodec_open(codec_ctxt, codec)
        ;& codec_ctxt };
   
-  values (dec: mpeg2_dec_s, info: mpeg2_info_s, 
-  sequence: mpeg2_sequence_s, fbuf: mpeg2_fbuf_s)
-   <--> (ctxt: AVCodecContext, vid_idx: int, 
-        p: AVPacket, s: AVStream, codec: AVCodec)
-  { 
-    // ensure an AVPacket exists, on any flow L-to-R
-    void -->?(new AVPacket tie ctxt) p;
-    
-    // picture dimensions are in sequence and ctxt
-    sequence <--> ctxt {
-     // width and height done automatically
-     display_width <-- width;
-     display_height <-- height;  // here we assume a
-     chroma_width <-- width / 2; // 4:2:2 pixel format
-     chroma_height <-- height / 2; }; 
-     
-     // info.sequence always points to sequence object
-     info.sequence (&sequence)<--? void;
-     
-     // special conversion required for buffers
-     fbuf <--> frame {
-      buf[0] as packed_luma_line[height] ptr
-       <--> data[0] as padded_line[ctxt.height] ptr;
-      buf[1] as packed_chroma_line[chroma_height] ptr
-       <--> data[1] as padded_line[ctxt.height / 2] ptr;
-      buf[2] as packed_chroma_line[chroma_height] ptr
-       <--> data[2] as padded_line[ctxt.height / 2] ptr;
-     };
-  };
+//   values (dec: mpeg2_dec_s, info: mpeg2_info_s, 
+//   sequence: mpeg2_sequence_s, fbuf: mpeg2_fbuf_s)
+//    <--> (ctxt: AVCodecContext, vid_idx: int, 
+//         p: AVPacket, s: AVStream, codec: AVCodec)
+//   { 
+//     // ensure an AVPacket exists, on any flow L-to-R
+//     void -->?(new AVPacket tie ctxt) p;
+//     
+//     // picture dimensions are in sequence and ctxt
+//     sequence <--> ctxt {
+//      // width and height done automatically
+//      display_width <-- width;
+//      display_height <-- height;  // here we assume a
+//      chroma_width <-- width / 2; // 4:2:2 pixel format
+//      chroma_height <-- height / 2; }; 
+//      
+//      // info.sequence always points to sequence object
+//      info.sequence (&sequence)<--? void;
+//      
+//      // special conversion required for buffers
+//      fbuf <--> frame {
+//       buf[0] as packed_luma_line[height] ptr
+//        <--> data[0] as padded_line[ctxt.height] ptr;
+//       buf[1] as packed_chroma_line[chroma_height] ptr
+//        <--> data[1] as padded_line[ctxt.height / 2] ptr;
+//       buf[2] as packed_chroma_line[chroma_height] ptr
+//        <--> data[2] as padded_line[ctxt.height / 2] ptr;
+//      };
+//   };
   values packed_luma_line <-- padded_line {
    void (memcpy(this, that, display_width))<-- void; };
   values packed_chroma_line <-- padded_line {

@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sstream>
 #include <cstdlib>
+#include <cctype>
 #include "request.hpp"
 #include "util.hpp"
 //#include "treewalk_helpers.hpp"
@@ -203,12 +204,25 @@ namespace cake
 			case '_':
 				RAISE_INTERNAL(t, "expecting a definite memberName, found indefinite `_'");
 			// no break
+			case '.': {
+				INIT;
+				BIND3(t, left, IDENT);
+				BIND2(t, right);
+				*this = read_definite_member_name(right);
+				push_back(CCP(GET_TEXT(left)));
+			}
+			break;
+			case CAKE_TOKEN(IDENT):
+				*this = definite_member_name(1, std::string(CCP(GET_TEXT(t))));
+			break;
 			case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
 				INIT;
-				FOR_ALL_CHILDREN(t)
-				{
-					push_back(std::string(CCP(GET_TEXT(n))));
-				}
+				//FOR_ALL_CHILDREN(t)
+				//{
+				//	push_back(std::string(CCP(GET_TEXT(n))));
+				//}
+				BIND2(t, top);
+				*this = read_definite_member_name(top);
 			}
             break;
 			default: RAISE_INTERNAL(t, "bad syntax tree for memberName");			
@@ -216,6 +230,104 @@ namespace cake
 	}			
 	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName)
     { return definite_member_name(memberName); }
+	
+	antlr::tree::Tree *make_definite_member_name_expr(const definite_member_name& arg)
+	{
+		// We do this by building a string and feeding it to the parser.
+     	std::cerr << "creating definite member name tree for " << arg << std::endl;
+
+		std::string fragment;
+		for (auto i = arg.begin(); i != arg.end(); i++)
+		{
+			if (i != arg.begin()) fragment += ".";
+			fragment += cake_token_text_from_ident(*i);
+		}
+        char *dup = strdup(fragment.c_str());
+        pANTLR3_INPUT_STREAM ss = antlr3NewAsciiStringInPlaceStream(
+        	reinterpret_cast<uint8_t*>(dup), 
+        	fragment.size(), 0);
+        cakeCLexer *lexer = cakeCLexerNew(ss);
+        antlr::CommonTokenStream *tokenStream = antlr3CommonTokenStreamSourceNew(
+        	ANTLR3_SIZE_HINT, TOKENSOURCE(lexer));
+        cakeCParser *parser = cakeCParserNew(tokenStream); 
+        cakeCParser_definiteMemberName_return ret = parser->definiteMemberName(parser);
+        
+        // We should now have the tree in ret.tree. 
+        // Free all the other temporary stuff we created.
+        // FIXME: work out which bits I can free now and which to cleanup later!
+        //ss->free(ss);
+        //lexer->free(lexer);
+        //tokenStream->free(tokenStream);
+        //parser->free(parser);
+        //free(dup);
+        
+        return ret.tree;
+	}
+	
+	std::string cake_token_text_from_ident(const std::string& arg)
+	{
+		/* Turn arg into some text that will be parsed as a Cake token.
+		 * This means punctuation must be escaped, and
+		 * if the result is a reserved word, 
+		 * we should insert an arbitrary escape. */
+		
+		const unsigned bufsize = 4096;
+		char buf[bufsize];
+		auto i_c = arg.begin();
+		char *p_c = &buf[0];
+		assert(*i_c && (isalpha(*i_c) || (*i_c == '_')));
+		do 
+		{
+			if (!isalnum(*i_c) && (*i_c != '_')) *p_c++ = '\\';
+			*p_c++ = *i_c;
+			assert(p_c - buf < bufsize); // must have room for null terminator too
+		} while (i_c != arg.end() && *++i_c);
+		// insert null terminator
+		*p_c++ = '\0';
+		if (is_cake_keyword(std::string(buf)))
+		{
+			// move back two places
+			p_c -= 2;
+			// insert an escape character
+			*p_c++ = '\\';
+			// insert the final input character again
+			*p_c++ = *i_c;
+			// insert the null terminator again
+			*p_c++ = '\0';
+			// definitely not a keyword now
+			assert(!is_cake_keyword(buf));
+			// did we spill over? oh dear
+			assert(p_c - buf <= bufsize);
+		}
+		return std::string(buf);
+	}
+	
+	bool is_cake_keyword(const std::string& arg)
+	{
+		char *dup = strdup(arg.c_str());
+		pANTLR3_INPUT_STREAM ss = antlr3NewAsciiStringInPlaceStream(
+			reinterpret_cast<uint8_t*>(dup), 
+			arg.size(), 0);
+		cakeCLexer *lexer = cakeCLexerNew(ss);
+		antlr::CommonTokenStream *tokenStream = antlr3CommonTokenStreamSourceNew(
+			ANTLR3_SIZE_HINT, TOKENSOURCE(lexer));
+
+		auto vec = tokenStream->getTokens(tokenStream);
+		assert(tokenStream->p != -1);
+		pANTLR3_COMMON_TOKEN tok = static_cast<pANTLR3_COMMON_TOKEN>(vec->get(vec, tokenStream->p));
+		
+		bool retval;
+		std::cerr << "Pulled out a token of type " << GET_TYPE(tok) << std::endl;
+		if (tok->getType(tok) != CAKE_TOKEN(IDENT)) retval = true;
+		else retval = false;
+		
+		ss->free(ss);
+		lexer->free(lexer);
+		tokenStream->free(tokenStream);
+		free(dup);
+		
+		return retval;
+	}
 
 	std::string get_event_pattern_call_site_name(antlr::tree::Tree *t)
     {
@@ -319,10 +431,12 @@ namespace cake
     boost::optional<std::string> pattern_is_simple_function_name(antlr::tree::Tree *t)
     {
 		assert(GET_TYPE(t) == CAKE_TOKEN(EVENT_PATTERN));
-        if (GET_CHILD_COUNT(t) > 2) return false;
+        if (GET_CHILD_COUNT(t) > 4) return false;
         INIT;
         BIND2(t, eventContext);
         BIND2(t, memberNameExpr);
+        BIND2(t, eventCountPredicate);
+        BIND2(t, eventParameterNamesAnnotation);
         if (GET_TYPE(memberNameExpr) != CAKE_TOKEN(DEFINITE_MEMBER_NAME)) return false;
         else 
         {
@@ -342,6 +456,16 @@ namespace cake
                     return pattern_is_simple_function_name(eventPattern);
                 } 
             case CAKE_TOKEN(EVENT_SINK_AS_STUB):
+                {
+                	INIT;
+                    BIND2(t, stubTopLevel);
+                    std::cerr << "Sink stub expression has toplevel token type " 
+                    	<< GET_TYPE(stubTopLevel) << std::endl;
+                    if (GET_TYPE(stubTopLevel) == CAKE_TOKEN(IDENT))
+                    {
+                    	return std::string(CCP(GET_TEXT(stubTopLevel)));
+                    } else return false;
+                }
             	return false;
             default: assert(false); return false;
         }

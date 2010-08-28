@@ -2,36 +2,69 @@
 #define CAKE_LINK_HPP_
 
 #include <fstream>
-
+#include <set>
+//#include <boost/iterator/filter_iterator.hpp>
 #include "request.hpp"
 #include "parser.hpp"
+
+namespace dwarf { namespace encap { typedef Die_encap_all_compile_units file_toplevel_die; } }
 
 namespace cake {
 	class link_derivation : public derivation
 	{
+    public:
     	typedef std::pair<module_ptr,module_ptr> iface_pair;
-        struct is_provided : public std::unary_function<dwarf::encap::subprograms_iterator, bool>
+        std::string name_of_module(module_ptr m) { return this->r.module_inverse_tbl[m]; }
+        module_ptr module_for_dieset(dwarf::spec::abstract_dieset& ds)
+        { 
+            for (auto i_mod = r.module_tbl.begin(); i_mod != r.module_tbl.end(); i_mod++)
+            {
+            	if (&i_mod->second->get_ds() == &ds) return i_mod->second;
+            }
+            assert(false);
+    	}
+	private:
+        typedef dwarf::encap::file_toplevel_die::subprograms_iterator
+         subprograms_in_file_iterator;
+        struct is_provided : public std::unary_function<subprograms_in_file_iterator, bool>
         {
-            bool operator()(dwarf::encap::subprograms_iterator i_subp) const
+            bool operator()(subprograms_in_file_iterator i_subp) const
             { return (!((*i_subp)->get_declaration()) || (!(*((*i_subp)->get_declaration())))); }
         };
-        struct is_required : public std::unary_function<dwarf::encap::subprograms_iterator, bool>
+        struct is_required : public std::unary_function<subprograms_in_file_iterator, bool>
         {
-            bool operator()(dwarf::encap::subprograms_iterator i_subp) const
+            bool operator()(subprograms_in_file_iterator i_subp) const
             { is_provided is_p; return !(is_p(i_subp)); }
         };
-        typedef selective_iterator<dwarf::encap::subprograms_iterator, is_provided>
+        typedef selective_iterator<subprograms_in_file_iterator, is_provided>
         	 provided_funcs_iter;
-        typedef selective_iterator<dwarf::encap::subprograms_iterator, is_required>
+        typedef selective_iterator<subprograms_in_file_iterator, is_required>
         	 required_funcs_iter;
+
+//         struct is_provided : public std::unary_function<dwarf::encap::subprogram_die, bool>
+//         {
+//             bool operator()(const dwarf::encap::subprogram_die *p_subp) const
+//             { return (!(p_subp->get_declaration()) || (!(*(p_subp->get_declaration())))); }
+//         };
+//         struct is_required : public std::unary_function<dwarf::encap::subprogram_die, bool>
+//         {
+//             bool operator()(const dwarf::encap::subprogram_die *p_subp) const
+//             { is_provided is_p; return !(is_p(p_subp)); }
+//         };
+//         typedef boost::filter_iterator<is_provided, dwarf::encap::subprograms_iterator>
+//         	 provided_funcs_iter;
+//         typedef boost::filter_iterator<is_required, dwarf::encap::subprograms_iterator>
+//         	 required_funcs_iter;
+
         
         struct ev_corresp
         {
         	module_ptr source;
         	antlr::tree::Tree *source_pattern;
-            bool is_bidi; // remove in favour of two separate correspondences?
+            antlr::tree::Tree *source_infix_stub;
             module_ptr sink;
             antlr::tree::Tree *sink_expr;
+            antlr::tree::Tree *sink_infix_stub;
             
             // if we created a temporary AST, for implicit rules, free these ptrs
             antlr::tree::Tree *source_pattern_to_free; 
@@ -45,21 +78,35 @@ namespace cake {
         struct val_corresp
         {
         	module_ptr source;
+            definite_member_name source_data_type;
+            antlr::tree::Tree *source_infix_stub;
             module_ptr sink;
-            // FIXME: more here
+            definite_member_name sink_data_type;
+            antlr::tree::Tree *sink_infix_stub;
+            antlr::tree::Tree *refinement;
+			bool source_is_on_left;
+            antlr::tree::Tree *corresp; // for generating errors
         };
     
-    	iface_pair sorted(iface_pair p) 
-        { return p.first < p.second ? p : std::make_pair(p.second, p.first); }
-    
     public:
+    	static iface_pair sorted(iface_pair p) 
+        { return p.first < p.second ? p : std::make_pair(p.second, p.first); }
+        
+        std::set<iface_pair> all_iface_pairs;
+    
 		typedef std::multimap<iface_pair, ev_corresp> ev_corresp_map_t;
         typedef std::multimap<iface_pair, val_corresp> val_corresp_map_t;
         
         typedef ev_corresp_map_t::value_type ev_corresp_entry;
         typedef val_corresp_map_t::value_type val_corresp_entry;
         
+        // List of pointer into an ev_corresp map.
+        // Note: all pointers should all point into same map, and moreover,
+        // should have the same first element (iface_pair).
         typedef std::vector<ev_corresp_map_t::value_type *> ev_corresp_pair_ptr_list;
+        
+        // Map from symbol name
+        // to list of correspondences
         typedef std::map<std::string, ev_corresp_pair_ptr_list> wrappers_map_t;
     private:
     	// correspondences
@@ -75,7 +122,7 @@ namespace cake {
         std::string wrap_file_makefile_name;
         std::string wrap_file_name;
         std::ofstream wrap_file;
-                
+
         wrapper_file *p_wrap_code; // FIXME: this should be a contained subobject...
         wrapper_file& wrap_code;	// but is a pointer because of...
         	// stupid C++ inability to resolve circular include dependency
@@ -88,13 +135,30 @@ namespace cake {
 		void add_implicit_corresps(iface_pair ifaces);
         void name_match_required_and_provided(iface_pair ifaces,
         	module_ptr requiring_iface, module_ptr providing_iface);
+        void name_match_types(iface_pair ifaces);
         // utility for adding corresps
-        void add_event_corresp(module_ptr source, antlr::tree::Tree *source_pattern,
+        void add_event_corresp(
+        		module_ptr source, 
+                antlr::tree::Tree *source_pattern,
+                antlr::tree::Tree *source_infix_stub,
     	        module_ptr sink,
                 antlr::tree::Tree *sink_expr,
+                antlr::tree::Tree *sink_infix_stub,
                 bool free_source = false,
                 bool free_sink = false);
+        void add_value_corresp(
+        	module_ptr source, 
+            definite_member_name source_data_type,
+            antlr::tree::Tree *source_infix_stub,
+            module_ptr sink,
+            definite_member_name sink_data_type,
+            antlr::tree::Tree *sink_infix_stub,
+            antlr::tree::Tree *refinement,
+			bool source_is_on_left,
+            antlr::tree::Tree *corresp
+        );
 		void compute_wrappers();
+        int module_tag(module_ptr module) { return reinterpret_cast<int>(module.get()); }
     /**** these are just notes-to-self ***/
 //		void compute_rep_domains();
 //		void output_rep_conversions();

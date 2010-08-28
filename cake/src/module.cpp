@@ -81,20 +81,20 @@ namespace cake
 			dwarf::encap::file(fileno())
 	{
 		// if no debug information was imported, set up a dummy compilation unit
-		if (dies[0UL]->children().size() == 0)
+		if (dies.map_size() <= 1)
 		{
         	std::cerr << "Creating a dummy CU!" << std::endl;
 			char cwdbuf[4096];
 			getcwd(cwdbuf, sizeof cwdbuf);
 
 			dwarf::encap::die::attribute_map::value_type attr_entries[] = {
-				std::make_pair(DW_AT_name, dwarf::encap::attribute_value(std::string("__cake_dummy_cu"))),
-				std::make_pair(DW_AT_stmt_list, dwarf::encap::attribute_value((Dwarf_Unsigned) 0U)),
+				std::make_pair(DW_AT_name, dwarf::encap::attribute_value(dies, std::string("__cake_dummy_cu"))),
+				std::make_pair(DW_AT_stmt_list, dwarf::encap::attribute_value(dies, (Dwarf_Unsigned) 0U)),
 				//std::make_pair(DW_AT_low_pc, dwarf::encap::attribute_value(0, (Dwarf_Addr) 0U)),
 				//std::make_pair(DW_AT_high_pc, dwarf::encap::attribute_value(0, (Dwarf_Addr) 0U)),
-				std::make_pair(DW_AT_language, dwarf::encap::attribute_value((Dwarf_Unsigned) 1U)),
-				std::make_pair(DW_AT_comp_dir, dwarf::encap::attribute_value(std::string(cwdbuf))),
-				std::make_pair(DW_AT_producer, dwarf::encap::attribute_value(std::string(CAKE_VERSION)))
+				std::make_pair(DW_AT_language, dwarf::encap::attribute_value(dies, (Dwarf_Unsigned) 1U)),
+				std::make_pair(DW_AT_comp_dir, dwarf::encap::attribute_value(dies, std::string(cwdbuf))),
+				std::make_pair(DW_AT_producer, dwarf::encap::attribute_value(dies, std::string(CAKE_VERSION)))
 			};
 
 			dwarf::encap::die::attribute_map new_attribute_map(
@@ -106,11 +106,11 @@ namespace cake
         else
         {
         	std::cerr << "Toplevel children CUs at offsets: ";
-            for (dwarf::encap::die_off_list::iterator i = dies[0UL]->children().begin();
-            	i != dies[0UL]->children().end();
-                i++)
+            for (auto next = dies[0UL]->first_child_offset();
+            	next; 
+                next = dies[*next]->next_sibling_offset())
             {
-				std::cerr << "0x" << std::hex << *i << std::dec << " ";
+				std::cerr << "0x" << std::hex << *next << std::dec << " ";
             }
             std::cerr << std::endl;
         }
@@ -148,8 +148,8 @@ namespace cake
 		debug_out << "DECLARE found falsifiable claim at token " //<< CCP(falsifiable->getText())
 			<< CCP(TO_STRING_TREE(falsifiable))
 			<< ", die offset " << falsifier << " (tag: " << get_spec().tag_lookup(dies[falsifier]->get_tag())
-			<< ", name: " << (dies[falsifier]->has_attr(DW_AT_name) ? 
-				(*dies[falsifier])[DW_AT_name].get_string() : "no name") << ")"
+			<< ", name: " << (dies[falsifier]->get_name() ? 
+				*dies[falsifier]->get_name(): "no name") << ")"
 			<< ", proceeding to add module info" << std::endl;
 
 		bool retval = false;
@@ -163,8 +163,8 @@ namespace cake
 		debug_out << "OVERRIDE found falsifying module info, at token " //<< CCP(falsifiable->getText())
 			<< CCP(TO_STRING_TREE(falsifiable))
 			<< ", die offset " << falsifier << " (tag: " << get_spec().tag_lookup(dies[falsifier]->get_tag())
-			<< ", name: " << (dies[falsifier]->has_attr(DW_AT_name) ? 
-				(*dies[falsifier])[DW_AT_name].get_string() : "no name") << ")"
+			<< ", name: " << (dies[falsifier]->get_name() ? 
+				*dies[falsifier]->get_name() : "no name") << ")"
 			<< ", proceeding to modify module info" << std::endl;
 			
 		bool retval = false;	

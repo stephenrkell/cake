@@ -13,7 +13,8 @@ OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; MEMBERSHIP_CLAIM; VALUE
 DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; ANY_VALUE; PAIRWISE_BLOCK_LIST; 
 EVENT_CORRESP; EVENT_SINK_AS_PATTERN; EVENT_SINK_AS_STUB; CONST_ARITH; KEYWORD_PATTERN; INFIX_STUB_EXPR; 
 IDENTS_TO_BIND; ARRAY; VALUE_CONSTRUCT; EVENT_PATTERN_REWRITE_EXPR; RETURN_EVENT; INVOKE_WITH_ARGS; 
-EVENT_WITH_CONTEXT_SEQUENCE; CONTEXT_SEQUENCE; EVENT_COUNT_PREDICATE; ARRAY_SUBSCRIPT; FORM_ASSOCIATION; }
+EVENT_WITH_CONTEXT_SEQUENCE; CONTEXT_SEQUENCE; EVENT_COUNT_PREDICATE; ARRAY_SUBSCRIPT; FORM_ASSOCIATION; 
+VALUE_CORRESPONDENCE_REFINEMENT; }
 
 
 @header {
@@ -46,10 +47,20 @@ membershipClaim		: (memberNameExpr ':' KEYWORD_CLASS_OF)=>
                       * note that you can just insert extra alternatives easily in ANTLR by doing
                       * myRuleName : mySmallerRuleName
                                    | ELLIPSIS ...;  */
+
+//memberNameExpr		/*: '.'? IDENT ( '.' IDENT )* -> ^( DEFINITE_MEMBER_NAME IDENT* )*/
                                           
-memberNameExpr		: '.'? IDENT ( '.' IDENT )* -> ^( DEFINITE_MEMBER_NAME IDENT* )
+memberNameExpr		: definiteMemberName -> ^( DEFINITE_MEMBER_NAME definiteMemberName )
 					| INDEFINITE_MEMBER_NAME^ 
                     ;
+                    
+definiteMemberName : IDENT^ ( memberSuffix^ )*
+                   ;
+memberSuffix : '.' IDENT
+         -> ^( '.' IDENT )
+       | '[' constantIntegerArithmeticExpression ']'
+         -> ^( ARRAY_SUBSCRIPT constantIntegerArithmeticExpression )
+         ;
 
 /* The following alternatives are in precedence order, highest to lowest */
 valueDescriptionExpr		: primitiveOrFunctionValueDescription 
@@ -313,10 +324,19 @@ pairwiseCorrespondenceBlock	:	IDENT BI_DOUBLE_ARROW^ IDENT pairwiseCorrespondenc
                             
 pairwiseCorrespondenceBody	: '{' pairwiseCorrespondenceElement* '}' -> ^( CORRESP pairwiseCorrespondenceElement* )
 							;
-                            
-pairwiseCorrespondenceElement	:	eventCorrespondence -> ^( EVENT_CORRESP eventCorrespondence )
-								|	(KEYWORD_VALUES '{')=>valueCorrespondenceBlock 
-								|   singleValueCorrespondence
+pairwiseCorrespondenceElementEOFHack: pairwiseCorrespondenceElement^ EOF!; /* HACK for testing */
+pairwiseCorrespondenceElement   : (IDENT ':' eventCorrespondence) =>
+                                    IDENT ':' eventCorrespondence
+                                    -> ^( EVENT_CORRESP eventCorrespondence IDENT ) /* named form */
+                                |   eventCorrespondence -> ^( EVENT_CORRESP eventCorrespondence ) /* ordinary form */
+                                | (IDENT ':' KEYWORD_VALUES '{')=> /* named form */
+                                    IDENT ':' valueCorrespondenceBlock
+                                    -> ^( valueCorrespondenceBlock IDENT )
+                                | (KEYWORD_VALUES '{')=>  /* ordinary form */
+                                    valueCorrespondenceBlock
+                                | singleValueCorrespondence /* ordinary form */
+                                | IDENT ':' singleValueCorrespondence /* named form */
+                                   -> ^( singleValueCorrespondence IDENT )
                                 ;
                                 
 eventCorrespondence	:	
@@ -415,6 +435,7 @@ eventParameterNamesAnnotation	: ('{')=> '{'! KEYWORD_NAMES^ namedMultiValueDescr
  *        -- this is only (so far) with compile-time-constant subscripts, so...
  *           ... is just like member selection, and should be available for event corresps too
  * */
+valuePatternEOFHack: valuePattern^ EOF!;
 valuePattern		: (memberNameExpr '[')=>
                       memberNameExpr '[' constantIntegerArithmeticExpression ']' valueInterpretation?
                       -> ^( memberNameExpr ^( ARRAY_SUBSCRIPT constantIntegerArithmeticExpression ) valueInterpretation? )
@@ -425,6 +446,7 @@ valuePattern		: (memberNameExpr '[')=>
                     | KEYWORD_VOID^ /* used for "no value" correspondences & inserting "arbitrary" code */
                     | KEYWORD_THIS^ /* only for correspondences nested in refinement blocks -- see ephy.cake */
                     | KEYWORD_PATTERN^ patternConstantValueDescription
+                   /* | namedMultiValueDescription */ /* can't do this---introduces ambiguity with infixStubExpression in valueCorrespondence */
                     ;
 
 bindingEOFHack: binding EOF; /* HACK: see stubLangExpressionEOFHack */
@@ -459,10 +481,12 @@ valueCorrespondenceBlock	: KEYWORD_VALUES^ '{'! valueCorrespondence* '}'!
                             
 singleValueCorrespondence 	: KEYWORD_VALUES^ valueCorrespondence
 							;
-                            
+
+valueCorrespondenceEOFHack: valueCorrespondence^ EOF!;
 valueCorrespondence	: valueCorrespondenceBase^ valueCorrespondenceTerminator;
 
-valueCorrespondenceTerminator: SEMICOLON! 
+valueCorrespondenceTerminator: SEMICOLON
+                               -> ^( VALUE_CORRESPONDENCE_REFINEMENT )
                              | valueCorrespondenceRefinement
                              ;
 
@@ -474,12 +498,16 @@ valueCorrespondenceBase	:
     (valuePattern infixStubExpression leftToRightCorrespondenceOperator)=>
      valuePattern infixStubExpression leftToRightCorrespondenceOperator^ infixStubExpression stubNonSequencingExpression
   | (stubNonSequencingExpression infixStubExpression rightToLeftCorrespondenceOperator)=>
-  	stubNonSequencingExpression infixStubExpression rightToLeftCorrespondenceOperator^ infixStubExpression /*annotatedValueBindingPattern*/ valuePattern
+    stubNonSequencingExpression infixStubExpression rightToLeftCorrespondenceOperator^ infixStubExpression /*annotatedValueBindingPattern*/ valuePattern
   | (valuePattern infixStubExpression bidirectionalCorrespondenceOperator)=>
-  	valuePattern infixStubExpression bidirectionalCorrespondenceOperator^ infixStubExpression valuePattern
-  | (namedMultiValueDescription bidirectionalCorrespondenceOperator)=>
-    namedMultiValueDescription bidirectionalCorrespondenceOperator^ namedMultiValueDescription
+    valuePattern infixStubExpression bidirectionalCorrespondenceOperator^ infixStubExpression valuePattern
+  | (singleOrNamedMultiValueDescription bidirectionalCorrespondenceOperator)=>
+    singleOrNamedMultiValueDescription bidirectionalCorrespondenceOperator^ singleOrNamedMultiValueDescription
   ;
+  
+singleOrNamedMultiValueDescription: memberNameExpr^
+                                  | namedMultiValueDescription^
+                                  ;
 
 //		valueCorrespondenceSide rightToLeftCorrespondenceOperator^ correspondenceOperatorModifier? valueCorrespondenceSide*/
 //    | memberNameExpr infixStubExpression? rightToLeftCorrespondenceOperator infixStubExpression? valuePattern
@@ -495,10 +523,10 @@ valueCorrespondenceBase	:
 /*valuePattern ('<-->'|'-->'|'<--')^ valuePattern
 						;*/
 
-correspondenceOperator 	: bidirectionalCorrespondenceOperator
-						| leftToRightCorrespondenceOperator
+correspondenceOperator  : bidirectionalCorrespondenceOperator
+                        | leftToRightCorrespondenceOperator
                         | rightToLeftCorrespondenceOperator
-						;
+                        ;
 
 infixStubExpression	: ('(')=> '(' stubNonSequencingExpression ')' -> ^( INFIX_STUB_EXPR stubNonSequencingExpression )
 					| -> ^( INFIX_STUB_EXPR )
@@ -519,7 +547,8 @@ rightToLeftCorrespondenceOperator	: RL_DOUBLE_ARROW^
 								|	'['!  ']'!
 								;*/
                     
-valueCorrespondenceRefinement	:	'{'! valueCorrespondence* '}'! ';'!
+valueCorrespondenceRefinement  : '{' valueCorrespondence* '}' ';'
+                                 -> ^( VALUE_CORRESPONDENCE_REFINEMENT valueCorrespondence* )
 								;
                                 
 /*valueCorrespondenceRefinementElement	: */
@@ -548,6 +577,7 @@ stubLangExpression	/*: constantOrVoidValueDescription^
 
 stubLiteralExpression	: STRING_LIT^
 						| INT^
+                        | FLOAT^
                         | KEYWORD_VOID^
                         | KEYWORD_NULL^
                         | KEYWORD_TRUE^
@@ -597,7 +627,7 @@ unaryOperatorExpression	: (COMPLEMENT^|NOT^|MINUS^|PLUS^|MULTIPLY^|KEYWORD_DELET
 tieExpression : unaryOperatorExpression ( KEYWORD_TIE^ postfixExpression )? /* "tie" is quite general syntactically, but... */
               ;                                                             /* only semantically valid on pointers.*/
                         
-castExpression	: tieExpression valueInterpretation?
+castExpression	: tieExpression valueInterpretation^?
 				;
                                         
 multiplicativeOperatorExpression	: castExpression ( ( MULTIPLY^ | DIVIDE^ | MODULO^ ) castExpression )*
@@ -631,7 +661,7 @@ logicalOrExpression	: logicalAndExpression ( LOGICAL_OR^ logicalAndExpression )*
 					;
                     
 conditionalExpression	: logicalOrExpression
-						| KEYWORD_IF cond=conditionalExpression KEYWORD_THEN caseTrue=conditionalExpression KEYWORD_ELSE caseFalse=conditionalExpression
+						| KEYWORD_IF cond=stubNonSequencingExpression KEYWORD_THEN caseTrue=stubNonSequencingExpression KEYWORD_ELSE caseFalse=stubNonSequencingExpression
                         	-> ^( CONDITIONAL $cond $caseTrue $caseFalse )
                         ;
 optionalBindingExpression : binding
@@ -808,7 +838,7 @@ STRING_LIT : '\"' ( ~'\"'|'\\\"' )* '\"' ;
 //   /*|('.''0'..'9') /* ending with dot-digit is okay */
 //)? ;
 /* FIXME: scrapped the fancy IDENT rule until antlr does maximum munch. GRR! */
-IDENT : ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'\\'.)*;
+IDENT : ('a'..'z'|'A'..'Z'|'_'+'a'..'z'|'_'+'A'..'Z'|'_'+'0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'\\'.)*;
 PATTERN_IDENT : '/'('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'|'|'*'|'('|')'|'.')*'/';
 METAVAR	: '@'('a'..'z'|'A'..'Z')('a'..'z'|'A'..'Z'|'0'..'9'|'_')* ;
 /* The ident rule is a bit different from the conventional -- idents must be at

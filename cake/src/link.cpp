@@ -52,6 +52,20 @@ namespace cake
             }
             std::cerr << std::endl;
         }
+
+		// enumerate all interface pairs
+        for (std::vector<module_ptr>::iterator i_mod = input_modules.begin();
+        		i_mod != input_modules.end();
+                i_mod++)
+        {
+        	std::vector<module_ptr>::iterator copy_of_i_mod = i_mod;
+        	for (std::vector<module_ptr>::iterator j_mod = ++copy_of_i_mod;
+        		j_mod != input_modules.end();
+                j_mod++)
+			{
+            	all_iface_pairs.insert(sorted(std::make_pair(*i_mod, *j_mod)));
+            }
+        }
         
         {
         	INIT;
@@ -84,9 +98,17 @@ namespace cake
                 }
             }
 			std::cerr << std::endl;
+			
+			// add implicit correpsondences *last*, s.t. explicit ones can take priority
+			for (auto i_pair = all_iface_pairs.begin(); 
+				i_pair != all_iface_pairs.end();
+				i_pair++)
+			{
+				add_implicit_corresps(*i_pair);
+			}
         }
         
-        // add implicit corresps for each pair
+        // remember each interface pair and add implicit corresps
         for (std::vector<module_ptr>::iterator i_mod = input_modules.begin();
         		i_mod != input_modules.end();
                 i_mod++)
@@ -96,6 +118,7 @@ namespace cake
         		j_mod != input_modules.end();
                 j_mod++)
 			{
+            	all_iface_pairs.insert(sorted(std::make_pair(*i_mod, *j_mod)));
 		        add_implicit_corresps(std::make_pair(*i_mod, *j_mod));
             }
         }
@@ -149,8 +172,95 @@ namespace cake
             		<< " { namespace " << r.module_inverse_tbl[*i] << " {" << std::endl;
                     
             wrap_file << "\t#include \"" << (*i)->get_filename() << ".hpp\"" << std::endl;
+            wrap_file << "\tclass marker {}; // used for per-component template specializations" 
+                      << std::endl;
             wrap_file << "} } }" << std::endl; 
 
+        }
+        
+        // for each pair of components, output the value conversions
+        for (auto i_pair = all_iface_pairs.begin(); i_pair != all_iface_pairs.end();
+        	i_pair++)
+        {
+			wrap_file << "namespace cake {" << std::endl;
+			// emit each as a value_convert template
+            auto all_value_corresps = val_corresps.equal_range(*i_pair);
+            for (auto i_corresp = all_value_corresps.first;
+            	i_corresp != all_value_corresps.second;
+                i_corresp++)
+            {
+                auto opt_from_type = i_corresp->second.source->get_ds().toplevel()->visible_resolve(
+                    i_corresp->second.source_data_type.begin(), i_corresp->second.source_data_type.end());
+                auto opt_to_type = i_corresp->second.sink->get_ds().toplevel()->visible_resolve(
+                    i_corresp->second.sink_data_type.begin(), i_corresp->second.sink_data_type.end());
+                if (!opt_from_type) RAISE(i_corresp->second.corresp, 
+                    "named source type does not exist");
+                if (!opt_to_type) RAISE(i_corresp->second.corresp, 
+                    "named sink type does not exist");
+				auto p_from_type = boost::dynamic_pointer_cast<dwarf::spec::type_die>(opt_from_type);
+				auto p_to_type = boost::dynamic_pointer_cast<dwarf::spec::type_die>(opt_to_type);
+                if (!p_from_type) RAISE(i_corresp->second.corresp, 
+                    "named source of value correspondence is not a DWARF type");
+                if (!p_to_type) RAISE(i_corresp->second.corresp, 
+                    "named target of value correspondence is not a DWARF type");
+            	wrap_code.emit_value_conversion(
+                	i_corresp->second.source,
+            		p_from_type,
+            		i_corresp->second.source_infix_stub,
+            		i_corresp->second.sink,
+            		p_to_type,
+            		i_corresp->second.sink_infix_stub,
+            		i_corresp->second.refinement,
+					i_corresp->second.source_is_on_left,
+					i_corresp->second.corresp);
+        	}
+			wrap_file << "} // end namespace cake" << std::endl;
+            
+            // now emit the component_pair specialisation which describes the rules
+            // applying for this pair of components
+        	wrap_file << "namespace cake {" << std::endl;
+            wrap_file << "\ttemplate<> struct component_pair<" 
+            	<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
+                << "::marker, "
+                << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
+                << "::marker> {" << std::endl;
+            
+            // FIXME: emit mapping
+            wrap_file 
+<< "        template <"
+<< "            typename To,"
+<< "            typename From = ::cake::unspecified_wordsize_type, "
+<< "            int RuleTag = 0"
+<< "        >"
+<< "        static"
+<< "        To"
+<< "        value_convert_from_first_to_second(From arg)"
+<< "        {"
+<< "            return value_convert<From, "
+<< "                To,"
+<< "                RuleTag"
+<< "                >().operator()(arg);"
+<< "        }"
+<< "        template <"
+<< "            typename To,"
+<< "            typename From = ::cake::unspecified_wordsize_type, "
+<< "            int RuleTag = 0"
+<< "        >"
+<< "        static "
+<< "        To"
+<< "        value_convert_from_second_to_first(From arg)"
+<< "        {"
+<< "            return value_convert<From, "
+<< "                To,"
+<< "                RuleTag"
+<< "                >().operator()(arg);"
+<< "        }	"
+<< std::endl;
+
+			
+			
+            wrap_file << "\t};" << std::endl;
+			wrap_file << "} // end namespace cake" << std::endl;
         }
 
 		bool wrapped_some = false;
@@ -204,6 +314,11 @@ namespace cake
                         << " is not a simple function name." << std::endl;                
     	            can_simply_rebind = false;
 	            }
+                
+                /* If a given module both requires and provides the same symbol, i.e.
+                 * if we are trying to interpose on an internal reference, we have to
+                 * emit some extra make rules. FIXME: support this! */
+                
             } // end for each corresp
 
             // (**WILL THIS WORK in ld?**)
@@ -216,6 +331,14 @@ namespace cake
 
         	    // tell the linker that we're wrapping this symbol
         	    linker_args << "--wrap " << i_wrap->first << ' ';
+                
+                // also tell the linker that unprefixed references to the symbol
+                // should go to __real_<sym>
+                // FIXME: can't do this as at the time of processing, there is no
+                // symbol __real_<sym>. Instead must do as a separate stage,
+                // e.g. when building executable.
+                //linker_args << "--defsym " << i_wrap->first 
+                //	<< '=' << "__real_" << i_wrap->first << ' ';
 
                 /* Generate the wrapper */
                 wrap_code.emit_wrapper(i_wrap->first, i_wrap->second, r.module_inverse_tbl);
@@ -333,9 +456,11 @@ namespace cake
                                 {
                                 	INIT;
                                 	BIND3(correspHead, sourcePattern, EVENT_PATTERN);
+                                    BIND3(correspHead, sourceInfixStub, INFIX_STUB_EXPR);
+                                    BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
                                     BIND2(correspHead, sinkExpr);
-                                	add_event_corresp(left, sourcePattern,
-                                    	right, sinkExpr);
+                                	add_event_corresp(left, sourcePattern, sourceInfixStub,
+                                    	right, sinkExpr, sinkInfixStub);
                                 }
                             	break;
                             case CAKE_TOKEN(RL_DOUBLE_ARROW):
@@ -343,9 +468,11 @@ namespace cake
                                 {
                                 	INIT;
                                 	BIND2(correspHead, sinkExpr);
+                                    BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
+                                    BIND3(correspHead, sourceInfixStub, INFIX_STUB_EXPR);
                                     BIND3(correspHead, sourcePattern, EVENT_PATTERN);
-                                    add_event_corresp(right, sourcePattern,
-                                    	left, sinkExpr);
+                                    add_event_corresp(right, sourcePattern, sourceInfixStub,
+                                    	left, sinkExpr, sinkInfixStub);
                                 }
                             	break;
                             case CAKE_TOKEN(BI_DOUBLE_ARROW):
@@ -353,9 +480,13 @@ namespace cake
                                 {
                                 	INIT;
                                     BIND3(correspHead, leftPattern, EVENT_PATTERN);
+                                    BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
+                                    BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
                                     BIND3(correspHead, rightPattern, EVENT_PATTERN);
-                                    add_event_corresp(left, leftPattern, right, rightPattern);
-                                    add_event_corresp(right, rightPattern, left, leftPattern);
+                                    add_event_corresp(left, leftPattern, leftInfixStub, 
+                                        right, rightPattern, rightInfixStub);
+                                    add_event_corresp(right, rightPattern, rightInfixStub,
+                                        left, leftPattern, leftInfixStub);
 	                            }
                             	break;
                             default: RAISE(correspHead, "expected a double-stemmed arrow");
@@ -363,27 +494,146 @@ namespace cake
 					}                    
                 	break;
                 case CAKE_TOKEN(KEYWORD_VALUES):
-                	assert(false);
+                    {
+                    	INIT;
+                        BIND2(n, correspHead); // some kind of correspondence operator
+                        std::string ruleName;
+                        if (GET_CHILD_COUNT(n) > 1)
+                        {
+                        	BIND3(n, ruleNameIdent, IDENT);
+                            ruleName = CCP(GET_TEXT(ruleNameIdent));
+                        }
+                        switch(GET_TYPE(correspHead))
+                        {
+                        	case CAKE_TOKEN(BI_DOUBLE_ARROW):
+                            {
+                                INIT;
+                                /* The BI_DOUBLE_ARROW is special because 
+                                  * - it might have multivalue children (for many-to-many)
+                                  * - it should not have nonempty infix stubs
+                                      (because these would be ambiguous) */
+                                BIND2(correspHead, leftValDecl);
+                                BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
+                                BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
+                                if (GET_CHILD_COUNT(leftInfixStub)
+                                || GET_CHILD_COUNT(rightInfixStub) > 0)
+                                {
+                                    RAISE(correspHead, 
+                                    "infix stubs are ambiguous for bidirectional value correspondences");
+                                }
+                                BIND2(correspHead, rightValDecl);
+                                BIND3(correspHead, valueCorrespondenceRefinement, 
+                                    VALUE_CORRESPONDENCE_REFINEMENT);
+                                // we don't support many-to-many yet
+                                assert(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
+                                && GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE));
+                                ALIAS3(leftValDecl, leftMember, DEFINITE_MEMBER_NAME);
+                                ALIAS3(rightValDecl, rightMember, DEFINITE_MEMBER_NAME);
+                                // each add_value_corresp call denotes a 
+                                // value conversion function that needs to be generated
+                                add_value_corresp(left, leftMember, leftInfixStub,
+                                    right, rightMember, rightInfixStub,
+                                    valueCorrespondenceRefinement, true, correspHead);
+                                add_value_corresp(right, rightMember, rightInfixStub,
+                                    left, leftMember, leftInfixStub, 
+                                    valueCorrespondenceRefinement, false, correspHead);
+
+                            }
+                            break;
+                            case CAKE_TOKEN(LR_DOUBLE_ARROW):
+                            case CAKE_TOKEN(RL_DOUBLE_ARROW):
+                            case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
+                            case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
+                            {
+                                INIT;
+                                BIND2(correspHead, leftValDecl);
+                                BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
+                                BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
+                                BIND2(correspHead, rightValDecl);
+                                BIND3(correspHead, valueCorrespondenceRefinement, 
+                                    VALUE_CORRESPONDENCE_REFINEMENT);
+                                // many-to-many not allowed
+                                if(!(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
+                                && GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE)))
+                                { RAISE(correspHead, "many-to-many value correspondences must be bidirectional"); }
+                                ALIAS3(leftValDecl, leftMember, DEFINITE_MEMBER_NAME);
+                                ALIAS3(rightValDecl, rightMember, DEFINITE_MEMBER_NAME);
+                                
+                                // FIXME: pay attention to question marks
+                                switch(GET_TYPE(correspHead))
+                                {
+                                	case CAKE_TOKEN(LR_DOUBLE_ARROW):
+                                    case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
+                                        add_value_corresp(left, leftMember, leftInfixStub,
+                                            right, rightMember, rightInfixStub,
+                                            valueCorrespondenceRefinement, true, correspHead);
+                                        break;
+                                    case CAKE_TOKEN(RL_DOUBLE_ARROW):
+                                    case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
+                                        add_value_corresp(right, rightMember, rightInfixStub,
+                                            left, leftMember, leftInfixStub, 
+                                            valueCorrespondenceRefinement, false, correspHead);
+                                        break;
+                                    default: assert(false);
+                            	}
+                            }
+                            break;
+                            default: assert(false);
+                        }
+                    }
                 	break;
                 default: RAISE(n, "expected an event correspondence or a value correspondence block");
             }
         }
     }
     
-    void link_derivation::add_event_corresp(module_ptr source, antlr::tree::Tree *source_pattern,
+    void link_derivation::add_event_corresp(
+    	module_ptr source, 
+        antlr::tree::Tree *source_pattern,
+        antlr::tree::Tree *source_infix_stub,
     	module_ptr sink,
         antlr::tree::Tree *sink_expr,
+        antlr::tree::Tree *sink_infix_stub,
         bool free_source,
         bool free_sink)
     {
-    	ev_corresps.insert(std::make_pair(sorted(std::make_pair(source, sink)), 
+    	auto key = sorted(std::make_pair(source, sink));
+        assert(all_iface_pairs.find(key) != all_iface_pairs.end());
+    	ev_corresps.insert(std::make_pair(key, 
                     	(struct ev_corresp){ /*.source = */ source, // source is the *requirer*
                         	/*.source_pattern = */ source_pattern,
-                            /*.is_bidi = */ false,
+                            /*.source_infix_stub = */ source_infix_stub,
                             /*.sink = */ sink, // sink is the *provider*
                             /*.sink_expr = */ sink_expr,
+                            /*.sink_infix_stub = */ sink_infix_stub,
                             /*.source_pattern_to_free = */ (free_source) ? source_pattern : 0,
                             /*.sink_pattern_to_free = */ (free_sink) ? sink_expr : 0 }));
+    }
+
+    void link_derivation::add_value_corresp(
+        module_ptr source, 
+        definite_member_name source_data_type,
+        antlr::tree::Tree *source_infix_stub,
+        module_ptr sink,
+        definite_member_name sink_data_type,
+        antlr::tree::Tree *sink_infix_stub,
+        antlr::tree::Tree *refinement,
+		bool source_is_on_left,
+        antlr::tree::Tree *corresp
+    )
+    {
+    	auto key = sorted(std::make_pair(source, sink));
+        assert(all_iface_pairs.find(key) != all_iface_pairs.end());
+    	val_corresps.insert(std::make_pair(key,
+        				(struct val_corresp){ /* .source = */ source,
+                        	/* .source_data_type = */ source_data_type,
+                            /* .source_infix_stub = */ source_infix_stub,
+            				/* .sink = */ sink,
+                            /* .sink_data_type = */ sink_data_type,
+                            /* .source_infix_stub = */ sink_infix_stub,
+                            /* .refinement = */ refinement,
+							/* .source_is_on_left = */ source_is_on_left,
+                            /* .corresp = */ corresp }));
     }
     
     // Get the names of all functions provided by iface1
@@ -397,6 +647,9 @@ namespace cake
 		name_match_required_and_provided(ifaces, ifaces.first, ifaces.second);
         // find functions required by iface2 and provided by iface1
 		name_match_required_and_provided(ifaces, ifaces.second, ifaces.first);
+        
+        // find DWARF types of matching name
+        name_match_types(ifaces);
     }
 
     void link_derivation::name_match_required_and_provided(
@@ -408,12 +661,13 @@ namespace cake
         	|| (requiring_iface == ifaces.second && providing_iface == ifaces.first));
             
     	/* Search dwarf info*/
-        dwarf::encap::Die_encap_all_compile_units requiring_info
+        dwarf::encap::Die_encap_all_compile_units& requiring_info
         	= requiring_iface->all_compile_units();
 
-        dwarf::encap::Die_encap_all_compile_units providing_info
+        dwarf::encap::Die_encap_all_compile_units& providing_info
         	= providing_iface->all_compile_units();
             
+        //auto r_test = requiring_info.subprograms_begin();
     	required_funcs_iter r_iter(
         	requiring_info.subprograms_begin(), requiring_info.subprograms_end());
     	required_funcs_iter r_end(
@@ -449,14 +703,90 @@ namespace cake
 
 					add_event_corresp(requiring_iface, // source is the requirer 
                     	tmp_source_pattern,
+                        0, // no infix stub
     	                providing_iface, // sink is the provider
                         tmp_sink_pattern, 
+                        0, // no infix stub
                         true, true);
                 }
             }
         }
     }
-	
+
+    struct found_type 
+    { 
+        module_ptr module;
+        boost::shared_ptr<dwarf::spec::type_die> t;
+    };
+    void link_derivation::name_match_types(
+    	iface_pair ifaces)
+    {
+        std::multimap<std::vector<std::string>, found_type> found_types;
+        std::set<std::vector<std::string> > keys;
+        
+        // traverse whole dieset depth-first, remembering DIEs that 
+        // -- 1. are type DIEs, and
+        // -- 2. have an ident path from root (i.e. have *names*)
+        for (auto i_mod = ifaces.first;
+        			i_mod;
+                    i_mod = (i_mod == ifaces.first) ? ifaces.second : module_ptr())
+        {
+            for (auto i_die = i_mod->get_ds().begin();
+        	    i_die != i_mod->get_ds().end();
+                i_die++)
+            {
+        	    auto p_type = boost::dynamic_pointer_cast<dwarf::spec::type_die>(*i_die);
+        	    if (!p_type) continue;
+
+                auto opt_path = p_type->ident_path_from_cu();
+                if (!opt_path) continue;
+
+                found_types.insert(std::make_pair(*opt_path, (found_type){ i_mod, p_type }));
+                keys.insert(*opt_path);
+            }
+    	}
+        // now look for names that have exactly two entries in the multimap,
+        // and where the module of each is different
+        for (auto i_k = keys.begin(); i_k != keys.end(); i_k++)
+        {
+        	auto iter_pair = found_types.equal_range(*i_k);
+            if (srk31::count(iter_pair.first, iter_pair.second) == 2
+            && (iter_pair.second--, 
+             iter_pair.first->second.module != iter_pair.second->second.module))
+            {
+            	std::cerr << "data type " << definite_member_name(*i_k)
+                	<< " exists in both modules" << std::endl;
+            	// iter_pair points to a pair of like-named types in differing modules
+                // add value correspondences in *both* directions
+                // *** FIXME: ONLY IF not already present?
+                add_value_corresp(
+                	iter_pair.first->second.module,
+                    *i_k, //iter_pair.first->second.module->get_ds().toplevel()->visible_resolve(i_k->begin(), i_k->end()),
+                    0,
+                    iter_pair.second->second.module,
+                    *i_k, // iter_pair.second->second.module->get_ds().toplevel()->visible_resolve(i_k->begin(), i_k->end()),
+                    0,
+                    0, // refinement
+					true, // source_is_on_left -- irrelevant as we have no refinement
+                    0 // corresp
+                );
+                add_value_corresp(
+                	iter_pair.second->second.module,
+                    *i_k, //iter_pair.second->second.module->get_ds().toplevel()->visible_resolve(i_k->begin(), i_k->end()),
+                    0,
+                    iter_pair.first->second.module,
+                    *i_k, //iter_pair.first->second.module->get_ds().toplevel()->visible_resolve(i_k->begin(), i_k->end()),
+                    0,
+                    0, // refinement
+					false, // source_is_on_left -- irrelevant as we have no refinement
+					0 // corresp
+                );
+            }
+            else std::cerr << "data type " << definite_member_name(*i_k)
+                	<< " exists only in one module" << std::endl;
+        }
+    }
+    
 	void link_derivation::compute_wrappers() 
     {
     	/* We need to synthesise a set of wrapper from our event correspondences. 

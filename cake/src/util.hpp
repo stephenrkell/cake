@@ -15,6 +15,8 @@
 
 #include "parser.hpp"
 
+#include <srk31/algorithm.hpp>
+
 namespace cake
 {
 	extern const char *guessed_system_library_path;
@@ -50,7 +52,11 @@ namespace cake
 	};
 	std::ostream& operator<<(std::ostream&, const definite_member_name&);
 	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName);
-
+	antlr::tree::Tree *make_definite_member_name_expr(const definite_member_name& arg);
+	
+	std::string cake_token_text_from_ident(const std::string& arg);
+	bool is_cake_keyword(const std::string& arg);
+	
 	std::string get_event_pattern_call_site_name(antlr::tree::Tree *t);
     
     antlr::tree::Tree *make_simple_event_pattern_for_call_site(
@@ -103,19 +109,8 @@ namespace cake
 //                 	throw new java::lang::ClassCastException;
 // 	}
 // 	
- 	template<class T, size_t s> size_t array_len(T (&arg)[s]) { return s; }
-	
-	/* copy_if should be in the standard algorithms, but it isn't. */
-	template<class In, class Out, class Pred>
-	Out copy_if(In first, In last, Out res, Pred p)
-	{
-		while (first != last)
-		{
-			if (p(*first)) *res++ = *first;
-			++first;
-		}
-		return res;
-	}	
+using srk31::array_len;
+using srk31::copy_if;
 }
 
 #endif
