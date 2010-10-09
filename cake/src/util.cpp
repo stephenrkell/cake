@@ -423,6 +423,55 @@ namespace cake
         return ret.tree;
 	}
     
+    antlr::tree::Tree *make_simple_corresp_expression(
+    	const std::vector<std::string>& ident, boost::optional<std::vector<std::string>& > rhs_ident)
+    {
+    	std::cerr << "creating corresp expression for: " << ident  << std::endl;
+
+		std::string ident_in_cake;
+		std::string rhs_ident_in_cake;
+		std::string fragment;
+		for (auto i_ident = ident.begin(); i_ident != ident.end(); i_ident++)
+		{
+			if (i_ident != ident.begin()) ident_in_cake += ".";
+			ident_in_cake += *i_ident;
+		}
+		fragment = ident_in_cake + " <--> " + ident_in_cake;
+		if (!rhs_ident)
+		{
+			fragment += ident_in_cake;
+		}
+		else
+		{
+			for (auto i_ident = rhs_ident->begin(); i_ident != rhs_ident->end(); i_ident++)
+			{
+				if (i_ident != rhs_ident->begin()) rhs_ident_in_cake += ".";
+				rhs_ident_in_cake += *i_ident;
+			}
+			fragment += rhs_ident_in_cake;
+		}
+        char *dup = strdup(fragment.c_str());
+        pANTLR3_INPUT_STREAM ss = antlr3NewAsciiStringInPlaceStream(
+        	reinterpret_cast<uint8_t*>(dup), 
+        	fragment.size(), 0);
+        cakeCLexer *lexer = cakeCLexerNew(ss);
+        antlr::CommonTokenStream *tokenStream = antlr3CommonTokenStreamSourceNew(
+        	ANTLR3_SIZE_HINT, TOKENSOURCE(lexer));
+        cakeCParser *parser = cakeCParserNew(tokenStream); 
+        cakeCParser_valueCorrespondenceBase_return ret = parser->valueCorrespondenceBase(parser);
+        
+        // We should now have the tree in ret.tree. 
+        // Free all the other temporary stuff we created.
+        // FIXME: work out which bits I can free now and which to cleanup later!
+        //ss->free(ss);
+        //lexer->free(lexer);
+        //tokenStream->free(tokenStream);
+        //parser->free(parser);
+        //free(dup);
+        
+        return ret.tree;
+	}
+
     boost::optional<std::string> source_pattern_is_simple_function_name(antlr::tree::Tree *t)
     {
     	return pattern_is_simple_function_name(t);

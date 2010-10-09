@@ -34,6 +34,20 @@ Mux/demux-based styles:
 - REPL/ftp-like style: mux a set of functions into an ftp-like read/write console interface
 - exec()-based invocation of a command-line tool
 
+Idea: adapt http read--write fd as command-line execve() tool, using w3 validator example
+-- first interpret sockets API to a raw TCP read/write fd
+-- then interpret raw write/read as HTTP POST/response cycle (params: host, port; WITH PROTOCOL OPTIONS?)
+-- -- PROBLEM: want to SLICE fread/fwrite interface s.t. interleaving other reads/writes has no effect
+-- then interpret write/read as command-line tool (copy from stdin or named file) (WITH CMDLINE OPTIONS?)
+Why is this better than a simple pipeline / chain-of-modules?
+I want the answer to be that it is more compositional.
+Seems that you can do equally well using C++ templates...?
+... but not if you use dynamic features like sequence recognition
+... also not if you use universal quantification, since templates can't quantify over "all members"
+----- YES, this is a key benefit -- same as my unw_read_ptr:
+      I wanted to quantify over all pointer members of a struct, to make them unw_read_ptrs
+	  but can' do this
+
 It seems like mux/demux-based styles are really doing something different from the other stuff.
 They're neat because they're composable -- they're like mixins.
 

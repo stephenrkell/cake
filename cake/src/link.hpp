@@ -3,15 +3,18 @@
 
 #include <fstream>
 #include <set>
+#include <dwarfpp/cxx_compiler.hpp>
 //#include <boost/iterator/filter_iterator.hpp>
 #include "request.hpp"
 #include "parser.hpp"
+#include "valconv.hpp"
 
 namespace dwarf { namespace encap { typedef Die_encap_all_compile_units file_toplevel_die; } }
 
 namespace cake {
 	class link_derivation : public derivation
 	{
+        dwarf::tool::cxx_compiler compiler;
     public:
     	typedef std::pair<module_ptr,module_ptr> iface_pair;
         std::string name_of_module(module_ptr m) { return this->r.module_inverse_tbl[m]; }
@@ -75,18 +78,20 @@ namespace cake {
             }
         };
         
-        struct val_corresp
-        {
-        	module_ptr source;
-            definite_member_name source_data_type;
-            antlr::tree::Tree *source_infix_stub;
-            module_ptr sink;
-            definite_member_name sink_data_type;
-            antlr::tree::Tree *sink_infix_stub;
-            antlr::tree::Tree *refinement;
-			bool source_is_on_left;
-            antlr::tree::Tree *corresp; // for generating errors
-        };
+// 		struct basic_value_conversion
+// 		{
+//         	module_ptr source;
+//         	boost::shared_ptr<dwarf::spec::type_die> source_data_type;
+//         	antlr::tree::Tree *source_infix_stub;
+//         	module_ptr sink;
+//         	boost::shared_ptr<dwarf::spec::type_die> sink_data_type;
+//         	antlr::tree::Tree *sink_infix_stub;
+//         	antlr::tree::Tree *refinement;
+// 			bool source_is_on_left;
+//         	antlr::tree::Tree *corresp; // for generating errors
+// 		}; 
+		//typedef ::cake::basic_value_conversion basic_value_conversion;
+        typedef value_conversion val_corresp;
     
     public:
     	static iface_pair sorted(iface_pair p) 
@@ -95,7 +100,7 @@ namespace cake {
         std::set<iface_pair> all_iface_pairs;
     
 		typedef std::multimap<iface_pair, ev_corresp> ev_corresp_map_t;
-        typedef std::multimap<iface_pair, val_corresp> val_corresp_map_t;
+        typedef std::multimap<iface_pair, boost::shared_ptr<val_corresp> > val_corresp_map_t;
         
         typedef ev_corresp_map_t::value_type ev_corresp_entry;
         typedef val_corresp_map_t::value_type val_corresp_entry;
@@ -108,6 +113,11 @@ namespace cake {
         // Map from symbol name
         // to list of correspondences
         typedef std::map<std::string, ev_corresp_pair_ptr_list> wrappers_map_t;
+		
+		boost::optional<link_derivation::val_corresp_map_t::iterator>
+		find_value_correspondence(
+			module_ptr source, boost::shared_ptr<dwarf::spec::type_die> source_type,
+			module_ptr sink, boost::shared_ptr<dwarf::spec::type_die> sink_type);
     private:
     	// correspondences
     	ev_corresp_map_t ev_corresps;
@@ -135,6 +145,8 @@ namespace cake {
 		void add_implicit_corresps(iface_pair ifaces);
         void name_match_required_and_provided(iface_pair ifaces,
         	module_ptr requiring_iface, module_ptr providing_iface);
+		void extract_type_synonymy(module_ptr module,
+			std::map<std::vector<std::string>, boost::shared_ptr<dwarf::spec::type_die> >& synonymy);
         void name_match_types(iface_pair ifaces);
         // utility for adding corresps
         void add_event_corresp(
@@ -148,15 +160,31 @@ namespace cake {
                 bool free_sink = false);
         void add_value_corresp(
         	module_ptr source, 
-            definite_member_name source_data_type,
+            boost::shared_ptr<dwarf::spec::type_die> source_data_type,
             antlr::tree::Tree *source_infix_stub,
             module_ptr sink,
-            definite_member_name sink_data_type,
+            boost::shared_ptr<dwarf::spec::type_die> sink_data_type,
             antlr::tree::Tree *sink_infix_stub,
             antlr::tree::Tree *refinement,
 			bool source_is_on_left,
             antlr::tree::Tree *corresp
         );
+		void add_value_corresp(
+        	module_ptr source, 
+        	antlr::tree::Tree *source_data_type_mn,
+        	antlr::tree::Tree *source_infix_stub,
+        	module_ptr sink,
+        	antlr::tree::Tree *sink_data_type_mn,
+        	antlr::tree::Tree *sink_infix_stub,
+        	antlr::tree::Tree *refinement,
+			bool source_is_on_left,
+        	antlr::tree::Tree *corresp
+		);
+		bool ensure_value_corresp(module_ptr source, 
+			boost::shared_ptr<dwarf::spec::type_die> source_data_type,
+        	module_ptr sink,
+        	boost::shared_ptr<dwarf::spec::type_die> sink_data_type,
+			bool source_is_on_left);
 		void compute_wrappers();
         int module_tag(module_ptr module) { return reinterpret_cast<int>(module.get()); }
     /**** these are just notes-to-self ***/

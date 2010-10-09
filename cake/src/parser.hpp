@@ -114,11 +114,11 @@ namespace tree {
 
 #define RAISE(node, msg) throw cake::SemanticError((node), std::string(msg) \
 					+ ": " \
-						+ std::string(CCP(GET_TEXT(node))))
+						+ std::string(CCP(TO_STRING_TREE(node))))
 
 #define RAISE_INTERNAL(node, msg) throw cake::InternalError((node), std::string( \
 					msg ": ") \
-						+std::string(CCP(GET_TEXT(node))))
+						+std::string(CCP(TO_STRING_TREE(node))))
 
 namespace cake {
 	

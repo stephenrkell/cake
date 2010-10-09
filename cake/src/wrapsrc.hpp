@@ -9,12 +9,18 @@
 #include <dwarfpp/cxx_compiler.hpp>
 
 #include "link.hpp"
+#include "valconv.hpp"
 
 namespace cake
 {
     class wrapper_file
     {
-        dwarf::tool::cxx_compiler compiler;
+		friend class link_derivation;
+		friend class value_conversion;
+		friend class structural_value_conversion;
+		friend class reinterpret_value_conversion;
+	
+        dwarf::tool::cxx_compiler& compiler;
         link_derivation& m_d;
         srk31::indenting_ostream m_out;
         const std::string ns_prefix;
@@ -40,15 +46,6 @@ namespace cake
         }
         std::map<stable_die_ident, unsigned> arg_counts;
     
-		struct member_mapping_rule
-		{
-			definite_member_name target;
-			antlr::tree::Tree *stub;
-			module_ptr pre_context;
-			antlr::tree::Tree *pre_stub;
-			module_ptr post_context;
-			antlr::tree::Tree *post_stub;
-		};
 	    struct bound_var_info
         {
         	boost::shared_ptr<dwarf::spec::type_die> type; // is a STATIC type (DWARF-supplied bound)
@@ -233,8 +230,8 @@ namespace cake
 
 
     public:
-        wrapper_file(link_derivation& d, std::ostream& out) 
-        : 	compiler(std::vector<std::string>(1, std::string("g++"))),
+        wrapper_file(link_derivation& d, dwarf::tool::cxx_compiler& c, std::ostream& out) 
+        : 	compiler(c),
         	m_d(d), m_out(out), ns_prefix("cake::" + m_d.namespace_name()), 
             binding_count(0) {}
 
@@ -259,16 +256,16 @@ namespace cake
 			antlr::tree::Tree *corresp);
 
 	protected:
-		void
-		emit_structural_conversion_body(
-			boost::shared_ptr<dwarf::spec::type_die> source_type,
-			boost::shared_ptr<dwarf::spec::type_die> target_type,
-			antlr::tree::Tree *refinement,
-			bool source_is_on_left);
-		void
-		emit_reinterpret_conversion_body(
-			boost::shared_ptr<dwarf::spec::type_die> source_type,
-			boost::shared_ptr<dwarf::spec::type_die> target_type);    
+// 		void
+// 		emit_structural_conversion_body(
+// 			boost::shared_ptr<dwarf::spec::type_die> source_type,
+// 			boost::shared_ptr<dwarf::spec::type_die> target_type,
+// 			antlr::tree::Tree *refinement,
+// 			bool source_is_on_left);
+// 		void
+// 		emit_reinterpret_conversion_body(
+// 			boost::shared_ptr<dwarf::spec::type_die> source_type,
+// 			boost::shared_ptr<dwarf::spec::type_die> target_type);    
 	};
 }
 

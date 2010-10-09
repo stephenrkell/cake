@@ -14,18 +14,25 @@
 #include "link.hpp"
 #include "wrapsrc.hpp"
 
+// using boost::dynamic_pointer_cast;
+// using boost::make_shared;
+// using boost::optional;
+// using boost::shared_ptr;
+
 namespace cake
 {
 	link_derivation::link_derivation(cake::request& r, antlr::tree::Tree *t,
     	const std::string& id,
         const std::string& output_module_filename) 
-     : 	derivation(r, t), output_namespace("link_" + id + "_"), 
+     : 	derivation(r, t), 
+	 	compiler(std::vector<std::string>(1, std::string("g++"))),
+	 	output_namespace("link_" + id + "_"), 
      	wrap_file_makefile_name(
         	boost::filesystem::path(id + "_wrap.cpp").string()),
      	wrap_file_name((boost::filesystem::path(r.in_filename).branch_path() 
             	/ wrap_file_makefile_name).string()),
      	wrap_file(wrap_file_name.c_str()),
-     	p_wrap_code(new wrapper_file(*this, wrap_file)), wrap_code(*p_wrap_code)
+     	p_wrap_code(new wrapper_file(*this, compiler, wrap_file)), wrap_code(*p_wrap_code)
     {
 		/* Add a derived module to the module table, and keep the pointer. */
 		assert(r.module_tbl.find(output_module_filename) == r.module_tbl.end());
@@ -178,6 +185,26 @@ namespace cake
 
         }
         
+		// FIXME: collapse type synonymy
+		// (AFTER doing name-matching, s.t. can match maximally)
+
+        // for each pair of components, forward-declare the value conversions
+		wrap_file << "namespace cake {" << std::endl;
+        for (auto i_pair = all_iface_pairs.begin(); i_pair != all_iface_pairs.end();
+        	i_pair++)
+        {
+			// emit each as a value_convert template
+            auto all_value_corresps = val_corresps.equal_range(*i_pair);
+            for (auto i_corresp = all_value_corresps.first;
+            	i_corresp != all_value_corresps.second;
+                i_corresp++)
+            {
+				wrap_file << "// forward declaration: " << CCP(TO_STRING_TREE(i_corresp->second->corresp)) << std::endl;
+				i_corresp->second->emit_forward_declaration();
+			}
+		}
+		wrap_file << "} // end namespace cake" << std::endl;
+
         // for each pair of components, output the value conversions
         for (auto i_pair = all_iface_pairs.begin(); i_pair != all_iface_pairs.end();
         	i_pair++)
@@ -189,30 +216,36 @@ namespace cake
             	i_corresp != all_value_corresps.second;
                 i_corresp++)
             {
-                auto opt_from_type = i_corresp->second.source->get_ds().toplevel()->visible_resolve(
-                    i_corresp->second.source_data_type.begin(), i_corresp->second.source_data_type.end());
-                auto opt_to_type = i_corresp->second.sink->get_ds().toplevel()->visible_resolve(
-                    i_corresp->second.sink_data_type.begin(), i_corresp->second.sink_data_type.end());
-                if (!opt_from_type) RAISE(i_corresp->second.corresp, 
-                    "named source type does not exist");
-                if (!opt_to_type) RAISE(i_corresp->second.corresp, 
-                    "named sink type does not exist");
-				auto p_from_type = boost::dynamic_pointer_cast<dwarf::spec::type_die>(opt_from_type);
-				auto p_to_type = boost::dynamic_pointer_cast<dwarf::spec::type_die>(opt_to_type);
-                if (!p_from_type) RAISE(i_corresp->second.corresp, 
-                    "named source of value correspondence is not a DWARF type");
-                if (!p_to_type) RAISE(i_corresp->second.corresp, 
-                    "named target of value correspondence is not a DWARF type");
-            	wrap_code.emit_value_conversion(
-                	i_corresp->second.source,
-            		p_from_type,
-            		i_corresp->second.source_infix_stub,
-            		i_corresp->second.sink,
-            		p_to_type,
-            		i_corresp->second.sink_infix_stub,
-            		i_corresp->second.refinement,
-					i_corresp->second.source_is_on_left,
-					i_corresp->second.corresp);
+//                 auto opt_from_type = //i_corresp->second.source->get_ds().toplevel()->resolve(
+//                     i_corresp->second.source_data_type/*)*/;
+//                 auto opt_to_type = //i_corresp->second.sink->get_ds().toplevel()->resolve(
+//                     i_corresp->second.sink_data_type/*)*/;
+//                 if (!opt_from_type) 
+// 				{ RAISE(i_corresp->second.corresp, 
+//                     "named source type does not exist"); }
+//                 if (!opt_to_type) 
+// 				{ RAISE(i_corresp->second.corresp, 
+//                     "named sink type does not exist"); }
+// 				auto p_from_type = boost::dynamic_pointer_cast<dwarf::spec::type_die>(opt_from_type);
+// 				auto p_to_type = boost::dynamic_pointer_cast<dwarf::spec::type_die>(opt_to_type);
+//                 if (!p_from_type) RAISE(i_corresp->second.corresp, 
+//                     "named source of value correspondence is not a DWARF type");
+//                 if (!p_to_type) RAISE(i_corresp->second.corresp, 
+//                     "named target of value correspondence is not a DWARF type");
+
+				wrap_file << "// " << CCP(TO_STRING_TREE(i_corresp->second->corresp)) << std::endl;
+				i_corresp->second->emit();
+				
+// 				wrap_code.emit_value_conversion(
+//                 	i_corresp->second.source,
+//             		p_from_type,
+//             		i_corresp->second.source_infix_stub,
+//             		i_corresp->second.sink,
+//             		p_to_type,
+//             		i_corresp->second.sink_infix_stub,
+//             		i_corresp->second.refinement,
+// 					i_corresp->second.source_is_on_left,
+// 					i_corresp->second.corresp);
         	}
 			wrap_file << "} // end namespace cake" << std::endl;
             
@@ -227,34 +260,34 @@ namespace cake
             
             // FIXME: emit mapping
             wrap_file 
-<< "        template <"
-<< "            typename To,"
-<< "            typename From = ::cake::unspecified_wordsize_type, "
-<< "            int RuleTag = 0"
-<< "        >"
-<< "        static"
-<< "        To"
-<< "        value_convert_from_first_to_second(From arg)"
-<< "        {"
-<< "            return value_convert<From, "
-<< "                To,"
-<< "                RuleTag"
-<< "                >().operator()(arg);"
-<< "        }"
-<< "        template <"
-<< "            typename To,"
-<< "            typename From = ::cake::unspecified_wordsize_type, "
-<< "            int RuleTag = 0"
-<< "        >"
-<< "        static "
-<< "        To"
-<< "        value_convert_from_second_to_first(From arg)"
-<< "        {"
-<< "            return value_convert<From, "
-<< "                To,"
-<< "                RuleTag"
-<< "                >().operator()(arg);"
-<< "        }	"
+<< std::endl << "        template <"
+<< std::endl << "            typename To,"
+<< std::endl << "            typename From = ::cake::unspecified_wordsize_type, "
+<< std::endl << "            int RuleTag = 0"
+<< std::endl << "        >"
+<< std::endl << "        static"
+<< std::endl << "        To"
+<< std::endl << "        value_convert_from_first_to_second(From arg)"
+<< std::endl << "        {"
+<< std::endl << "            return value_convert<From, "
+<< std::endl << "                To,"
+<< std::endl << "                RuleTag"
+<< std::endl << "                >().operator()(arg);"
+<< std::endl << "        }"
+<< std::endl << "        template <"
+<< std::endl << "            typename To,"
+<< std::endl << "            typename From = ::cake::unspecified_wordsize_type, "
+<< std::endl << "            int RuleTag = 0"
+<< std::endl << "        >"
+<< std::endl << "        static "
+<< std::endl << "        To"
+<< std::endl << "        value_convert_from_second_to_first(From arg)"
+<< std::endl << "        {"
+<< std::endl << "            return value_convert<From, "
+<< std::endl << "                To,"
+<< std::endl << "                RuleTag"
+<< std::endl << "                >().operator()(arg);"
+<< std::endl << "        }	"
 << std::endl;
 
 			
@@ -610,22 +643,117 @@ namespace cake
                             /*.sink_pattern_to_free = */ (free_sink) ? sink_expr : 0 }));
     }
 
+	/* This version is called from processing the pairwise block AST. */
     void link_derivation::add_value_corresp(
         module_ptr source, 
-        definite_member_name source_data_type,
+        antlr::tree::Tree *source_data_type_mn,
         antlr::tree::Tree *source_infix_stub,
         module_ptr sink,
-        definite_member_name sink_data_type,
+        antlr::tree::Tree *sink_data_type_mn,
+        antlr::tree::Tree *sink_infix_stub,
+        antlr::tree::Tree *refinement,
+		bool source_is_on_left,
+        antlr::tree::Tree *corresp
+    )
+	{
+		auto source_mn = read_definite_member_name(source_data_type_mn);
+		auto source_data_type_opt = boost::dynamic_pointer_cast<dwarf::spec::type_die>(
+			source->get_ds().toplevel()->visible_resolve(
+			source_mn.begin(), source_mn.end()));
+		if (!source_data_type_opt) RAISE(corresp, "could not resolve data type");
+		auto sink_mn = read_definite_member_name(sink_data_type_mn);
+		auto sink_data_type_opt = boost::dynamic_pointer_cast<dwarf::spec::type_die>(
+			sink->get_ds().toplevel()->visible_resolve(
+			sink_mn.begin(), sink_mn.end()));
+		if (!sink_data_type_opt) RAISE(corresp, "could not resolve data type");
+		add_value_corresp(source, 
+			source_data_type_opt, 
+			source_infix_stub,
+			sink, 
+			sink_data_type_opt, 
+			sink_infix_stub,
+			refinement, source_is_on_left, corresp);
+	}
+	
+	/* This version is used to add implicit dependencies. There is no
+	 * refinement or corresp or any of the other syntactic stuff. */
+	bool link_derivation::ensure_value_corresp(module_ptr source, 
+        boost::shared_ptr<dwarf::spec::type_die> source_data_type,
+        module_ptr sink,
+        boost::shared_ptr<dwarf::spec::type_die> sink_data_type,
+		bool source_is_on_left)
+	{
+    	auto key = sorted(std::make_pair(wrap_code.module_of_die(source_data_type), 
+			wrap_code.module_of_die(sink_data_type)));
+        assert(all_iface_pairs.find(key) != all_iface_pairs.end());
+		assert(source_data_type);
+		assert(sink_data_type);
+
+		auto iter_pair = val_corresps.equal_range(key);
+		for (auto i = iter_pair.first; i != iter_pair.second; i++)
+		{
+			if (i->second->source_data_type == source_data_type
+				&& i->second->sink_data_type == sink_data_type)
+			{
+				return false; // no need to add
+			}
+		}
+		// If we got here, we didn't find one
+		auto source_name_parts = compiler.fq_name_parts_for(source_data_type);
+		auto sink_name_parts = compiler.fq_name_parts_for(sink_data_type);
+		add_value_corresp(wrap_code.module_of_die(source_data_type), 
+			source_data_type,
+			0,
+			wrap_code.module_of_die(sink_data_type),
+			sink_data_type,
+			0,
+			0,
+			true, // source_is_on_left -- irrelevant as we have no refinement
+            make_simple_corresp_expression(source_is_on_left ?
+				 	source_name_parts : sink_name_parts,
+				 source_is_on_left ?
+				 	sink_name_parts : source_name_parts ));
+		return true;
+
+		assert(false);
+	}
+
+	
+	/* This is the "canonical" version, called from implicit name-matching */
+	void link_derivation::add_value_corresp(
+        module_ptr source, 
+        boost::shared_ptr<dwarf::spec::type_die> source_data_type,
+        antlr::tree::Tree *source_infix_stub,
+        module_ptr sink,
+        boost::shared_ptr<dwarf::spec::type_die> sink_data_type,
         antlr::tree::Tree *sink_infix_stub,
         antlr::tree::Tree *refinement,
 		bool source_is_on_left,
         antlr::tree::Tree *corresp
     )
     {
+		/* Handling dependencies:
+		 * Value correspondences may have dependencies on other value correspondences. 
+		 * Because they're emitted as template specialisations, they are sensitive to order. 
+		 * We want to forward-declare each specialisation. 
+		 * This means we should do two passes.
+		 * However, we *don't* need to do dependency analysis / topsort.
+		 
+		 * To ensure that depended-upon value corresps are generated, 
+		 * each value_conversion object can generate a list 
+		 * describing the other conversions that it implicitly depends upon. 
+		 * *After* we've added all explicitly-described *and* all name-matched
+		 * correspondences to the map, we do a fixed-point iteration to add
+		 * all the dependencies.
+		 */
+		
     	auto key = sorted(std::make_pair(source, sink));
         assert(all_iface_pairs.find(key) != all_iface_pairs.end());
-    	val_corresps.insert(std::make_pair(key,
-        				(struct val_corresp){ /* .source = */ source,
+		assert(source_data_type);
+		assert(sink_data_type);
+//     	val_corresps.insert(std::make_pair(key,
+
+        auto basic = (struct basic_value_conversion){ /* .source = */ source,
                         	/* .source_data_type = */ source_data_type,
                             /* .source_infix_stub = */ source_infix_stub,
             				/* .sink = */ sink,
@@ -633,7 +761,141 @@ namespace cake
                             /* .source_infix_stub = */ sink_infix_stub,
                             /* .refinement = */ refinement,
 							/* .source_is_on_left = */ source_is_on_left,
-                            /* .corresp = */ corresp }));
+                            /* .corresp = */ corresp };
+		
+		// can't handle infix stubs, yet
+		assert((!source_infix_stub || GET_CHILD_COUNT(source_infix_stub) == 0)
+		&& (!sink_infix_stub || GET_CHILD_COUNT(sink_infix_stub) == 0));
+	
+		// we *only* emit conversions between concrete types
+		auto source_concrete_type = source_data_type->get_concrete_type();
+		auto sink_concrete_type = sink_data_type->get_concrete_type();
+	
+        auto from_typename = wrap_code.get_type_name(source_concrete_type);
+        auto to_typename = wrap_code.get_type_name(sink_concrete_type);
+
+		// skip incomplete (void) typedefs and other incompletes
+		if (!compiler.cxx_is_complete_type(source_concrete_type)
+		|| !compiler.cxx_is_complete_type(sink_concrete_type))
+		{
+			std::cerr << "Warning: skipping value conversion from " << from_typename
+				<< " to " << to_typename
+				<< " because one or other is an incomplete type." << std::endl;
+			//m_out << "// (skipped because of incomplete type)" << std::endl << std::endl;
+			val_corresps.insert(std::make_pair(key, 
+				boost::dynamic_pointer_cast<value_conversion>(
+					boost::make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
+					basic, std::string("incomplete type")))));
+			return;
+		}
+		// skip pointers and references
+		if (source_concrete_type->get_tag() == DW_TAG_pointer_type
+		|| sink_concrete_type->get_tag() == DW_TAG_pointer_type
+		|| source_concrete_type->get_tag() == DW_TAG_reference_type
+		|| sink_concrete_type->get_tag() == DW_TAG_reference_type)
+		{
+			std::cerr << "Warning: skipping value conversion from " << from_typename
+				<< " to " << to_typename
+				<< " because one or other is an pointer or reference type." << std::endl;
+			//m_out << "// (skipped because of pointer or reference type)" << std::endl << std::endl;
+			val_corresps.insert(std::make_pair(key, 
+				boost::dynamic_pointer_cast<value_conversion>(
+					boost::make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
+					basic, "pointer or reference type"))));
+			return;
+		}
+		// skip subroutine types
+		if (source_concrete_type->get_tag() == DW_TAG_subroutine_type
+		|| sink_concrete_type->get_tag() == DW_TAG_subroutine_type)
+		{
+			std::cerr << "Warning: skipping value conversion from " << from_typename
+				<< " to " << to_typename
+				<< " because one or other is a subroutine type." << std::endl;
+			//m_out << "// (skipped because of subroutine type)" << std::endl << std::endl;
+			val_corresps.insert(std::make_pair(key, 
+				boost::dynamic_pointer_cast<value_conversion>(
+					boost::make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
+					basic, "subroutine type"))));
+			return;
+		}
+		
+		bool emit_as_reinterpret = false;
+        if (source_concrete_type->is_rep_compatible(sink_concrete_type)
+			&& (!refinement || GET_CHILD_COUNT(refinement) == 0))
+        {
+			// two rep-compatible cases
+			if (compiler.cxx_assignable_from(sink_concrete_type, source_concrete_type))
+			{
+        		std::cerr << "Skipping generation of value conversion from "
+            		<< from_typename << " to " << to_typename
+                	<< " because of rep-compatibility and C++-assignability." << std::endl;
+				//m_out << "// (skipped because of rep-compatibility and C++-assignability)" << std::endl << std::endl;
+				val_corresps.insert(std::make_pair(key, 
+					boost::dynamic_pointer_cast<value_conversion>(
+						boost::make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
+						basic, "rep-compatibility and C++-assignability"))));
+        		return;
+			}			
+			else
+			{
+        		std::cerr << "Generating a reinterpret_cast value conversion from "
+            		<< from_typename << " to " << to_typename
+                	<< " as they are rep-compatible but not C++-assignable." << std::endl;
+				emit_as_reinterpret = true;
+			}
+        }
+		else
+		{
+			// rep-incompatible cases are the same in effect but we report them individually
+			if (!refinement || GET_CHILD_COUNT(refinement) == 0)
+			{
+        		std::cerr << "Generating value conversion from "
+            		<< from_typename << " to " << to_typename
+                	<< " as they are not rep-compatible." << std::endl;
+			}
+			else
+			{
+				// FIXME: refinements that just do field renaming
+				// are okay -- can recover rep-compatibility so
+				// should use reinterpret conversion in these cases
+				// + propagate to run-time by generating artificial matching field names
+				// for fields whose renaming enables rep-compatibility
+        		std::cerr << "Generating value conversion from "
+            		<< from_typename << " to " << to_typename
+                	<< " as they have nonempty refinement." << std::endl;
+			}
+		}
+
+		// here goes the value conversion logic
+		if (!emit_as_reinterpret)
+		{
+			// -- dispatch to a function based on the DWARF tags of the two types
+	#define TAG_PAIR(t1, t2) ((t1)<<((sizeof (Dwarf_Half))*8) | (t2))
+			switch(TAG_PAIR(source_data_type->get_tag(), sink_data_type->get_tag()))
+			{
+				case TAG_PAIR(DW_TAG_structure_type, DW_TAG_structure_type):
+					//emit_structural_conversion_body(source_data_type, sink_data_type,
+					//	refinement, source_is_on_left);
+					val_corresps.insert(std::make_pair(key, 
+						boost::dynamic_pointer_cast<value_conversion>(
+							boost::make_shared<structural_value_conversion>(wrap_code, wrap_code.m_out, 
+							basic))));
+				break;
+				default:
+					std::cerr << "Warning: didn't know how to generate conversion between "
+						<< *source_data_type << " and " << *sink_data_type << std::endl;
+				break;
+			}
+	#undef TAG_PAIR
+		}
+		else
+		{
+			//emit_reinterpret_conversion_body(source_data_type, sink_data_type);
+			val_corresps.insert(std::make_pair(key, 
+				boost::dynamic_pointer_cast<value_conversion>(
+					boost::make_shared<reinterpret_value_conversion>(wrap_code, wrap_code.m_out, 
+					basic))));
+		}
     }
     
     // Get the names of all functions provided by iface1
@@ -712,6 +974,43 @@ namespace cake
             }
         }
     }
+	
+	void link_derivation::extract_type_synonymy(module_ptr module,
+		std::map<std::vector<std::string>, boost::shared_ptr<dwarf::spec::type_die> >& synonymy)
+	{
+		// synonymy map is from synonym to concrete
+		
+        for (auto i_die = module->get_ds().begin();
+        	i_die != module->get_ds().end();
+            i_die++)
+        {
+	    	auto p_typedef = boost::dynamic_pointer_cast<dwarf::spec::typedef_die>(*i_die);
+        	if (!p_typedef) continue;
+			if (p_typedef == p_typedef->get_concrete_type()) continue;
+
+			synonymy.insert(std::make_pair(
+				*p_typedef->ident_path_from_cu(), 
+				p_typedef->get_concrete_type()));
+        }
+	}
+	
+	boost::optional<link_derivation::val_corresp_map_t::iterator>
+	link_derivation::find_value_correspondence(
+		module_ptr source, boost::shared_ptr<dwarf::spec::type_die> source_type,
+		module_ptr sink, boost::shared_ptr<dwarf::spec::type_die> sink_type)
+	{
+		auto iter_pair = val_corresps.equal_range(sorted(std::make_pair(source, sink)));
+		for (auto i = iter_pair.first; i != iter_pair.second; i++)
+		{
+			if (i->second->source == source && i->second->sink == sink &&
+				i->second->source_data_type == source_type &&
+				i->second->sink_data_type == sink_type)
+			{
+				return i;
+			}
+		}
+		return false;
+	}
 
     struct found_type 
     { 
@@ -723,6 +1022,11 @@ namespace cake
     {
         std::multimap<std::vector<std::string>, found_type> found_types;
         std::set<std::vector<std::string> > keys;
+		
+		std::map<std::vector<std::string>, boost::shared_ptr<dwarf::spec::type_die> > first_synonymy;
+		extract_type_synonymy(ifaces.first, first_synonymy);
+		std::map<std::vector<std::string>, boost::shared_ptr<dwarf::spec::type_die> > second_synonymy;		
+		extract_type_synonymy(ifaces.second, second_synonymy);
         
         // traverse whole dieset depth-first, remembering DIEs that 
         // -- 1. are type DIEs, and
@@ -758,29 +1062,92 @@ namespace cake
                 	<< " exists in both modules" << std::endl;
             	// iter_pair points to a pair of like-named types in differing modules
                 // add value correspondences in *both* directions
-                // *** FIXME: ONLY IF not already present?
-                add_value_corresp(
-                	iter_pair.first->second.module,
-                    *i_k, //iter_pair.first->second.module->get_ds().toplevel()->visible_resolve(i_k->begin(), i_k->end()),
-                    0,
-                    iter_pair.second->second.module,
-                    *i_k, // iter_pair.second->second.module->get_ds().toplevel()->visible_resolve(i_k->begin(), i_k->end()),
-                    0,
-                    0, // refinement
-					true, // source_is_on_left -- irrelevant as we have no refinement
-                    0 // corresp
-                );
-                add_value_corresp(
-                	iter_pair.second->second.module,
-                    *i_k, //iter_pair.second->second.module->get_ds().toplevel()->visible_resolve(i_k->begin(), i_k->end()),
-                    0,
-                    iter_pair.first->second.module,
-                    *i_k, //iter_pair.first->second.module->get_ds().toplevel()->visible_resolve(i_k->begin(), i_k->end()),
-                    0,
-                    0, // refinement
-					false, // source_is_on_left -- irrelevant as we have no refinement
-					0 // corresp
-                );
+                // *** FIXME: ONLY IF not already present already...
+				// i.e. the user might have supplied their own
+				
+				// We always add corresps between concrete types,
+				// i.e. dereferencing synonyms -- BUT this can
+				// introduce conflicts/ambiguities, so need to refine this later.
+				// ALSO, concrete types don't always have 
+				// ident paths from CU! i.e. can be anonymous. So
+				// instead of using ident_path_from_cu
+								
+				if (!find_value_correspondence(iter_pair.first->second.module, first_synonymy[*i_k], 
+					iter_pair.second->second.module, second_synonymy[*i_k]))
+				{
+					auto source_type = (first_synonymy.find(*i_k) != first_synonymy.end()) ?
+							first_synonymy[*i_k] : /*, // *i_k, // */ 
+							boost::dynamic_pointer_cast<dwarf::spec::type_die>(
+								iter_pair.first->second.module->get_ds().toplevel()->visible_resolve(
+									i_k->begin(), i_k->end()));
+					auto sink_type = (second_synonymy.find(*i_k) != second_synonymy.end()) ?
+							second_synonymy[*i_k] : /*, // *i_k, // */ 
+							boost::dynamic_pointer_cast<dwarf::spec::type_die>(
+								iter_pair.second->second.module->get_ds().toplevel()->visible_resolve(
+									i_k->begin(), i_k->end()));
+					if (!source_type || !sink_type)
+					{
+						std::cerr << "Skipping correspondence for matched data type named " 
+						<< definite_member_name(*i_k)
+						<< " because (FIXME) the type is probably incomplete"
+						<< std::endl;
+						continue;
+					}
+
+                	add_value_corresp(
+                		iter_pair.first->second.module,
+                    	source_type,
+                    	0,
+                    	iter_pair.second->second.module,
+                    	sink_type,
+                    	0,
+                    	0, // refinement
+						true, // source_is_on_left -- irrelevant as we have no refinement
+                    	make_simple_corresp_expression(*i_k) // corresp
+                	);
+				}
+					else std::cerr << "Skipping correspondence for matched data type named " 
+						<< definite_member_name(*i_k)
+						<< " because type synonyms processed earlier already defined a correspondence"
+						<< std::endl;
+				if (!find_value_correspondence(iter_pair.second->second.module, second_synonymy[*i_k],
+						iter_pair.first->second.module, first_synonymy[*i_k]))
+				{
+					auto source_type = (second_synonymy.find(*i_k) != second_synonymy.end()) ?
+							second_synonymy[*i_k] : /*, // *i_k, // */ 
+							boost::dynamic_pointer_cast<dwarf::spec::type_die>(
+								iter_pair.second->second.module->get_ds().toplevel()->visible_resolve(
+									i_k->begin(), i_k->end()));
+					auto sink_type = (first_synonymy.find(*i_k) != first_synonymy.end()) ?
+							first_synonymy[*i_k] : /*, // *i_k, // */ 
+							boost::dynamic_pointer_cast<dwarf::spec::type_die>(
+								iter_pair.first->second.module->get_ds().toplevel()->visible_resolve(
+									i_k->begin(), i_k->end()));
+					if (!source_type || !sink_type)
+					{
+						std::cerr << "Skipping correspondence for matched data type named " 
+						<< definite_member_name(*i_k)
+						<< " because (FIXME) the type is probably incomplete"
+						<< std::endl;
+						continue;
+					}
+					
+                	add_value_corresp(
+                		iter_pair.second->second.module,
+                    	source_type,
+                    	0,
+                    	iter_pair.first->second.module,
+						sink_type,
+                    	0,
+                    	0, // refinement
+						false, // source_is_on_left -- irrelevant as we have no refinement
+						make_simple_corresp_expression(*i_k) // corresp
+                	);
+				}
+					else std::cerr << "Skipping correspondence for matched data type named " 
+						<< definite_member_name(*i_k)
+						<< " because type synonyms processed earlier already defined a correspondence"
+						<< std::endl;
             }
             else std::cerr << "data type " << definite_member_name(*i_k)
                 	<< " exists only in one module" << std::endl;
