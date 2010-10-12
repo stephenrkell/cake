@@ -60,7 +60,7 @@ include $(DEPS)
 #$(warning OBJS is $(OBJS))
 cake: parser-recursive $(OBJS) 
 	g++ $(CXXFLAGS) $(LDFLAGS) \
-	 $(OBJS) parser/cakeC{Parser,Lexer}.o $(LDLIBS) -o "$@" 
+	 $(OBJS) parser/cakeCParser.o parser/cakeCLexer.o $(LDLIBS) -o "$@" 
 
 .PHONY: test
 RUN_PREFIX := gdb --eval-command "source ../src/cake-test.gdb" --eval-command run --args

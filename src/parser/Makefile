@@ -56,7 +56,7 @@ test-lexer-samples: cakePyLexer.py # samples/ephy.cake samples/xcl.cake
 	
 %CLexer.c %CParser.c: %C.g 
 	$(ANTLR) "$<"
-	mkdir -p include && mv $*C{Lexer,Parser}.h include/
+	mkdir -p include && mv $*CLexer.h $*CParser.h include/
 
 %Cpp.g: %.g.m4 $(INCS)
 	m4 -Dantlr_m4_include_file=antlr-m4-cpp.inc "$<" > "$@"

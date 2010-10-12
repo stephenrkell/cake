@@ -1,8 +1,0 @@
-refactoring module.cpp: notes
-
-1. already started the "DWARF predicates" -- use these to eliminate switch statements on DWARF tags
-
-2. analogous "cake AST predicates"? e.g. to identify those AST nodes that are annotations, or have members
-
-3. DWARF-walking helpers: searching down the tree, searching lexically up the tree; support searching on
-structured (multi-part) names
