@@ -21,7 +21,18 @@ namespace cake
         				 && nonconst_subprogram.unspecified_parameters_begin() !=
                     	nonconst_subprogram.unspecified_parameters_end());
     }
-    
+	// new version!
+	bool wrapper_file::treat_subprogram_as_untyped(
+        boost::shared_ptr<dwarf::spec::subprogram_die> subprogram)
+    {
+        auto args_begin 
+        	= subprogram->formal_parameter_children_begin();
+        auto args_end
+        	= subprogram->formal_parameter_children_end();
+        return (args_begin == args_end
+        				 && subprogram->unspecified_parameters_children_begin() !=
+                    	subprogram->unspecified_parameters_children_end());
+    }    
     bool wrapper_file::subprogram_returns_void(
         const dwarf::encap::Die_encap_subprogram& subprogram)
 	{
@@ -36,14 +47,27 @@ namespace cake
         }
         return false;
 	}        	
-    
+	
+	void wrapper_file::emit_component_type_name(boost::shared_ptr<dwarf::spec::type_die> t)
+	{
+		// get the fq name; then test whether it's a keyword
+		auto fq_name = compiler.fq_name_for(t);
+		if (compiler.is_reserved(fq_name))
+		{
+			m_out << fq_name;
+		}
+		else m_out << ns_prefix << "::" 
+			<< m_r.module_inverse_tbl[module_of_die(t)] << "::" << fq_name;
+	}
+	
     void wrapper_file::emit_function_header(
         antlr::tree::Tree *event_pattern,
         const std::string& function_name_to_use,
         dwarf::encap::Die_encap_subprogram& subprogram,
         const std::string& arg_name_prefix,
         const request::module_name_pair& caller_context,
-        bool emit_types /*= true*/)
+        bool emit_types /*= true*/,
+		boost::shared_ptr<dwarf::spec::subprogram_die> unique_called_subprogram)
     {
     	auto ret_type = subprogram.get_type();
         auto args_begin = subprogram.formal_parameter_children_begin();
@@ -53,16 +77,36 @@ namespace cake
         if (emit_types)
         {
         	if (subprogram_returns_void(subprogram)) m_out << "void";
-            else if (treat_subprogram_as_untyped(subprogram)) m_out << 
-            	" ::cake::unspecified_wordsize_type";     
-            else m_out << ns_prefix << "::" << caller_context.second << "::"
-            	<< compiler.fq_name_for(*ret_type);
+            else if (treat_subprogram_as_untyped(subprogram) && !unique_called_subprogram) m_out << 
+            	" ::cake::unspecified_wordsize_type";
+			else if (treat_subprogram_as_untyped(subprogram) && unique_called_subprogram)
+			{
+				// look for a _unique_ _corresponding_ type and use that
+				assert(unique_called_subprogram->get_type());
+				auto found_vec = m_d.corresponding_dwarf_types(
+					*unique_called_subprogram->get_type(),
+					caller_context.first,
+					true /* flow_from_type_module_to_corresp_module */);
+				if (found_vec.size() == 1)
+				{
+					// we're in luck
+					emit_component_type_name(found_vec.at(0));
+				}
+				else 
+				{
+					m_out << " ::cake::unspecified_wordsize_type";
+				}
+			}
+            else emit_component_type_name(*ret_type);
              
             m_out << ' ';
         }
         m_out << function_name_to_use << '(';
        
         auto i_arg = args_begin;
+		dwarf::spec::subprogram_die::formal_parameter_iterator i_fp = 
+			unique_called_subprogram ? unique_called_subprogram->formal_parameter_children_begin()
+			: dwarf::spec::subprogram_die::formal_parameter_iterator();
         
         // actually, iterate over the pattern
         assert(GET_TYPE(event_pattern) == CAKE_TOKEN(EVENT_PATTERN));
@@ -76,15 +120,79 @@ namespace cake
         switch(GET_CHILD_COUNT(event_pattern))
         {
             case 4: // okay, we have no argument list (simple renames only)
-            	if (ignore_dwarf_args)
+            	if (ignore_dwarf_args && !unique_called_subprogram)
                 {  		
                 	// problem: no source of argument info! Assume none
                 	std::cerr << "Warning: wrapping function " << function_name_to_use
                 	    << " declared with unspecified parameters"
                         << " and no event pattern arguments. "
-                        << "Assuming empty argument list." << std::endl; }
+                        << "Assuming empty argument list." << std::endl; 
+				}
+				else if (ignore_dwarf_args && unique_called_subprogram)
+				{ 
+						/* We will use the DWARF info on the *callee* subprogram. */
+						//goto use_unique_called_subprogram_args;
+					// get argument at position argnum from the subprogram;
+					/*auto*/ i_fp = unique_called_subprogram->formal_parameter_children_begin();
+					//i_arg = unique_called_subprogram->formal_parameter_children_begin();
+					for (int i = 0; i < argnum; i++) i_fp++;
+	//xxxxxxxxxxxxxxxxxxxxxxx
+					if (emit_types)
+					{
+						if ((*i_fp)->get_type())
+						{
+							// look for a _unique_ _corresponding_ type and use that
+							auto found_vec = m_d.corresponding_dwarf_types(
+								*(*i_fp)->get_type(),
+								caller_context.first,
+								false /* flow_from_type_module_to_corresp_module */);
+							if (found_vec.size() == 1)
+							{
+								std::cerr << "Found unique corresponding type" << std::endl;
+								// we're in luck
+								emit_component_type_name(found_vec.at(0));
+							}
+							else 
+							{
+								std::cerr << "Didn't find unique corresponding type" << std::endl;
+								if (treat_subprogram_as_untyped(unique_called_subprogram))
+								{ m_out << " ::cake::unspecified_wordsize_type"; }
+								else emit_component_type_name(*(*i_fp)->get_type());
+							}
+						}
+						else  // FIXME: remove duplication here ^^^ vvv
+						{
+							if (treat_subprogram_as_untyped(unique_called_subprogram))
+							{ m_out << " ::cake::unspecified_wordsize_type"; }
+							else emit_component_type_name(*(*i_fp)->get_type());
+						}
+					}
+	//				else
+	//				{
+	//				
+	//xxxxxxxxxxxxxxxxxxxxxxxx				
+	//                     m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
+	//                        *(*i_fp)->get_type()));
+	//					}
+					if ((*i_fp)->get_name())
+					{
+                    	// output the variable name, prefixed 
+                    	m_out << ' ' << arg_name_prefix << argnum << '_' << *(*i_fp)->get_name();
+					}
+					else
+					{
+                    	// output the argument type and a dummy name
+                    	//if (emit_types) m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
+                    	//    *(*i_fp)->get_type()));
+                    	m_out << ' ' << arg_name_prefix << argnum << "_dummy"/* << argnum*/;
+					}
+					goto next;
+				}
+				else if (!ignore_dwarf_args && unique_called_subprogram)
+				{ /* FIXME: Check that they're consistent! */ }
                 break;
-            default: // must be >=5
+			use_event_pattern_args:
+            default: { // must be >=5
                 pattern_args = GET_CHILD_COUNT(event_pattern) - 4; /* ^ number of bindings above! */
             	assert(pattern_args >= 1);
                 FOR_REMAINING_CHILDREN(event_pattern)
@@ -123,24 +231,98 @@ namespace cake
                                 m_out << ' ' << arg_name_prefix << argnum << "_dummy"/* << argnum*/;
                                 break;
                             default: RAISE_INTERNAL(valuePattern, "not a value pattern");
-                        }
-                    }
-                next:
-                	// work out whether we need a comma
-                    if (!ignore_dwarf_args) i_arg++;
-                    argnum++;
-                    if (ignore_dwarf_args ? (argnum != pattern_args) : (i_arg != args_end)) m_out << ", ";
-                }
-                
-                if (!ignore_dwarf_args && i_arg != args_end)
-                {
-                	std::ostringstream msg;
-                    msg << "argument pattern has too few arguments for subprogram: "
-                    	<< subprogram;
-                	RAISE(event_pattern, msg.str());
-                }
-                break;
+                        } // end switch
+					} // end ALIAS3 
+				} // end FOR_REMAINING_CHILDREN
+			}	// end default; fall through!
+            next:
+                // work out whether we need a comma
+                if (!ignore_dwarf_args) i_arg++; // advance DWARF caller arg cursor
+                argnum++; // advance our arg count
+				if (ignore_dwarf_args && unique_called_subprogram)
+				{
+					i_fp++;
+					// use DWARF callee arg cursor
+					if (i_fp != unique_called_subprogram->formal_parameter_children_end())
+					{
+						m_out << ", ";
+					}
+				}
+				else if (ignore_dwarf_args) // && !unique_called_subprogram
+				{
+					if (argnum != pattern_args) m_out << ", ";
+				}
+				else 
+				{
+                	if (i_arg != args_end) m_out << ", ";
+				}
+			break;
+			use_unique_called_subprogram_args:
+				// get argument at position argnum from the subprogram;
+				/*auto*/ i_fp = unique_called_subprogram->formal_parameter_children_begin();
+				//i_arg = unique_called_subprogram->formal_parameter_children_begin();
+				for (int i = 0; i < argnum; i++) i_fp++;
+//xxxxxxxxxxxxxxxxxxxxxxx
+				if (emit_types)
+				{
+					if ((*i_fp)->get_type())
+					{
+						// look for a _unique_ _corresponding_ type and use that
+						auto found_vec = m_d.corresponding_dwarf_types(
+							*(*i_fp)->get_type(),
+							caller_context.first,
+							false /* flow_from_type_module_to_corresp_module */);
+						if (found_vec.size() == 1)
+						{
+							std::cerr << "Found unique corresponding type" << std::endl;
+							// we're in luck
+							emit_component_type_name(found_vec.at(0));
+						}
+						else 
+						{
+							std::cerr << "Didn't find unique corresponding type" << std::endl;
+							m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
+                        		*(*i_fp)->get_type()));
+						}
+					}
+					else  // FIXME: remove duplication here ^^^ vvv
+					{
+						m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
+                        	*(*i_fp)->get_type()));
+					}
+				}
+//				else
+//				{
+//				
+//xxxxxxxxxxxxxxxxxxxxxxxx				
+//                     m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
+//                        *(*i_fp)->get_type()));
+//					}
+				if ((*i_fp)->get_name())
+				{
+                    // output the variable name, prefixed 
+                    m_out << ' ' << arg_name_prefix << argnum << '_' << *(*i_fp)->get_name();
+				}
+				else
+				{
+                    // output the argument type and a dummy name
+                    //if (emit_types) m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
+                    //    *(*i_fp)->get_type()));
+                    m_out << ' ' << arg_name_prefix << argnum << "_dummy"/* << argnum*/;
+				}
+				goto next;
+        } // end switch
+			
+		// if we have spare arguments at the end, something's wrong
+        if (!ignore_dwarf_args && i_arg != args_end)
+        {
+            std::ostringstream msg;
+            msg << "argument pattern has too few arguments for subprogram: "
+                << subprogram;
+            RAISE(event_pattern, msg.str());
         }
+
+        //} // end switch
                         
         m_out << ')';
 
@@ -191,6 +373,22 @@ namespace cake
         auto i_caller_module_and_name = request_context.find(module_of_die(subprogram.get_this()));
         assert(i_caller_module_and_name != request_context.end());
         auto caller_module_and_name = *i_caller_module_and_name;
+		
+		// if we have a unique sink action, and it's a simple function call,
+		// we can use it as an extra source of description for the call arguments.
+		boost::shared_ptr<dwarf::spec::subprogram_die> unique_called_subprogram;
+		if (corresps.size() == 1
+			&& sink_expr_is_simple_function_name(corresps.at(0)->second.sink_expr))
+		{
+			std::string called_name = *sink_expr_is_simple_function_name(corresps.at(0)->second.sink_expr);
+			std::vector<std::string> called_name_vec(1, called_name);
+			unique_called_subprogram 
+			 = boost::dynamic_pointer_cast<dwarf::spec::subprogram_die>(
+			 		corresps.at(0)->second.sink->get_ds().toplevel()->visible_resolve(
+			 			called_name_vec.begin(), called_name_vec.end()
+					)
+				);
+		} else unique_called_subprogram = boost::shared_ptr<dwarf::spec::subprogram_die>();
 
 		// output prototype for __real_
         m_out << "extern \"C\" { " << std::endl;
@@ -199,14 +397,14 @@ namespace cake
                 corresps.at(0)->second.source_pattern,
         		"__real_" + *(subprogram.get_name()),
                 subprogram,
-                "__cake_arg", caller_module_and_name);
+                "__cake_arg", caller_module_and_name, true, unique_called_subprogram);
         m_out << " __attribute__((weak));" << std::endl;
         // output prototype for __wrap_
         emit_function_header(
                 corresps.at(0)->second.source_pattern,
         		"__wrap_" + *(subprogram.get_name()),
                 subprogram,
-                "__cake_arg", caller_module_and_name);
+                "__cake_arg", caller_module_and_name, true, unique_called_subprogram);
         m_out << ';' << std::endl;
         m_out << "} // end extern \"C\"" << std::endl;
         // output wrapper
@@ -214,11 +412,25 @@ namespace cake
                 corresps.at(0)->second.source_pattern,
         		"__wrap_" + *(subprogram.get_name()),
                 subprogram,
-                "__cake_arg", caller_module_and_name);
+                "__cake_arg", caller_module_and_name, true, unique_called_subprogram);
         m_out << std::endl;
         m_out << " {";
         m_out.inc_level();
         m_out << std::endl;
+		
+		/* FATAL-ish problem: 
+		 * by lumping all call-sites using a particular symbol name
+		 * into the same wrapper,
+		 * we are inevitably requiring that different argument lists
+		 * are captured by the same wrapper signature.
+		 * This is really annoying.
+		 * It's far better to make a wrapper
+		 * per-component, per symbol name.
+		 * For us right now it makes little difference.
+		 * We can do this in the future by
+		 * prefixing (renaming) all undefined symbols
+		 * with their component name as a prefix.
+		 */
 
         // 3. emit wrapper definition
         emit_wrapper_body(wrapped_symname, subprogram, corresps, request_context);
@@ -229,7 +441,7 @@ namespace cake
                 corresps.at(0)->second.source_pattern,
         		"__real_" + *(subprogram.get_name()),
                 subprogram,
-                "__cake_arg", caller_module_and_name, false);
+                "__cake_arg", caller_module_and_name, false, unique_called_subprogram);
         m_out << ';' << std::endl; // end of return statement
         m_out.dec_level();
         m_out << '}' << std::endl; // end of block
@@ -323,28 +535,100 @@ namespace cake
         	m_out << "if (";
             auto source_module = *request_context.find((*i_pcorresp)->second.source);
             auto sink_module = *request_context.find((*i_pcorresp)->second.sink);
+			
+			/* Emit a boolean expression which is true iff the event pattern
+			 * is satisfied. PROBLEM: what if we don't have information about
+			 * the values being passed? This is typically the case when debug info
+			 * does not record the signature of subprograms *required* by code. 
+			 * 
+			 * We can use information in the sink expression to extract constraints
+			 * on what the provided arguments might be. This allows us to avoid
+			 * relying on the wrapper signature for argument information.
+			 */
+			
+			extract_source_bindings(pattern, source_module, &env,
+				action /* i.e. sink expression */); 
+				// add any *pattern*-bound names to the environment
+			
             emit_pattern_condition(pattern, source_module,
-            	&env); // add any bound names to the environment
+            	&env); // emit if-test
+				
             m_out << ")" << std::endl;
             m_out << "{";
             m_out.inc_level();
             m_out << std::endl;
+			
             emit_sink_action(action, 
             	wrapper_sig,
             	sink_module,
                 source_module,
                 env);
+			/* The sink action should leave us with a return value (if any)
+			 * and a success state / error value. We then encode these and
+			 * output the return statement *here*. */
             m_out.dec_level();
             m_out << "}" << std::endl;
             m_out << "else ";
         }
     }
     
-    void wrapper_file::emit_pattern_condition(
+	void wrapper_file::extract_source_bindings(
             antlr::tree::Tree *pattern,
             const request::module_name_pair& request_context,
-            environment *out_env)
-    {
+            environment *out_env,
+			antlr::tree::Tree *sink_action)
+	{
+		/* We need to generate a new wrapper_sig that actually
+		 * contains information about the arguments.
+		 * Recall: this is to solve the problem where our
+		 * pass(gizmo ptr) --> pass(gadget ptr)
+		 * wrapper doesn't know that what's being passed is a gizmo. 
+		 * So it can't insert the conversion.
+		 * Previously we have just been taking our lead from 
+		 * the event pattern, and treating everything as an
+		 * unspecified_wordsize_type. 
+		 * This is okay in some cases
+		 * - where we have an event pattern
+		 * - where prelude-supplied conversions on unspecified_wordsize_type
+		 *     will do the right thing
+		 * but not otherwise:
+		 * - where we don't have an event pattern (bindings formed by name-matching)
+		 * - where prelude-supplied conversions aren't appropriate.
+		 * Effectively we are doing a very primitive form of 
+		 * (imprecise) type inference.
+		 * The killer is the absence of an event pattern -- without this, we have
+		 * no idea how many argument words to read off the stack.
+		 * So we instead make use of the sink pattern
+		 * and of uniqueness within the available value correspondences. */
+		 
+		/* To test this, I need a quick short-cut hack that I can
+		 * remove later, which supplies the information that "g" is
+		 * a "gadget". How to do this?
+		 * 1. Only address trivial function-for-function mappings.
+		 * 2. Assume therefore that the #arguments are equal.
+		 * 3. Require that the arguments are all wordsize (can *check* in the callee)
+		 * 4. Pull exactly this many off the stack.
+		 * 5. Require that
+		 
+		 * NOTE that this will result in bogus compositions
+		 * in cases where a like-named function is name-matched across two modules
+		 * but where the argument lists of these differ in length. */
+		 
+		/* Can we dynamically determine the number of arguments passed
+		 * on the stack? Perhaps by subtracting the stack pointer from
+		 * the frame pointer? I don't think this works.
+		 * Recall the varargs protocol:
+		 * arguments are pushed from right to left 
+		 * so that leftmore arguments end up *nearest* the frame pointer
+		 * and the rightmore arguments just keep on going deeper into the
+		 * calling frame. 
+		 * We *could* use analysis of the previous frame's locals
+		 * to infer which words are definitely *either* pushed 
+		 * *or* working temporaries. This would risk "passing" extra arguments
+		 * but then these might never be used. Can argue this is harmless? Hmm.
+		 * Not if it can introduce e.g. random divide-by-zero errors by running
+		 * inappropriate conversion logic. */
+
         //m_out << "true"; //CCP(GET_TEXT(corresp_pair.second.source_pattern));
         // for each position in the pattern, emit a test
         bool emitted = false;
@@ -363,11 +647,12 @@ namespace cake
             if (!caller) RAISE(memberNameExpr, "does not name a visible function");
             if ((*caller).get_tag() != DW_TAG_subprogram) 
             	RAISE(memberNameExpr, "does not name a visible function"); 
-            auto caller_subprogram = dynamic_cast<dwarf::encap::Die_encap_subprogram&>(*caller);           
+            auto caller_subprogram = dynamic_cast<dwarf::encap::Die_encap_subprogram&>(*caller);
             
             int argnum = 0;
             dwarf::encap::formal_parameters_iterator i_caller_arg 
              = caller_subprogram.formal_parameters_begin();
+			int dummycount = 0;
             FOR_REMAINING_CHILDREN(eventPattern)
             {
             	boost::shared_ptr<dwarf::spec::type_die> p_arg_type = boost::shared_ptr<dwarf::spec::type_die>();
@@ -413,9 +698,10 @@ namespace cake
                             bound_name = mn.at(0);
                         } break;
                         case CAKE_TOKEN(KEYWORD_CONST):
-                        case CAKE_TOKEN(INDEFINITE_MEMBER_NAME):
-                        	bound_name = "dummy";
-                        	break;
+                        case CAKE_TOKEN(INDEFINITE_MEMBER_NAME): {
+							std::ostringstream s; s << "dummy"; s << dummycount++;
+                        	bound_name = s.str();
+						} break;
                         default: RAISE(valuePattern, "unexpected token");
                     }
                     /* Now insert the binding. Which constructor we use depends on
@@ -424,7 +710,7 @@ namespace cake
                     if (origin_as_fp)
                     {
                         out_env->insert(std::make_pair(bound_name, bound_var_info(
-                            *this, //"arg", 
+                            *this, //"arg",  -- this is inferred from the ^^^ constructor overload?
                             p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
                             request_context, // the *source* module
                             origin_as_fp)));  // the DIE of the argument in the caller's info
@@ -437,17 +723,82 @@ namespace cake
                             request_context, // the *source* module
                             origin_as_unspec)));  // the DIE of the argument in the caller's info
                     }
-                    
+				} // end ALIAS3(annotatedValuePattern
+            	++argnum;
+                if (i_caller_arg != caller_subprogram.formal_parameters_end()) i_caller_arg++;
+			} // end FOR_REMAINING_CHILDREN(eventPattern
+		} // end ALIAS3(pattern, eventPattern, EVENT_PATTERN)
+	} // end 
+					
+    void wrapper_file::emit_pattern_condition(
+            antlr::tree::Tree *pattern,
+            const request::module_name_pair& request_context,
+            environment *out_env)
+	{
+        bool emitted = false;
+        INIT;
+        ALIAS3(pattern, eventPattern, EVENT_PATTERN);
+        {
+        	INIT;
+            BIND2(pattern, eventContext);
+            BIND2(pattern, memberNameExpr);
+            BIND3(pattern, eventCountPredicate, EVENT_COUNT_PREDICATE);
+            BIND3(pattern, eventParameterNamesAnnotation, KEYWORD_NAMES);
+            definite_member_name call_mn = read_definite_member_name(memberNameExpr);
+			std::string bound_name;
+//             if (call_mn.size() != 1) RAISE(memberNameExpr, "may not be compound");            
+//             auto caller = request_context.first->all_compile_units().visible_resolve(
+//             	call_mn.begin(), call_mn.end());
+//             if (!caller) RAISE(memberNameExpr, "does not name a visible function");
+//             if ((*caller).get_tag() != DW_TAG_subprogram) 
+//             	RAISE(memberNameExpr, "does not name a visible function"); 
+//             auto caller_subprogram = dynamic_cast<dwarf::encap::Die_encap_subprogram&>(*caller);
+            
+            int argnum = 0;
+            //dwarf::encap::formal_parameters_iterator i_caller_arg 
+            // = caller_subprogram.formal_parameters_begin();
+			int dummycount = 0;
+            FOR_REMAINING_CHILDREN(eventPattern)
+            {
+        	    ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
+                {
+                	INIT;
+                    BIND2(annotatedValuePattern, valuePattern);
+
                     /* Now actually emit a condition, if necessary. */ 
                     switch(GET_TYPE(valuePattern))
 				    {
                 	    case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
                     	    // no conditions -- match anything (and bind)
+							// Note that binding has *already* happened! We 
+							// grabbed the names out of the event pattern in
+							// extract_source_bindings. 
+                            definite_member_name mn = read_definite_member_name(valuePattern);
+                            bound_name = mn.at(0);
                         } break;
-                        case CAKE_TOKEN(INDEFINITE_MEMBER_NAME):
+                        case CAKE_TOKEN(INDEFINITE_MEMBER_NAME): {
+							std::ostringstream s; s << "dummy"; s << dummycount++;
+							bound_name = s.str();
                     	    // no conditions -- match anything (and don't bind)
-                        break;
-                        case CAKE_TOKEN(KEYWORD_CONST):
+						} break;
+                        case CAKE_TOKEN(KEYWORD_CONST): {
+							std::ostringstream s; s << "dummy"; s << dummycount++;
+							bound_name = s.str();
+							boost::shared_ptr<dwarf::spec::type_die> p_arg_type;
+							// find bound val's type, if it's a formal parameter
+							assert(out_env->find(bound_name) != out_env->end());
+							
+							// recover argument type, if we have one
+							if (out_env->find(bound_name)->second.origin->get_tag()
+								== DW_TAG_formal_parameter)
+							{
+								auto origin_as_fp = boost::dynamic_pointer_cast<dwarf::spec::formal_parameter_die>(
+									out_env->find(bound_name)->second.origin);
+								if (origin_as_fp)
+								{
+									p_arg_type = *origin_as_fp->get_type();
+								}
+							}
                         	// we have a condition to output
                         	if (emitted) m_out << " && ";
                             m_out << "cake::equal<";
@@ -464,13 +815,11 @@ namespace cake
                             emit_constant_expr(valuePattern, request_context);
                             m_out << ")";
                             emitted = true;
-                        break;
+						} break;
                         default: assert(false); 
                         break;
-                    }
+                    } // end switch
 	            } // end ALIAS3
-            	++argnum;
-                if (i_caller_arg != caller_subprogram.formal_parameters_end()) i_caller_arg++;
             }
 	    }
         if (!emitted) m_out << "true";
@@ -492,6 +841,11 @@ namespace cake
         
         //emit_event_pattern_as_function_call(eventPattern, sink_context, 
         //	source_context, wrapper_sig, env);
+		
+		std::cerr << "Emitting event correspondence stub: "
+			<< CCP(TO_STRING_TREE(stub)) << std::endl;
+		m_out << "// " << CCP(TO_STRING_TREE(stub)) << std::endl;
+		
         auto names = emit_event_corresp_stub(
         	stub, 
         	link_derivation::sorted(std::make_pair(source_context.first, sink_context.first)),

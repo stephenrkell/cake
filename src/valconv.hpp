@@ -48,6 +48,9 @@ namespace cake
 		void emit_signature(bool emit_return_type = true, bool emit_default_argument = true);
 		
 	public:
+		typedef std::pair < boost::shared_ptr<dwarf::spec::type_die>,
+		                         boost::shared_ptr<dwarf::spec::type_die>
+								> dep;
 		value_conversion(wrapper_file& w,
 			srk31::indenting_ostream& out,
 			const basic_value_conversion& basic);
@@ -105,16 +108,30 @@ namespace cake
 			module_ptr post_context;
 			antlr::tree::Tree *post_stub;
 		};
+// 		struct explicit_member_mapping_rule : member_mapping_rule
+// 		{
+// 			definite_member_name source;
+// 			antlr::tree::Tree *details; // pairwise sub-block
+// 		};
+		
+		// this includes all EXPLICIT corresps only, 
+		// but INCLUDING non-toplevel entries of the form foo.bar <--> blah.blah
+		std::map<definite_member_name, member_mapping_rule> explicit_field_corresps;
+		
+		// this includes all EXPLICIT corresps, projected to TOPLEVEL -- need not be unique
+		std::multimap<std::string, member_mapping_rule*> explicit_toplevel_mappings;
+		
+		// this includes only NAME-MATCHED IMPLICIT corresps only
 		std::map<std::string, member_mapping_rule> name_matched_mappings;
+		
+		//std::map<std::string, member_mapping_rule> explicit_mappings;
 	public:
 		structural_value_conversion(wrapper_file& w,
 			srk31::indenting_ostream& out, 
 			const basic_value_conversion& basic);
 		
 		void emit_body();
-		std::vector< std::pair < boost::shared_ptr<dwarf::spec::type_die>,
-		                         boost::shared_ptr<dwarf::spec::type_die>
-								>
+		std::vector< dep
 				> get_dependencies();
 	};
 	

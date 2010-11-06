@@ -47,8 +47,10 @@ clean::
 
 $(DEPS) : .%.d : %.cpp
 	g++ -MM $(CXXFLAGS) "$<"  > "$@"
-	
-include $(DEPS)
+
+ifneq ($(MAKECMDGOALS),clean)
+-include $(DEPS)
+endif	
 
 # new implicit rule for compiling C++
 %.o: %.cpp

@@ -22,6 +22,7 @@ namespace cake
 	
         dwarf::tool::cxx_compiler& compiler;
         link_derivation& m_d;
+        request& m_r;
         srk31::indenting_ostream m_out;
         const std::string ns_prefix;
         int binding_count;
@@ -70,7 +71,7 @@ namespace cake
             	boost::shared_ptr<dwarf::spec::type_die> type,
 	            const request::module_name_pair& defining_module,
 	            boost::shared_ptr<dwarf::spec::unspecified_parameters_die> origin);
-         };
+        };
         typedef std::map<std::string, bound_var_info> environment;
         typedef environment::value_type binding;
         std::string cxx_name_for_binding(const binding& binding)
@@ -101,14 +102,23 @@ namespace cake
             
 		bool treat_subprogram_as_untyped(
         	const dwarf::encap::Die_encap_subprogram& subprogram);
-            
+        bool treat_subprogram_as_untyped(
+        	boost::shared_ptr<dwarf::spec::subprogram_die> subprogram);
+			
 		void emit_wrapper_body(
         	const std::string& wrapped_symname, 
             const dwarf::encap::Die_encap_subprogram& wrapper_sig, 
 	        link_derivation::ev_corresp_pair_ptr_list& corresps,
             const request::module_inverse_tbl_t& request_context);
+			
+		void emit_component_type_name(boost::shared_ptr<dwarf::spec::type_die> t);
 
 		// Cake high-level constructs
+		void extract_source_bindings(
+            antlr::tree::Tree *pattern,
+            const request::module_name_pair& request_context,
+            environment *out_env,
+			antlr::tree::Tree *sink_action);
 	    void emit_pattern_condition(
             antlr::tree::Tree *pattern,
             const request::module_name_pair& request_context,
@@ -207,7 +217,8 @@ namespace cake
             dwarf::encap::Die_encap_subprogram& subprogram,
             const std::string& arg_name_prefix,
             const request::module_name_pair& caller_context,
-            bool emit_types = true);
+            bool emit_types = true,
+			boost::shared_ptr<dwarf::spec::subprogram_die> = boost::shared_ptr<dwarf::spec::subprogram_die>());
 
         void emit_symbol_reference_expr_from_dwarf_ident(
             antlr::tree::Tree *definite_member_name, 
@@ -232,7 +243,7 @@ namespace cake
     public:
         wrapper_file(link_derivation& d, dwarf::tool::cxx_compiler& c, std::ostream& out) 
         : 	compiler(c),
-        	m_d(d), m_out(out), ns_prefix("cake::" + m_d.namespace_name()), 
+        	m_d(d), m_r(d.r), m_out(out), ns_prefix("cake::" + m_d.namespace_name()), 
             binding_count(0) {}
 
 		/* Main interface. Note that

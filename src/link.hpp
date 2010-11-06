@@ -14,6 +14,7 @@ namespace dwarf { namespace encap { typedef Die_encap_all_compile_units file_top
 namespace cake {
 	class link_derivation : public derivation
 	{
+		friend class wrapper_file;
         dwarf::tool::cxx_compiler compiler;
     public:
     	typedef std::pair<module_ptr,module_ptr> iface_pair;
@@ -72,7 +73,7 @@ namespace cake {
             // if we created a temporary AST, for implicit rules, free these ptrs
             antlr::tree::Tree *source_pattern_to_free; 
             antlr::tree::Tree *sink_pattern_to_free;
-            ~ev_corresp() { // non-virtual to keep us POD
+            ~ev_corresp() { // non-virtual to keep us POD / initializer-constructible etc.
 				if (source_pattern_to_free && source_pattern_to_free->free) source_pattern_to_free->free(source_pattern_to_free);
             	if (sink_pattern_to_free && sink_pattern_to_free->free) sink_pattern_to_free->free(sink_pattern_to_free);
             }
@@ -118,6 +119,12 @@ namespace cake {
 		find_value_correspondence(
 			module_ptr source, boost::shared_ptr<dwarf::spec::type_die> source_type,
 			module_ptr sink, boost::shared_ptr<dwarf::spec::type_die> sink_type);
+			
+ 		std::vector<boost::shared_ptr<dwarf::spec::type_die> >
+		corresponding_dwarf_types(boost::shared_ptr<dwarf::spec::type_die> type,
+			module_ptr corresp_module,
+			bool flow_from_type_module_to_corresp_module);
+		
     private:
     	// correspondences
     	ev_corresp_map_t ev_corresps;

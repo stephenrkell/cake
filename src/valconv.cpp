@@ -116,8 +116,11 @@ namespace cake
 			target_module(w.module_of_die(sink_data_type)),
 			modules(link_derivation::sorted(std::make_pair(source_module, target_module)))
 	{
-		/* Find explicitly assigned-to fields */
-		std::map<definite_member_name, member_mapping_rule> field_corresps;
+		/* Find explicitly assigned-to fields:
+		 * the map is from the assigned-to- field
+		 * to the rule details.
+		 * NOTE that this includes non-toplevel field corresps.  */
+		//std::map<definite_member_name, member_mapping_rule> field_corresps;
 		if (refinement)
 		{
 			INIT;
@@ -133,7 +136,7 @@ namespace cake
 						BIND2(refinementRule, leftInfixStub);
 						BIND2(refinementRule, rightInfixStub);
 						BIND2(refinementRule, rightValuePattern);
-						field_corresps.insert(std::make_pair(
+						explicit_field_corresps.insert(std::make_pair(
 							read_definite_member_name(
 								source_is_on_left ? rightValuePattern : leftValuePattern),
 								(member_mapping_rule)
@@ -161,7 +164,7 @@ namespace cake
 						BIND2(refinementRule, leftInfixStub);
 						BIND2(refinementRule, rightInfixStub);
 						BIND2(refinementRule, rightValuePattern);
-						field_corresps.insert(std::make_pair(
+						explicit_field_corresps.insert(std::make_pair(
 							read_definite_member_name(rightValuePattern),
 							(member_mapping_rule)
 							{
@@ -189,7 +192,7 @@ namespace cake
 						BIND2(refinementRule, leftInfixStub);
 						BIND2(refinementRule, rightInfixStub);
 						BIND2(refinementRule, rightStubExpr);
-						field_corresps.insert(std::make_pair(
+						explicit_field_corresps.insert(std::make_pair(
 							read_definite_member_name(leftValuePattern),
 							(member_mapping_rule)
 							{
@@ -241,15 +244,26 @@ namespace cake
 			}
 		}
 
-		/* Which of these are toplevel? */
-		std::map<std::string, member_mapping_rule*> toplevel_mappings;
-		for (auto i_mapping = field_corresps.begin(); i_mapping != field_corresps.end();
+		/* Which of these are toplevel? 
+		 * These are the toplevel explicit mappings. */
+		//std::multimap<std::string, member_mapping_rule*> explicit_toplevel_mappings;
+		for (auto i_mapping = explicit_field_corresps.begin(); 
+			i_mapping != explicit_field_corresps.end();
 			i_mapping++)
 		{
-			toplevel_mappings.insert(
-				std::make_pair(
-					i_mapping->first.at(0), &i_mapping->second));
+			if (i_mapping->first.size() == 1)
+			{
+				explicit_toplevel_mappings.insert(
+					std::make_pair(
+						i_mapping->first.at(0), &i_mapping->second));
+			}
+			else
+			{
+				std::cerr << "WARNING: found a non-toplevel mapping (FIXME)" << std::endl;
+			}
 		}
+		/* The NON-toplevel mappings are useful for our dependencies only.
+		 * We should collect them togther into FIXME the a dependencies description somehow. */
 
 		/* Name-match toplevel subtrees not mentioned so far. */
 		for (auto i_member
@@ -303,18 +317,69 @@ namespace cake
 						<< " in DIE " << *source_as_struct
 						<< std::endl;
 				}
-
 			}
 		}
-	
 	}
 
-	std::vector< std::pair < boost::shared_ptr<dwarf::spec::type_die>,
-		                     boost::shared_ptr<dwarf::spec::type_die>
-							>
-			> structural_value_conversion::get_dependencies()
+	std::vector< value_conversion::dep > structural_value_conversion::get_dependencies()
 	{
-		assert(false);
+		std::set<dep> working;
+	
+		// for each field (subobject) that corresponds, we require
+		// a defined conversion
+		for (auto i_mapping = name_matched_mappings.begin();
+				i_mapping != name_matched_mappings.end();
+				i_mapping++)
+		{
+			auto pair = std::make_pair(
+					*boost::dynamic_pointer_cast<dwarf::spec::member_die>(
+						boost::dynamic_pointer_cast<dwarf::spec::with_named_children_die>(this->source_data_type)
+							->named_child(i_mapping->second.target.at(0))
+						)->get_type(),
+					*boost::dynamic_pointer_cast<dwarf::spec::member_die>(
+						boost::dynamic_pointer_cast<dwarf::spec::with_named_children_die>(this->sink_data_type)
+							->named_child(i_mapping->second.target.at(0))
+						)->get_type()
+					);
+
+			assert(pair.first && pair.second);
+			working.insert(pair);
+		}
+		for (auto i_mapping = explicit_toplevel_mappings.begin();
+				i_mapping != explicit_toplevel_mappings.end();
+				i_mapping++)
+		{
+			// FIXME: to accommodate foo.bar <--> foo.bar,
+			// we need to capture that the dependency *must* adhere to the 
+			// body of rules included by the Cake programmer
+			auto pair = std::make_pair(
+					*boost::dynamic_pointer_cast<dwarf::spec::member_die>(
+						boost::dynamic_pointer_cast<dwarf::spec::with_named_children_die>(
+							this->source_data_type
+						)->named_child(i_mapping->first))->get_type(),
+					*boost::dynamic_pointer_cast<dwarf::spec::member_die>(
+						boost::dynamic_pointer_cast<dwarf::spec::with_named_children_die>(
+							this->sink_data_type
+						)->named_child(i_mapping->second->target.at(0)))->get_type()
+					);
+
+			assert(pair.first && pair.second);
+			auto retval = working.insert(pair);
+			assert(retval.second); // assert that we actually inserted something
+			// FIX: use multimap::equal_range to generate a list of all rules
+			// that have the same string, then group these as constraints 
+			// and add them to the dependency
+		}
+		std::cerr << "DEPENDENCIES of conversion " 
+			<< " from " << *this->source_data_type
+			<< " to " << *this->sink_data_type
+			<< ": total " << working.size() << std::endl;
+		std::cerr << "Listing:" << std::endl;
+		for (auto i_dep = working.begin(); i_dep != working.end(); i_dep++)
+		{
+			std::cerr << "require from " << *i_dep->first << " to " << *i_dep->second << std::endl;
+		}		
+		return std::vector< dep >(working.begin(), working.end());
 	}
 	
 	void structural_value_conversion::emit_body()
@@ -331,12 +396,6 @@ namespace cake
 			auto pre_context_pair = std::make_pair(i_name_matched->second.pre_context, 
 				w.m_d.name_of_module(i_name_matched->second.pre_context));
 
-/* bound_var_info(
-    	wrapper_file& w,
-        const std::string& prefix,
-        boost::shared_ptr<dwarf::spec::type_die> type,
-	    const request::module_name_pair& defining_module,
-	    boost::shared_ptr<dwarf::spec::program_element_die> origin) */		
 			std::string from_ident;
 			wrapper_file::environment env;
 			env.insert(std::make_pair("__cake_from", 
@@ -347,13 +406,7 @@ namespace cake
 					pre_context_pair,
 					boost::shared_ptr<dwarf::spec::program_element_die>(source_data_type)
 				)));
-/*     wrapper_file::emit_stub_expression_as_statement_list(
-    		antlr::tree::Tree *expr,
-    		link_derivation::iface_pair ifaces_context,
-            const request::module_name_pair& context, // sink module
-            boost::shared_ptr<dwarf::spec::type_die> cxx_result_type,
-            environment env)
-*/				
+
 			auto names = w.emit_stub_expression_as_statement_list(
         		i_name_matched->second.stub, modules, pre_context_pair, 
             	boost::shared_ptr<dwarf::spec::type_die>(), env);
@@ -369,7 +422,11 @@ namespace cake
 		}
 
 		/* Recurse on others */
-		// FIXME
+		// FIXME -- I think we don't actually recurse, we just use
+		// dependency handling to ensure that other mappings described
+		// in the lower-level rules are added. HMM. Somewhere we 
+		// have to make sure that the source fragments describing these
+		// lower-level rules are actually discoverable from the dependency record.
 
 		// output return statement
 		m_out << "return *__cake_p_buf;" << std::endl;

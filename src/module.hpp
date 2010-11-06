@@ -23,8 +23,10 @@ namespace cake
 {
 	class definite_member_name;
     class derivation;
+	class link_derivation;
 	class module
 	{
+		friend class link_derivation;
     protected:
 		std::string filename;
 	
