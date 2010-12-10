@@ -839,7 +839,7 @@ STRING_LIT : '\"' ( ~'\"'|'\\\"' )* '\"' ;
 //)? ;
 /* FIXME: scrapped the fancy IDENT rule until antlr does maximum munch. GRR! */
 IDENT : ('a'..'z'|'A'..'Z'|'_'+'a'..'z'|'_'+'A'..'Z'|'_'+'0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'\\'.)*;
-PATTERN_IDENT : '/'('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'|'|'*'|'('|')'|'.')*'/';
+PATTERN_IDENT : '/'('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'|'|'*'|'('|')'|'.'|'?')*'/';
 METAVAR	: '@'('a'..'z'|'A'..'Z')('a'..'z'|'A'..'Z'|'0'..'9'|'_')* ;
 /* The ident rule is a bit different from the conventional -- idents must be at
  * least two characters, and may embed '-' characters, and '.' preceding a number.

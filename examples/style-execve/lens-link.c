@@ -35,6 +35,17 @@ void __wrap_concrete_outcall(const char *arg)
 	 * link targets, or possibly with other link targets. Does this compose?
 	 * i.e. if I wanted to link many different lenses into the same object file,
 	 * could I add each one just like this?
+	 * ** not quite: the __wrap_ symbol name would be multiply defined. We'd
+	 * have to hook them all in somehow, but this is tricky:
+	 * --- if we have multiple lenses linked in, then should *all* the abstracted
+	 * outcalls be made? 
+	 * YES: this is also the answer to eliminating horrible hacky if--else logic:
+	 * what we do is call *all* of them, *if* they're defined. So not-linked-against
+	 * outcalls just do nothing. BUT note that we're doing something weird here:
+	 * we're multicasting previously unicast function calls. So we should really
+	 * warn if more than one of the outcalls is linked. (If not exactly 1, in fact.)
+	 *
+	 * What about compositionality in the sense of styles upon styles?
 	 * __wrap__real_concrete_outcall
 	 * __wrap__wrap_concrete_outcall */
 	if (!abstracted_outcall)
