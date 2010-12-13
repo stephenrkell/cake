@@ -36,7 +36,7 @@ test: cakePyParser.py
 	$(MAKE) test-samples
 	
 test-samples: cakePyParser.py samples/ephy.cake samples/mpeg2ffplay.cake samples/p2k.cake samples/xcl.cake
-	for fname in samples/ephy.cake samples/mpeg2ffplay.cake samples/p2k.cake ; do \
+	for fname in samples/xcl.cake samples/ephy.cake samples/mpeg2ffplay.cake samples/p2k.cake ; do \
 		python cakePyParser.py --rule=toplevel < "$$fname"; \
 	done | ~/work/devel/antlr/parens-filter.sh
 		

@@ -1,3 +1,4 @@
+--input='values (blah: Blah, bleh: Bleh) <--> (foo: Foo, bar: Bar) { };' --rule='pairwiseCorrespondenceElement'
 --input='foo.bar.baz' --rule='memberNameExpr'
 --input='(a: foo, b: bar) <--> (c: clang, d: duh) {};' --rule='valueCorrespondence'
 --input='blah: values (a: foo, b: bar) <--> (c: clang, d: duh) {};' --rule='pairwiseCorrespondenceElementEOFHack'
@@ -19,7 +20,7 @@
 --input='(preview_window ::) gtk_signal_connect_object(i, d, c_h, data) --> g_signal_connect_data(i, d, c_h, data, null, set []);' --rule='eventCorrespondence'
 --input='blah . blah . blah' --rule='memberNameExpr'
 --input='first . second . third' --rule='memberNameExpr'
---input='.first .second .third' --rule='memberNameExpr'
+#--input='.first .second .third' --rule='memberNameExpr'
 --input='int ptr ptr' --rule='valueDescriptionExpr'
 --input='opaque int ptr ptr' --rule='valueDescriptionExpr'
 #--input='(opaque int ptr) ptr' --rule='valueDescriptionExpr'
@@ -32,7 +33,7 @@
 --input='((int ptr) => opaque int ptr) => int' --rule='primitiveOrFunctionValueDescription'
 --input='(_) => GtkDialog ptr' --rule='primitiveOrFunctionValueDescription'
 --input='opaque _ ptr' --rule='primitiveOrFunctionValueDescription'
---input='(_) => object { .vbox: opaque _ ptr; _ : ignored _; } ptr' --rule='primitiveOrFunctionValueDescription'
+--input='(_) => object { vbox: opaque _ ptr; _ : ignored _; } ptr' --rule='primitiveOrFunctionValueDescription'
 # vvv---  this means 'out ( puffs_newinfo as puffs_full_newinfo )'
 #--input='out puffs_newinfo as puffs_full_newinfo' --rule='primitiveValueDescription'
 # ------  do we also want to be able to write '(out puffs_newinfo) as puffs_full_newinfo'?

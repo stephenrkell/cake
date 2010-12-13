@@ -129,7 +129,7 @@ derive elf_exec ephy_webkit = make_exec(
                 	// FIXME: can we really tie here? Shouldn't we free-then-dup like the embed code does?
                 	pattern "(about:|(http[s]?|file|ftp://)).*" -->(g_strdup(that) tie that) void;
                 	pattern ".*" -->(g_strconcat("http://", that) tie that) void;
-            	}
+            	};
 			
 			}
 
@@ -170,86 +170,86 @@ derive elf_exec ephy_webkit = make_exec(
                     history: EphyHistory)  <-->    (web_view: WebKitWebView,
                                                     scrolled_window: GtkScrolledWindow,
                                                     load_state: WebKitEmbedLoadState,
-                                                    loading_uri: char []) 
+                                                    loading_uri: char [])  
             {
-                void // history is a singleton, so always add it when forming the association
-                // FIXME: does this mean that we can only have one EphyEmbed? Since the co-object
-                // relation will want to map that singleton to many differnet RHS umbrella co-objects.
-                // MAybe introduce a "weak" class of association for which "..." is not valid?
-                // I think this is effectively what "value" members of associations are. They
-                // can't act as keys. You can't do "..." on them. In return, they can be present
-                // in more than one association.
-                (let history = ephy_embed_shell_get_global_history(ephy_embed_shell_get_default()))
-                -->? ({ // from webkit_embed_init
-            	    let web_view = webkit_web_view_new();
-        		    let sw = gtk_scrolled_window_new(null, null);
+                     void // history is a singleton, so always add it when forming the association
+                    // FIXME: does this mean that we can only have one EphyEmbed? Since the co-object
+                    // relation will want to map that singleton to many differnet RHS umbrella co-objects.
+                    // MAybe introduce a "weak" class of association for which "..." is not valid?
+                    // I think this is effectively what "value" members of associations are. They
+                    // can't act as keys. You can't do "..." on them. In return, they can be present
+                    // in more than one association.
+                    (let history = ephy_embed_shell_get_global_history(ephy_embed_shell_get_default()))
+                    -->? ({ // from webkit_embed_init
+                        let web_view = webkit_web_view_new();
+                    let sw = gtk_scrolled_window_new(null, null);
 
-                    gtk_scrolled_window_set_policy(sw, 
-                        GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+                        gtk_scrolled_window_set_policy(sw, 
+                            GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
 
-                    gtk_container_add(sw, web_view);
-                    gtk_widget_show(sw);
-                    gtk_widget_show(web_view);
-                    gtk_container_add(that, sw);
+                        gtk_container_add(sw, web_view);
+                        gtk_widget_show(sw);
+                        gtk_widget_show(web_view);
+                        gtk_container_add(that, sw);
 
-                    /* How is code generation for these lambdas going to look?
-                     * We want to use C++ lambdas. we can deal with a call to
-                     * a far-side function: we use the wrapper. But this is assuming
-                     * our lambda is supposed to be a "near-side" function. What if
-                     * we want to write the lambda as on the far side, then wrap the
-                     * lambda itself? We don't want to support this. Why would it
-                     * matter? Our lambda should assume that it always receives
-                     * its argument as near-side values; the lambda body might 
-                     * need to contain value conversions etc.. So in these examples,
-                     * "embed" is actually received as the umbrella co-object. How
-                     * did the webkit code get a pointer to this umbrella co-object
-                     * in the first place? AH, it's the callback argument: we passed
-                     * it when setting up the callback (below)! */
+                        /* How is code generation for these lambdas going to look?
+                         * We want to use C++ lambdas. we can deal with a call to
+                         * a far-side function: we use the wrapper. But this is assuming
+                         * our lambda is supposed to be a "near-side" function. What if
+                         * we want to write the lambda as on the far side, then wrap the
+                         * lambda itself? We don't want to support this. Why would it
+                         * matter? Our lambda should assume that it always receives
+                         * its argument as near-side values; the lambda body might 
+                         * need to contain value conversions etc.. So in these examples,
+                         * "embed" is actually received as the umbrella co-object. How
+                         * did the webkit code get a pointer to this umbrella co-object
+                         * in the first place? AH, it's the callback argument: we passed
+                         * it when setting up the callback (below)! */
 
-                    // set callbacks           
-                    g_object_connect(web_view,  // in our use of a LHS function (ephy_base_...)
-                        "signal::load-committed", // we imply that all *variables* i.e. globals,
-                            fn (view, frame, embed) => { // including functions, may be named
-                                ephy_base_location_changed(embed, // across arrows, i.e. denoting. What about 
-                                    webkit_web_frame_get_uri(frame)) // the co-object. What if
-                                }, embed, // the name is ambiguous? I suppose we just warn.
-                        "signal::load-started", 
-                            fn (view, frame, embed) => {
-                                if loading_uri != null then 
-                                    ephy_history_add_page(history, loading_uri, FALSE, FALSE)
-                                else void;
-                                ephy_base_embed_update_from_net_state(
-                                    EPHY_EMBED_STATE_UNKNOWN | EPHY_EMBED_STATE_START
-                                    | EPHY_EMBED_STATE_NEGOTIATING | EPHY_EMBED_STATE_IS_REQUEST
-                                    | EPHY_EMBED_STATE_IS_NETWORK); 
+                        // set callbacks           
+                        g_object_connect(web_view,  // in our use of a LHS function (ephy_base_...)
+                           "signal::load-committed", // we imply that all *variables* i.e. globals,
+                                fn (view, frame, embed) => { // including functions, may be named
+                                    ephy_base_location_changed(embed, // across arrows, i.e. denoting. What about 
+                                        webkit_web_frame_get_uri(frame)) // the co-object. What if
+                                    }, embed, // the name is ambiguous? I suppose we just warn.
+                            "signal::load-started", 
+                                fn (view, frame, embed) => {
+                                    if loading_uri != null then 
+                                        ephy_history_add_page(history, loading_uri, FALSE, FALSE)
+                                    else void;
+                                    ephy_base_embed_update_from_net_state(
+                                        EPHY_EMBED_STATE_UNKNOWN | EPHY_EMBED_STATE_START
+                                        | EPHY_EMBED_STATE_NEGOTIATING | EPHY_EMBED_STATE_IS_REQUEST
+                                        | EPHY_EMBED_STATE_IS_NETWORK); 
+                                    }, embed,
+                            "signal::load-progress-changed", 
+                                fn (view, progress, embed) => {
+                                    if load_state == WEBKIT_EMBED_LOAD_STARTED then // NOTE: new "set" keyword (was: let should not be used as assignment!)
+                                        { set load_state = WEBKIT_EMBED_LOAD_LOADING } else void;
+                                    ephy_base_embed_set_load_percent(embed, progress)
+                                    }, embed,
+                            "signal::load_finished", 
+                                fn (view, frame, embed) => {
+                                    set load_state = WEBKIT_EMBED_LOAD_STOPPED;
+                                    ephy_base_embed_update_from_net_state(
+                                        EPHY_EMBED_STATE_UNKNOWN | EPHY_EMBED_STATE_STOP
+                                        | EPHY_EMBED_STATE_IS_DOCUMENT | EPHY_EMBED_STATE_IS_NETWORK) 
+                                    }, embed,
+                            "signal::title-changed",
+                                fn (view, frame, title, embed) => {
+                                    ephy_base_embed_set_title(embed, title);
                                 }, embed,
-                        "signal::load-progress-changed", 
-                        	fn (view, progress, embed) => {
-                            	if load_state == WEBKIT_EMBED_LOAD_STARTED then // HACK: new "assign" keyword (was: let should not be used as assignment!)
-                                	{ assign load_state = WEBKIT_EMBED_LOAD_LOADING } else void;
-                                ephy_base_embed_set_load_percent(embed, progress)
-                            	}, embed,
-                        "signal::load_finished", 
-                        	fn (view, frame, embed) => {
-                            	assign load_state = WEBKIT_EMBED_LOAD_STOPPED;
-                                ephy_base_embed_update_from_net_state(
-                                    EPHY_EMBED_STATE_UNKNOWN | EPHY_EMBED_STATE_STOP
-                                    | EPHY_EMBED_STATE_IS_DOCUMENT | EPHY_EMBED_STATE_IS_NETWORK); 
-                            	}, embed,
-                        "signal::title-changed",
-                        	fn (view, frame, title, embed) => {
-                            	ephy_base_embed_set_title(embed, title);
-                            }, embed,
-                        "signal::hovering-over-link", 
-                        	fn (view, frame, embed) => {
-                            	ephy_base_embed_set_link_message(embed, location);
-                                }, embed,
-    		            null);
+                            "signal::hovering-over-link", 
+                                fn (view, frame, embed) => {
+                                    ephy_base_embed_set_link_message(embed, location);
+                                    }, embed, s,
+                            null);
 
-                    // associate preferences somehow
-                    webkit_web_view_set_settings(web_view, settings)//; // "settings" is a global
+                        // associate preferences somehow
+                        webkit_web_view_set_settings(web_view, settings)//; // "settings" is a global
 
-                    /*vals*/ /*}*/}) void;
+                        /*vals*/ /*}*/}) void;
             };
 
             // interfaces we instantiate:
@@ -269,8 +269,8 @@ derive elf_exec ephy_webkit = make_exec(
             ephy_load_url(embed, url) --> webkit_web_view_open(embed...web_view, url);
 
             ephy_load(embed, url as raw_url, flags, preview_embed) 
-    	        --> { 	assign embed...loading_url = url; // hmm, is "let" the right behaviour?
-        		        webkit_web_view_open(embed...web_view, url); };    			
+    	        --> { 	set embed...loading_url = url; // hmm, is "let" the right behaviour?
+        		        webkit_web_view_open(embed...web_view, url) };    			
 
             ephy_stop_load(embed) --> webkit_web_view_stop_loading(embed...web_view);
             ephy_can_go_back(embed) --> webkit_web_view_can_go_back(embed...web_view);
@@ -319,13 +319,13 @@ derive elf_exec ephy_webkit = make_exec(
 
                 //g_list_free(
                 // NO free -- we will get freed when our peer glist is freed
-		        }
-			<--
-	{  let co_list = copied_sublist untie_all; // FORCE an early copy AND untie
-		// FIXME: can we leave the untie implicit, i.e. that being the only reason to early-copy?
-		// FIXME: forgotten why the "free when peer list is freed" strategy doesn't work
-	   g_list_free(copied_sublist as GList ptr); 
-	   co_list };
+		        } ;
+// 			<--
+// 	{  let co_list = copied_sublist untie_all; // FORCE an early copy AND untie
+// 		// FIXME: can we leave the untie implicit, i.e. that being the only reason to early-copy?
+// 		// FIXME: forgotten why the "free when peer list is freed" strategy doesn't work
+// 	   g_list_free(copied_sublist as GList ptr); 
+// 	   co_list };
 	
 //             ephy_get_forward_history(embed) /*out_as GList_of_EphyHistoryItems*/ --> { 
 //     	        let full_list = webkit_web_view_get_back_forward_list(embed...web_view);

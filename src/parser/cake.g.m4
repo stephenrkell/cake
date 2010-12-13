@@ -14,7 +14,7 @@ DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; AN
 EVENT_CORRESP; EVENT_SINK_AS_PATTERN; EVENT_SINK_AS_STUB; CONST_ARITH; KEYWORD_PATTERN; INFIX_STUB_EXPR; 
 IDENTS_TO_BIND; ARRAY; VALUE_CONSTRUCT; EVENT_PATTERN_REWRITE_EXPR; RETURN_EVENT; INVOKE_WITH_ARGS; 
 EVENT_WITH_CONTEXT_SEQUENCE; CONTEXT_SEQUENCE; EVENT_COUNT_PREDICATE; ARRAY_SUBSCRIPT; FORM_ASSOCIATION; 
-VALUE_CORRESPONDENCE_REFINEMENT; }
+VALUE_CORRESPONDENCE_REFINEMENT; PATTERN_OF_VALUES; DESCEND_TO_MEMBERS; }
 
 
 @header {
@@ -116,8 +116,8 @@ unannotatedValueDescription : /*unspecifiedValueDescription^
 argumentMultiValueDescription : multiValueDescription
                               ; 
 
-multiValueDescription	: '(' optionallyNamedWithModeValueDescription (',' optionallyNamedWithModeValueDescription )*  ')'
-								-> ^( MULTIVALUE optionallyNamedWithModeValueDescription* )
+multiValueDescription	: '(' optionallyNamedWithModeValueDescription (',' optionallyNamedWithModeValueDescription )* ( ',' ELLIPSIS )? ')'
+								-> ^( MULTIVALUE optionallyNamedWithModeValueDescription* ELLIPSIS? )
                                 ;
 
 optionallyNamedWithModeValueDescription: valueModeAnnotation^? optionallyNamedValueDescription
@@ -380,9 +380,9 @@ contextBindingEventPattern : bindingPrefix^ atomicEventPattern
                            ;
 
 atomicEventPattern	: 
-	eventContext memberNameExpr eventParameterNamesAnnotation ( '(' ( ( annotatedValueBindingPattern ( ',' annotatedValueBindingPattern )* ) | ELLIPSIS )? ')' eventCountPredicate? )?
+	eventContext memberNameExpr eventParameterNamesAnnotation ( '(' ( ( annotatedValueBindingPattern ( ',' annotatedValueBindingPattern )* (',' ELLIPSIS )? ) | ELLIPSIS )? ')' eventCountPredicate? )?
 		-> ^( EVENT_PATTERN eventContext memberNameExpr ^( EVENT_COUNT_PREDICATE eventCountPredicate? ) eventParameterNamesAnnotation annotatedValueBindingPattern* )
-    | eventContext identPattern eventParameterNamesAnnotation ( '(' ( ( annotatedValueBindingPattern ( ',' annotatedValueBindingPattern )* ) | ELLIPSIS )? ')' eventCountPredicate? )?
+    | eventContext identPattern eventParameterNamesAnnotation ( '(' ( ( annotatedValueBindingPattern ( ',' annotatedValueBindingPattern )* (',' ELLIPSIS )? ) | ELLIPSIS )? ')' eventCountPredicate? )?
 		-> ^( EVENT_PATTERN eventContext identPattern ^( EVENT_COUNT_PREDICATE eventCountPredicate? ) eventParameterNamesAnnotation annotatedValueBindingPattern* )
 	;
 
@@ -445,7 +445,10 @@ valuePattern		: (memberNameExpr '[')=>
 					| constantValueDescription -> ^( KEYWORD_CONST constantValueDescription ) /* matches that constant */
                     | KEYWORD_VOID^ /* used for "no value" correspondences & inserting "arbitrary" code */
                     | KEYWORD_THIS^ /* only for correspondences nested in refinement blocks -- see ephy.cake */
-                    | KEYWORD_PATTERN^ patternConstantValueDescription
+                    | KEYWORD_PATTERN PATTERN_IDENT /* for use in pattern-based value corresps */
+                     -> ^( KEYWORD_PATTERN PATTERN_IDENT )
+                    | KEYWORD_PATTERN patternConstantValueDescription /* this does n..n and string regexps */
+                     -> ^( PATTERN_OF_VALUES patternConstantValueDescription )
                    /* | namedMultiValueDescription */ /* can't do this---introduces ambiguity with infixStubExpression in valueCorrespondence */
                     ;
 
@@ -460,18 +463,22 @@ bindingPrefix : bindingKeyword^ bindableIdentSet '='!
                 -> ^( KEYWORD_LET bindableIdentSet )
               ;
             
-bindableIdentSet 	: bindableIdentWithOptionalInterpretation 
+bindableIdentSet 	: 
+                       /* bindableIdentWithOptionalInterpretation 
                         -> ^( IDENTS_TO_BIND bindableIdentWithOptionalInterpretation )
-					| '(' bindableIdentWithOptionalInterpretation ( ',' bindableIdentWithOptionalInterpretation )+ ')' 
+					|*/ '(' bindableIdentWithOptionalInterpretation ( ',' bindableIdentWithOptionalInterpretation )+ ')' 
                         -> ^( IDENTS_TO_BIND bindableIdentWithOptionalInterpretation* )
-                    | lhs=IDENT ELLIPSIS rhs=IDENT
-                        -> ^( FORM_ASSOCIATION $lhs $rhs )
+/*                    | lhs=IDENT ELLIPSIS rhs=IDENT
+                        -> ^( FORM_ASSOCIATION $lhs $rhs )*/ /* subsumed by postfixExpression */
+                   /* | IDENT ELLIPSIS
+                   //     -> ^( DESCEND_TO_MEMBERS IDENT ) */
+                    | postfixExpression valueInterpretation? /* I give in -- mutation is okay */
                     ;
 
 bindableIdentWithOptionalInterpretation: IDENT valueInterpretation? -> ^( IDENT valueInterpretation? )
                                        ;
             
-bindingKeyword : KEYWORD_LET | KEYWORD_OUT ;
+bindingKeyword : KEYWORD_LET | KEYWORD_OUT | KEYWORD_SET ;
             
 //emitStatement	:	/*KEYWORD_EMIT^*/ KEYWORD_OUT stubLangExpression
 //				;
@@ -600,12 +607,13 @@ stubPrimitiveExpression	: stubLiteralExpression^
 
 memberSelectionOperator : MEMBER_SELECT | INDIRECT_MEMBER_SELECT | ELLIPSIS; /* ellipsis is 'access associated' */
 
-memberSelectionSuffix : memberSelectionOperator^ IDENT ;
+memberSelectionSuffix : memberSelectionOperator^ IDENT 
+                      ;
 
 /*functionInvocationInfix : '('! ( stubLangExpression (','! stubLangExpression )* )? ')'! 
 						;*/
 postfixExpressionEOFHack: postfixExpression EOF;
-postfixExpression : stubPrimitiveExpression^ ( suffix^ )* /* raising SUFFIX will bring ...                      */
+postfixExpression : stubPrimitiveExpression^ ( suffix^ )* ELLIPSIS? /* raising SUFFIX will bring ...                      */
                   ;                                       /* ...a function invocation arglist...                */
                                                           /* up so that the func name (stubPrimitiveExpression) */
                                                           /* sits after it in the same tree node,               */
@@ -622,7 +630,7 @@ suffix : '(' ( stubLangExpression (',' stubLangExpression )* )? ')'
 /* Here MULTIPLY is actually unary * (dereference) 
  * and BITWISE_AND is actually unary & (address-of) -- mea culpa */
 unaryOperatorExpression	: (COMPLEMENT^|NOT^|MINUS^|PLUS^|MULTIPLY^|KEYWORD_DELETE^|BITWISE_AND^)* postfixExpression
-                        | KEYWORD_NEW^ memberNameExpr
+                        | KEYWORD_NEW^ memberNameExpr namedMultiValueDescription?
                         ;
 tieExpression : unaryOperatorExpression ( KEYWORD_TIE^ postfixExpression )? /* "tie" is quite general syntactically, but... */
               ;                                                             /* only semantically valid on pointers.*/
@@ -825,7 +833,7 @@ ANDALSO_THEN : ';&';
 ORELSE_THEN : ';|';
 
 /* Fallback (interesting) tokens */
-INT :   '0'..'9'+ ;
+INT :   ('1'..'9''0'..'9'*)|'0''x'('0'..'9'|'a'..'f'|'A'..'F')+|'0';
 FLOAT : '0'..'9'+ '.''0'..'9'+ ;
 NEWLINE:'\r'? '\n' {antlr_m4_newline_action} ;
 WS  :   (' '|'\t')+ {antlr_m4_skip_action} ;
@@ -838,7 +846,7 @@ STRING_LIT : '\"' ( ~'\"'|'\\\"' )* '\"' ;
 //   /*|('.''0'..'9') /* ending with dot-digit is okay */
 //)? ;
 /* FIXME: scrapped the fancy IDENT rule until antlr does maximum munch. GRR! */
-IDENT : ('a'..'z'|'A'..'Z'|'_'+'a'..'z'|'_'+'A'..'Z'|'_'+'0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'\\'.)*;
+IDENT : ('\\'.|'a'..'z'|'A'..'Z'|'_'+'a'..'z'|'_'+'A'..'Z'|'_'+'0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'\\'.)*;
 PATTERN_IDENT : '/'('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'|'|'*'|'('|')'|'.'|'?')*'/';
 METAVAR	: '@'('a'..'z'|'A'..'Z')('a'..'z'|'A'..'Z'|'0'..'9'|'_')* ;
 /* The ident rule is a bit different from the conventional -- idents must be at
