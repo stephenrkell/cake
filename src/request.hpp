@@ -60,6 +60,10 @@ namespace cake
 		//java::io::FileInputStream *in_file;
         const char *in_filename;
         pANTLR3_INPUT_STREAM/*std::ifstream*/ /*ANTLR3_FDSC*/ in_fileobj;
+		
+		const char *out_filename;
+		std::ofstream maybe_out_stream;
+		std::ostream *p_out;
 
 		/* Parsing apparatus */		
 		//antlr::ANTLRInputStream *stream;
@@ -138,7 +142,7 @@ namespace cake
 		void sort_derivations();
 					
 	public:
-		request(const char *filename);
+		request(const char *cakefile, const char *makefile);
 		int process();
 		
 		//static void print_abi_info(dwarf::abi_information& info, std::string& unescaped_filename);

@@ -9,10 +9,14 @@ OBJS := $(patsubst %.c,%.o,$(SRC))
 $(warning OBJS are $(OBJS))
 BASENAME := $(shell basename $(shell readlink -f $(shell pwd)))
 
+ifeq ($(DEBUG),)
 default: $(BASENAME).o
+else 
+default: clean $(BASENAME).o
+endif
 
-$(BASENAME).o: cake-generated.mk
-	$(MAKE) CXXFLAGS="$(CXXFLAGS)" -f cake-generated.mk "$@"
+#$(BASENAME).o: cake-generated.mk
+#	$(MAKE) CXXFLAGS="$(CXXFLAGS)" -f cake-generated.mk "$@"
 
 # cancel builtin rule
 $(BASENAME): $(BASENAME).o
@@ -27,7 +31,7 @@ cake-generated.mk $(BASENAME).o_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
 	$(CAKE) $(BASENAME).cake > "$@"
 else
 cake-generated.mk $(BASENAME).o_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
-	gdb --args $(CAKE) $(BASENAME).cake #> "$@"
+	gdb --eval-command "run $(BASENAME).cake | tee $@" $(CAKE) #> "$@"
 endif
 
 .PHONY: clean

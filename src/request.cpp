@@ -9,13 +9,18 @@
 
 namespace cake
 {
-	request::request(const char *filename)
-		: 	in_filename(filename),
-            in_fileobj(antlr3AsciiFileStreamNew(
+	request::request(const char *cakefile, const char *makefile)
+		: 	in_filename(cakefile),
+            in_fileobj(antlr3FileStreamNew(
                 reinterpret_cast<uint8_t*>(
-                    const_cast<char*>(filename)))) 
+                    const_cast<char*>(cakefile)), ANTLR3_ENC_UTF8)),
+			out_filename(makefile),
+			maybe_out_stream(makefile ? makefile : "/dev/null"),
+			p_out(makefile ? &maybe_out_stream : &std::cout)
     {
     	if (!in_fileobj) throw cake::SemanticError("error opening input file");
+		if (!makefile && !maybe_out_stream) cake::SemanticError("error opening output file");
+		assert(*p_out);
     }
 
 	int request::process()
@@ -36,13 +41,13 @@ namespace cake
 	void request::depthFirst(antlr::tree::Tree *t)
 	{
 		unsigned childCount = GET_CHILD_COUNT(t);
-		std::cout 	<< "found a node with " << childCount << " children" << ", "
+		std::cerr 	<< "found a node with " << childCount << " children" << ", "
 				 	<< "type: " << GET_TYPE(t) << std::endl;
 		for (unsigned i = 0; i < GET_CHILD_COUNT(t); i++)
 		{
 			depthFirst(reinterpret_cast<antlr::tree::Tree*>(GET_CHILD(t, i)));
 		}
-		std::cout 	<< "text: " << CCP(GET_TEXT(t)) << std::endl;
+		std::cerr 	<< "text: " << CCP(GET_TEXT(t)) << std::endl;
 		
 	}
 	
@@ -62,7 +67,7 @@ namespace cake
 		for (derivation_tbl_t::iterator pd = derivation_tbl.begin(); 
         	pd != derivation_tbl.end(); pd++)
 		{
-			(*pd)->write_makerules(std::cout);
+			(*pd)->write_makerules(*p_out);
 		}
 	}
 

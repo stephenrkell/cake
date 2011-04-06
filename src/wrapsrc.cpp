@@ -629,159 +629,159 @@ namespace cake
 		 * Not if it can introduce e.g. random divide-by-zero errors by running
 		 * inappropriate conversion logic. */
 
-        //m_out << "true"; //CCP(GET_TEXT(corresp_pair.second.source_pattern));
-        // for each position in the pattern, emit a test
-        bool emitted = false;
-        INIT;
-        ALIAS3(pattern, eventPattern, EVENT_PATTERN);
-        {
-        	INIT;
-            BIND2(pattern, eventContext);
-            BIND2(pattern, memberNameExpr);
-            BIND3(pattern, eventCountPredicate, EVENT_COUNT_PREDICATE);
-            BIND3(pattern, eventParameterNamesAnnotation, KEYWORD_NAMES);
-            definite_member_name call_mn = read_definite_member_name(memberNameExpr);
-            if (call_mn.size() != 1) RAISE(memberNameExpr, "may not be compound");            
-            auto caller = request_context.first->all_compile_units().visible_resolve(
-            	call_mn.begin(), call_mn.end());
-            if (!caller) RAISE(memberNameExpr, "does not name a visible function");
-            if ((*caller).get_tag() != DW_TAG_subprogram) 
-            	RAISE(memberNameExpr, "does not name a visible function"); 
-            auto caller_subprogram = dynamic_cast<dwarf::encap::Die_encap_subprogram&>(*caller);
-            
-            int argnum = 0;
-            dwarf::encap::formal_parameters_iterator i_caller_arg 
-             = caller_subprogram.formal_parameters_begin();
+		//m_out << "true"; //CCP(GET_TEXT(corresp_pair.second.source_pattern));
+		// for each position in the pattern, emit a test
+		bool emitted = false;
+		INIT;
+		ALIAS3(pattern, eventPattern, EVENT_PATTERN);
+		{
+			INIT;
+			BIND2(pattern, eventContext);
+			BIND2(pattern, memberNameExpr);
+			BIND3(pattern, eventCountPredicate, EVENT_COUNT_PREDICATE);
+			BIND3(pattern, eventParameterNamesAnnotation, KEYWORD_NAMES);
+			definite_member_name call_mn = read_definite_member_name(memberNameExpr);
+			if (call_mn.size() != 1) RAISE(memberNameExpr, "may not be compound");			
+			auto caller = request_context.first->all_compile_units().visible_resolve(
+				call_mn.begin(), call_mn.end());
+			if (!caller) RAISE(memberNameExpr, "does not name a visible function");
+			if ((*caller).get_tag() != DW_TAG_subprogram) 
+				RAISE(memberNameExpr, "does not name a visible function"); 
+			auto caller_subprogram = dynamic_cast<dwarf::encap::Die_encap_subprogram&>(*caller);
+			
+			int argnum = 0;
+			dwarf::encap::formal_parameters_iterator i_caller_arg 
+			 = caller_subprogram.formal_parameters_begin();
 			int dummycount = 0;
-            FOR_REMAINING_CHILDREN(eventPattern)
-            {
-            	boost::shared_ptr<dwarf::spec::type_die> p_arg_type = boost::shared_ptr<dwarf::spec::type_die>();
-	            boost::shared_ptr<dwarf::spec::program_element_die> p_arg_origin;
-            	
-            	if (i_caller_arg == caller_subprogram.formal_parameters_end())
-                {
-                	if (caller_subprogram.unspecified_parameters_begin() !=
-                    	caller_subprogram.unspecified_parameters_end())
-                    {
-                    	p_arg_origin = *caller_subprogram.unspecified_parameters_children_begin();
-                    }
-                    else RAISE(eventPattern, "too many arguments for function");
-                }
-                else
-                {
-                	p_arg_type = *(*i_caller_arg)->get_type();
-                    p_arg_origin = boost::dynamic_pointer_cast<dwarf::spec::program_element_die>(
-                    	(*i_caller_arg)->get_this());
-                }
-                auto origin_as_fp = boost::dynamic_pointer_cast<dwarf::spec::formal_parameter_die>(
-                        p_arg_origin);
-                auto origin_as_unspec = boost::dynamic_pointer_cast<dwarf::spec::unspecified_parameters_die>(
-                        p_arg_origin);
-                assert(origin_as_fp || origin_as_unspec || (std::cerr << *p_arg_origin, false));
+			FOR_REMAINING_CHILDREN(eventPattern)
+			{
+				boost::shared_ptr<dwarf::spec::type_die> p_arg_type = boost::shared_ptr<dwarf::spec::type_die>();
+				boost::shared_ptr<dwarf::spec::program_element_die> p_arg_origin;
+				
+				if (i_caller_arg == caller_subprogram.formal_parameters_end())
+				{
+					if (caller_subprogram.unspecified_parameters_begin() !=
+						caller_subprogram.unspecified_parameters_end())
+					{
+						p_arg_origin = *caller_subprogram.unspecified_parameters_children_begin();
+					}
+					else RAISE(eventPattern, "too many arguments for function");
+				}
+				else
+				{
+					p_arg_type = *(*i_caller_arg)->get_type();
+					p_arg_origin = boost::dynamic_pointer_cast<dwarf::spec::program_element_die>(
+						(*i_caller_arg)->get_this());
+				}
+				auto origin_as_fp = boost::dynamic_pointer_cast<dwarf::spec::formal_parameter_die>(
+						p_arg_origin);
+				auto origin_as_unspec = boost::dynamic_pointer_cast<dwarf::spec::unspecified_parameters_die>(
+						p_arg_origin);
+				assert(origin_as_fp || origin_as_unspec || (std::cerr << *p_arg_origin, false));
 
-        	    ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
-                {
-                	INIT;
-                    BIND2(annotatedValuePattern, valuePattern);
-                    
-                    /* No matter what sort of value pattern we find, we generate a
-                     * bound name for the argument of the wrapper function. If the
-                     * pattern doesn't provide a name, it will be generated. So our
-                     * chosen name depends on the kind of pattern. */
-                    std::string bound_name;
-                    switch(GET_TYPE(valuePattern))
-				    {
-                	    case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
-                    	    // could match anything, so bind name and continue
-                            definite_member_name mn = read_definite_member_name(valuePattern);
-                            if (mn.size() != 1) RAISE(valuePattern, "may not be compound");
-                            bound_name = mn.at(0);
-                        } break;
-                        case CAKE_TOKEN(KEYWORD_CONST):
-                        case CAKE_TOKEN(INDEFINITE_MEMBER_NAME): {
-							std::ostringstream s; s << "dummy"; s << dummycount++;
-                        	bound_name = s.str();
+				ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
+				{
+					INIT;
+					BIND2(annotatedValuePattern, valuePattern);
+					
+					/* No matter what sort of value pattern we find, we generate a
+					 * bound name for the argument of the wrapper function. If the
+					 * pattern doesn't provide a name, it will be generated. So our
+					 * chosen name depends on the kind of pattern. */
+					std::string bound_name;
+					switch(GET_TYPE(valuePattern))
+					{
+						case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
+							// could match anything, so bind name and continue
+							definite_member_name mn = read_definite_member_name(valuePattern);
+							if (mn.size() != 1) RAISE(valuePattern, "may not be compound");
+							bound_name = mn.at(0);
 						} break;
-                        default: RAISE(valuePattern, "unexpected token");
-                    }
-                    /* Now insert the binding. Which constructor we use depends on
-                     * whether the argument in the caller is described by a formal_parameter
-                     * or unspecified_parameters DIE. */
-                    if (origin_as_fp)
-                    {
-                        out_env->insert(std::make_pair(bound_name, bound_var_info(
-                            *this, //"arg",  -- this is inferred from the ^^^ constructor overload?
-                            p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
-                            request_context, // the *source* module
-                            origin_as_fp)));  // the DIE of the argument in the caller's info
-                    }
-                    else
-                    {
-                        out_env->insert(std::make_pair(bound_name, bound_var_info(
-                            *this, //"arg", 
-                            p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
-                            request_context, // the *source* module
-                            origin_as_unspec)));  // the DIE of the argument in the caller's info
-                    }
+						case CAKE_TOKEN(KEYWORD_CONST):
+						case CAKE_TOKEN(INDEFINITE_MEMBER_NAME): {
+							std::ostringstream s; s << "dummy"; s << dummycount++;
+							bound_name = s.str();
+						} break;
+						default: RAISE(valuePattern, "unexpected token");
+					}
+					/* Now insert the binding. Which constructor we use depends on
+					 * whether the argument in the caller is described by a formal_parameter
+					 * or unspecified_parameters DIE. */
+					if (origin_as_fp)
+					{
+						out_env->insert(std::make_pair(bound_name, bound_var_info(
+							*this, //"arg",  -- this is inferred from the ^^^ constructor overload?
+							p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
+							request_context, // the *source* module
+							origin_as_fp)));  // the DIE of the argument in the caller's info
+					}
+					else
+					{
+						out_env->insert(std::make_pair(bound_name, bound_var_info(
+							*this, //"arg", 
+							p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
+							request_context, // the *source* module
+							origin_as_unspec)));  // the DIE of the argument in the caller's info
+					}
 				} // end ALIAS3(annotatedValuePattern
-            	++argnum;
-                if (i_caller_arg != caller_subprogram.formal_parameters_end()) i_caller_arg++;
+				++argnum;
+				if (i_caller_arg != caller_subprogram.formal_parameters_end()) i_caller_arg++;
 			} // end FOR_REMAINING_CHILDREN(eventPattern
 		} // end ALIAS3(pattern, eventPattern, EVENT_PATTERN)
 	} // end 
 					
-    void wrapper_file::emit_pattern_condition(
-            antlr::tree::Tree *pattern,
-            const request::module_name_pair& request_context,
-            environment *out_env)
+	void wrapper_file::emit_pattern_condition(
+			antlr::tree::Tree *pattern,
+			const request::module_name_pair& request_context,
+			environment *out_env)
 	{
-        bool emitted = false;
-        INIT;
-        ALIAS3(pattern, eventPattern, EVENT_PATTERN);
-        {
-        	INIT;
-            BIND2(pattern, eventContext);
-            BIND2(pattern, memberNameExpr);
-            BIND3(pattern, eventCountPredicate, EVENT_COUNT_PREDICATE);
-            BIND3(pattern, eventParameterNamesAnnotation, KEYWORD_NAMES);
-            definite_member_name call_mn = read_definite_member_name(memberNameExpr);
+		bool emitted = false;
+		INIT;
+		ALIAS3(pattern, eventPattern, EVENT_PATTERN);
+		{
+			INIT;
+			BIND2(pattern, eventContext);
+			BIND2(pattern, memberNameExpr);
+			BIND3(pattern, eventCountPredicate, EVENT_COUNT_PREDICATE);
+			BIND3(pattern, eventParameterNamesAnnotation, KEYWORD_NAMES);
+			definite_member_name call_mn = read_definite_member_name(memberNameExpr);
 			std::string bound_name;
-//             if (call_mn.size() != 1) RAISE(memberNameExpr, "may not be compound");            
-//             auto caller = request_context.first->all_compile_units().visible_resolve(
-//             	call_mn.begin(), call_mn.end());
-//             if (!caller) RAISE(memberNameExpr, "does not name a visible function");
-//             if ((*caller).get_tag() != DW_TAG_subprogram) 
-//             	RAISE(memberNameExpr, "does not name a visible function"); 
-//             auto caller_subprogram = dynamic_cast<dwarf::encap::Die_encap_subprogram&>(*caller);
-            
-            int argnum = 0;
-            //dwarf::encap::formal_parameters_iterator i_caller_arg 
-            // = caller_subprogram.formal_parameters_begin();
+//			 if (call_mn.size() != 1) RAISE(memberNameExpr, "may not be compound");			
+//			 auto caller = request_context.first->all_compile_units().visible_resolve(
+//			 	call_mn.begin(), call_mn.end());
+//			 if (!caller) RAISE(memberNameExpr, "does not name a visible function");
+//			 if ((*caller).get_tag() != DW_TAG_subprogram) 
+//			 	RAISE(memberNameExpr, "does not name a visible function"); 
+//			 auto caller_subprogram = dynamic_cast<dwarf::encap::Die_encap_subprogram&>(*caller);
+			
+			int argnum = 0;
+			//dwarf::encap::formal_parameters_iterator i_caller_arg 
+			// = caller_subprogram.formal_parameters_begin();
 			int dummycount = 0;
-            FOR_REMAINING_CHILDREN(eventPattern)
-            {
-        	    ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
-                {
-                	INIT;
-                    BIND2(annotatedValuePattern, valuePattern);
+			FOR_REMAINING_CHILDREN(eventPattern)
+			{
+				ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
+				{
+					INIT;
+					BIND2(annotatedValuePattern, valuePattern);
 
-                    /* Now actually emit a condition, if necessary. */ 
-                    switch(GET_TYPE(valuePattern))
-				    {
-                	    case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
-                    	    // no conditions -- match anything (and bind)
+					/* Now actually emit a condition, if necessary. */ 
+					switch(GET_TYPE(valuePattern))
+					{
+						case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
+							// no conditions -- match anything (and bind)
 							// Note that binding has *already* happened! We 
 							// grabbed the names out of the event pattern in
 							// extract_source_bindings. 
-                            definite_member_name mn = read_definite_member_name(valuePattern);
-                            bound_name = mn.at(0);
-                        } break;
-                        case CAKE_TOKEN(INDEFINITE_MEMBER_NAME): {
+							definite_member_name mn = read_definite_member_name(valuePattern);
+							bound_name = mn.at(0);
+						} break;
+						case CAKE_TOKEN(INDEFINITE_MEMBER_NAME): {
 							std::ostringstream s; s << "dummy"; s << dummycount++;
 							bound_name = s.str();
-                    	    // no conditions -- match anything (and don't bind)
+							// no conditions -- match anything (and don't bind)
 						} break;
-                        case CAKE_TOKEN(KEYWORD_CONST): {
+						case CAKE_TOKEN(KEYWORD_CONST): {
 							std::ostringstream s; s << "dummy"; s << dummycount++;
 							bound_name = s.str();
 							boost::shared_ptr<dwarf::spec::type_die> p_arg_type;
@@ -799,76 +799,77 @@ namespace cake
 									p_arg_type = *origin_as_fp->get_type();
 								}
 							}
-                        	// we have a condition to output
-                        	if (emitted) m_out << " && ";
-                            m_out << "cake::equal<";
-                            if (p_arg_type) emit_type_name(p_arg_type/*, 
-                                ns_prefix + request_context.second*/);
-                            else m_out << " ::cake::unspecified_wordsize_type";
-                            m_out << ", "
+							// we have a condition to output
+							if (emitted) m_out << " && ";
+							m_out << "cake::equal<";
+							if (p_arg_type) emit_type_name(p_arg_type/*, 
+								ns_prefix + request_context.second*/);
+							else m_out << " ::cake::unspecified_wordsize_type";
+							m_out << ", "
  << (	(GET_TYPE(GET_CHILD(valuePattern, 0)) == CAKE_TOKEN(STRING_LIT)) ? " ::cake::style_traits<0>::STRING_LIT" :
-        (GET_TYPE(GET_CHILD(valuePattern, 0)) == CAKE_TOKEN(CONST_ARITH)) ? " ::cake::style_traits<0>::CONST_ARITH" :
-        " ::cake::unspecified_wordsize_type" );
-                            m_out << ">()(";
-                            //m_out << "arg" << argnum << ", ";
-                            m_out << cxx_name_for_binding(*out_env->find(bound_name)) << ", ";
-                            emit_constant_expr(valuePattern, request_context);
-                            m_out << ")";
-                            emitted = true;
+		(GET_TYPE(GET_CHILD(valuePattern, 0)) == CAKE_TOKEN(CONST_ARITH)) ? " ::cake::style_traits<0>::CONST_ARITH" :
+		" ::cake::unspecified_wordsize_type" );
+							m_out << ">()(";
+							//m_out << "arg" << argnum << ", ";
+							m_out << cxx_name_for_binding(*out_env->find(bound_name)) << ", ";
+							emit_constant_expr(valuePattern, request_context);
+							m_out << ")";
+							emitted = true;
 						} break;
-                        default: assert(false); 
-                        break;
-                    } // end switch
-	            } // end ALIAS3
-            }
-	    }
-        if (!emitted) m_out << "true";
-    }
+						default: assert(false); 
+						break;
+					} // end switch
+				} // end ALIAS3
+			}
+		}
+		if (!emitted) m_out << "true";
+	}
 
 
-    void wrapper_file::emit_sink_action(
-        	antlr::tree::Tree *action,
-            const dwarf::encap::Die_encap_subprogram& wrapper_sig, 
-            const request::module_name_pair& sink_context,
-            const request::module_name_pair& source_context,
-            environment env)
-    {
-        // this is a crossover point, so insert conversions according to context
-        assert(GET_TYPE(action) == CAKE_TOKEN(EVENT_SINK_AS_STUB));
-        INIT;
-        //BIND3(action, eventPattern, EVENT_PATTERN);
-        BIND2(action, stub);
-        
-        //emit_event_pattern_as_function_call(eventPattern, sink_context, 
-        //	source_context, wrapper_sig, env);
+	void wrapper_file::emit_sink_action(
+			antlr::tree::Tree *action,
+			const dwarf::encap::Die_encap_subprogram& wrapper_sig, 
+			const request::module_name_pair& sink_context,
+			const request::module_name_pair& source_context,
+			environment env)
+	{
+		// this is a crossover point, so insert conversions according to context
+		std::cerr << "Processing stub action: " << CCP(TO_STRING_TREE(action)) << std::endl;
+		assert(GET_TYPE(action) == CAKE_TOKEN(EVENT_SINK_AS_STUB));
+		INIT;
+		//BIND3(action, eventPattern, EVENT_PATTERN);
+		BIND2(action, stub);
+		
+		//emit_event_pattern_as_function_call(eventPattern, sink_context, 
+		//	source_context, wrapper_sig, env);
 		
 		std::cerr << "Emitting event correspondence stub: "
 			<< CCP(TO_STRING_TREE(stub)) << std::endl;
 		m_out << "// " << CCP(TO_STRING_TREE(stub)) << std::endl;
 		
-        auto names = emit_event_corresp_stub(
-        	stub, 
-        	link_derivation::sorted(std::make_pair(source_context.first, sink_context.first)),
-        	sink_context, 
-            source_context, 
-            wrapper_sig, 
-            env);
-        //m_out << "if (" << names.first << ") return " << names.second << ';' << std::endl;
-        //m_out << "else return __cake_failure_with_type_of(" << names.second << ");" << std::endl;
-    }
-    
-//     void
-//     wrapper_file::create_value_conversion(module_ptr source,
-//             boost::shared_ptr<dwarf::spec::type_die> source_data_type,
-//             antlr::tree::Tree *source_infix_stub,
-//             module_ptr sink,
-//             boost::shared_ptr<dwarf::spec::type_die> sink_data_type,
-//             antlr::tree::Tree *sink_infix_stub,
-//             antlr::tree::Tree *refinement,
+		auto names = emit_event_corresp_stub(
+			stub, 
+			link_derivation::sorted(std::make_pair(source_context.first, sink_context.first)),
+			sink_context, 
+			source_context, 
+			wrapper_sig, 
+			env);
+		//m_out << "if (" << names.first << ") return " << names.second << ';' << std::endl;
+		//m_out << "else return __cake_failure_with_type_of(" << names.second << ");" << std::endl;
+	}
+	
+//	 void
+//	 wrapper_file::create_value_conversion(module_ptr source,
+//			 boost::shared_ptr<dwarf::spec::type_die> source_data_type,
+//			 antlr::tree::Tree *source_infix_stub,
+//			 module_ptr sink,
+//			 boost::shared_ptr<dwarf::spec::type_die> sink_data_type,
+//			 antlr::tree::Tree *sink_infix_stub,
+//			 antlr::tree::Tree *refinement,
 // 			bool source_is_on_left,
 // 			antlr::tree::Tree *corresp)
-//     {
-//    }
+//	 {
+//	}
 	
 // 	void
 // 	wrapper_file::emit_structural_conversion_body(
@@ -994,38 +995,42 @@ namespace cake
 //               : "::cake::unspecified_wordsize_type";
 // this logic is WRONG because it doesn't handle void-returning funcs properly
 // -- use convert_to instead
-        boost::shared_ptr<dwarf::spec::type_die> convert_to 
-        	= treat_subprogram_as_untyped(source_signature) 
-            	? boost::shared_ptr<dwarf::spec::type_die>()
-                : *source_signature.get_type();
+		boost::shared_ptr<dwarf::spec::type_die> convert_to 
+			= treat_subprogram_as_untyped(source_signature) 
+				? boost::shared_ptr<dwarf::spec::type_die>()
+				: *source_signature.get_type();
+		
+		// call the function; "names" will contain (success-varname, output-varname)
+		std::cerr << "Event sink stub is: " << CCP(TO_STRING_TREE(stub)) << std::endl;
+		assert(GET_TYPE(stub) == CAKE_TOKEN(INVOKE_WITH_ARGS));
 		auto names = emit_stub_expression_as_statement_list(
-        	stub, ifaces_context, sink_context, 
-            /*cxx_result_type_name*/convert_to, env);
+			stub, ifaces_context, sink_context, 
+			/*cxx_result_type_name*/convert_to, env);
 
-        const std::string& caller_namespace_name = source_context.second;
-        const std::string& callee_namespace_name = sink_context.second;    
-        link_derivation::iface_pair corresp_context
-         = link_derivation::sorted(std::make_pair(source_context.first, sink_context.first));
-        
-        // FIXME: test success of result here
-        
-        //if (!subprogram_returns_void(callee_subp)) 
-        if (!subprogram_returns_void(source_signature)) 
-        {
-        	/* Main problem here is that we don't know the C++ type of the
-             * stub's result value. So we have to make value_convert available
-             * as a function template here. Hopefully this will work. */
-            m_out << "return ";
-            open_value_conversion(
-            	ifaces_context,
-        	    /*callee_return_type ? 
-                	*callee_return_type 
-                    : */ boost::shared_ptr<dwarf::spec::type_die>(), 
-                sink_context.first, 
-        	    //callee_namespace_name,
-                convert_to /*? *convert_to : boost::shared_ptr<dwarf::spec::type_die>()*//*, 
-                caller_namespace_name*/ , source_context.first);
-            
+		const std::string& caller_namespace_name = source_context.second;
+		const std::string& callee_namespace_name = sink_context.second;    
+		link_derivation::iface_pair corresp_context
+			= link_derivation::sorted(std::make_pair(source_context.first, sink_context.first));
+
+		// FIXME: test success of result here
+
+		//if (!subprogram_returns_void(callee_subp)) 
+		if (!subprogram_returns_void(source_signature)) 
+		{
+			/* Main problem here is that we don't know the C++ type of the
+			* stub's result value. So we have to make value_convert available
+			* as a function template here. Hopefully this will work. */
+			m_out << "return ";
+			open_value_conversion(
+				ifaces_context,
+				/*callee_return_type ? 
+				*callee_return_type 
+				: */ boost::shared_ptr<dwarf::spec::type_die>(), 
+				sink_context.first, 
+				//callee_namespace_name,
+				convert_to /*? *convert_to : boost::shared_ptr<dwarf::spec::type_die>()*//*, 
+				caller_namespace_name*/ , source_context.first);
+
             // output result
             m_out << names.second;
 

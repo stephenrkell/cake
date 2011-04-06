@@ -14,8 +14,12 @@
 // #include <org/antlr/runtime/Token.h>
 
 const struct option opts[] = {
-	{ "help", false, NULL, 'h' }
+	{ "help", false, NULL, 'h' },
+	{ "output", true, NULL, 'o' }
+	
 };
+
+static const char *makefile;
 
 int main(int argc, char **argv)
 {
@@ -25,12 +29,17 @@ int main(int argc, char **argv)
 	
 	while (getopt_retval != -1)
 	{
-		getopt_retval = getopt_long(argc, argv, "h", opts, &longindex);
+		getopt_retval = getopt_long(argc, argv, "ho:", opts, &longindex);
 		switch (getopt_retval)
 		{
 			case 'h':
 				usage();
 				return 0;
+				
+			case 'o':
+				makefile = optarg;
+				break;
+				
 				
 			case -1: /* no more options */
 				break;
@@ -58,7 +67,7 @@ int main(int argc, char **argv)
 	{		
 		try
 		{
-			cake::request req(cakefile);
+			cake::request req(cakefile, makefile);
 			return req.process();
 		}
         catch (cake::SemanticError e)

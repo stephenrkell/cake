@@ -124,6 +124,8 @@ namespace cake {
 		corresponding_dwarf_types(boost::shared_ptr<dwarf::spec::type_die> type,
 			module_ptr corresp_module,
 			bool flow_from_type_module_to_corresp_module);
+
+		typedef unsigned long module_tag_t;
 		
     private:
     	// correspondences
@@ -193,7 +195,8 @@ namespace cake {
         	boost::shared_ptr<dwarf::spec::type_die> sink_data_type,
 			bool source_is_on_left);
 		void compute_wrappers();
-        int module_tag(module_ptr module) { return reinterpret_cast<int>(module.get()); }
+        module_tag_t module_tag(module_ptr module) 
+		{ return reinterpret_cast<module_tag_t>(module.get()); }
     /**** these are just notes-to-self ***/
 //		void compute_rep_domains();
 //		void output_rep_conversions();

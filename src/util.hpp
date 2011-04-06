@@ -62,8 +62,8 @@ namespace cake
     antlr::tree::Tree *make_simple_event_pattern_for_call_site(
     	const std::string& name);
     
-    antlr::tree::Tree *make_simple_sink_expression_for_event_pattern(
-    	const std::string& event_pattern);
+    antlr::tree::Tree *make_simple_sink_expression_for_event_name(
+    	const std::string& event_name);
     antlr::tree::Tree *make_simple_corresp_expression(
     	const std::vector<std::string>& ident,
 		boost::optional<std::vector<std::string>& > rhs_ident = boost::optional<std::vector<std::string>& >());
