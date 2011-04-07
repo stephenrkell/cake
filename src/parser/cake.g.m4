@@ -603,6 +603,8 @@ stubPrimitiveExpression	: stubLiteralExpression^
                         | KEYWORD_OUT^ INDEFINITE_MEMBER_NAME /* ditto */
                         | '('! stubNonSequencingExpression^ ')'!
                         | '{'! sequencingExpression^ ';'!? '}'!
+                        | KEYWORD_IN_ARGS^
+                        | KEYWORD_OUT_ARGS^
                         ;
 
 memberSelectionOperator : MEMBER_SELECT | INDIRECT_MEMBER_SELECT | ELLIPSIS; /* ellipsis is 'access associated' */
@@ -785,6 +787,8 @@ KEYWORD_DELETE: 'delete';
 KEYWORD_TIE: 'tie';
 KEYWORD_THIS: 'this';
 KEYWORD_THAT: 'that';
+KEYWORD_IN_ARGS: 'in_args';
+KEYWORD_OUT_ARGS: 'out_args';
 LE : '<=';
 GE : '>=';
 EQ : '==';

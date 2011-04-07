@@ -395,6 +395,8 @@ namespace cake
 		{
 			auto pre_context_pair = std::make_pair(i_name_matched->second.pre_context, 
 				w.m_d.name_of_module(i_name_matched->second.pre_context));
+			auto post_context_pair = std::make_pair(i_name_matched->second.post_context, 
+				w.m_d.name_of_module(i_name_matched->second.post_context));
 
 			std::string from_ident;
 			wrapper_file::environment env;
@@ -408,7 +410,7 @@ namespace cake
 				)));
 
 			auto names = w.emit_stub_expression_as_statement_list(
-        		i_name_matched->second.stub, modules, pre_context_pair, 
+        		i_name_matched->second.stub, modules, pre_context_pair, post_context_pair,
             	boost::shared_ptr<dwarf::spec::type_die>(), env);
 			m_out << "assert(" << names.first << ");" << std::endl;
 			m_out << "__cake_p_buf->" << i_name_matched->first

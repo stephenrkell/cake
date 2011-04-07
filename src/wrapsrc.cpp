@@ -1004,7 +1004,7 @@ namespace cake
 		std::cerr << "Event sink stub is: " << CCP(TO_STRING_TREE(stub)) << std::endl;
 		assert(GET_TYPE(stub) == CAKE_TOKEN(INVOKE_WITH_ARGS));
 		auto names = emit_stub_expression_as_statement_list(
-			stub, ifaces_context, sink_context, 
+			stub, ifaces_context, sink_context, source_context,
 			/*cxx_result_type_name*/convert_to, env);
 
 		const std::string& caller_namespace_name = source_context.second;
@@ -1064,124 +1064,138 @@ namespace cake
      This will make debugging the generated code easier, although perhaps verbose. */
 
 	std::pair<std::string, std::string> 
-    wrapper_file::emit_stub_expression_as_statement_list(
-    		antlr::tree::Tree *expr,
-    		link_derivation::iface_pair ifaces_context,
-            const request::module_name_pair& context, // sink module
-            ///*boost::shared_ptr<dwarf::spec::type_die>*/ const std::string& cxx_result_type_name,
-            boost::shared_ptr<dwarf::spec::type_die> cxx_result_type,
-            environment env)
-    {
-    	std::string ident;
-    	switch(GET_TYPE(expr))
-        {
-        	case CAKE_TOKEN(INVOKE_WITH_ARGS): // REMEMBER: algorithms are special
-            	return emit_stub_function_call(
-        	        expr,
-                    ifaces_context,
-                    context, // sink module
-                    //cxx_result_type_name,
-                    cxx_result_type,
-                    env);
-            case CAKE_TOKEN(STRING_LIT):
-                ident = new_ident("bound");
-                m_out << "auto " << ident << " = ";
-            	m_out << "cake::style_traits<0>::string_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
-                return std::make_pair("true", ident);
-            case CAKE_TOKEN(INT):
-                ident = new_ident("bound");
-                m_out << "auto " << ident << " = ";
-            	m_out << "cake::style_traits<0>::int_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
-                return std::make_pair("true", ident);
-            case CAKE_TOKEN(FLOAT):
-                ident = new_ident("bound");
-                m_out << "auto " << ident << " = ";
-            	m_out << "cake::style_traits<0>::float_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
-                return std::make_pair("true", ident);
-            case CAKE_TOKEN(KEYWORD_VOID):
-                //std::string ident = new_ident("bound");
-                //m_out << "auto " << ident << " = ";
-            	//m_out << "cake::style_traits<0>::void_value()";
-                return std::make_pair("true", /*ident*/ "((void)0)");
-            case CAKE_TOKEN(KEYWORD_NULL):
-                ident = new_ident("bound");
-                m_out << "auto " << ident << " = ";
-	            m_out << "cake::style_traits<0>::null_value();" << std::endl;
-                return std::make_pair("true", ident);
-            case CAKE_TOKEN(KEYWORD_TRUE):
-                ident = new_ident("bound");
-                m_out << "auto " << ident << " = ";
-	            m_out << "cake::style_traits<0>::true_value();" << std::endl;
-                return std::make_pair("true", ident);
-            case CAKE_TOKEN(KEYWORD_FALSE):
-                ident = new_ident("bound");
-                m_out << "auto " << ident << " = ";
-	            m_out << "cake::style_traits<0>::false_value();" << std::endl;
-                return std::make_pair("true", ident);
-            case CAKE_TOKEN(IDENT):
-                {
-                	/* If it's in our environment, it might need value conversion. */
-                    std::string s = CCP(GET_TEXT(expr));
-                	if (env.find(s) != env.end())
-                    {
-                        ident = new_ident("bound");
-                        m_out << "auto " << ident << " = ";
-                        emit_bound_var_rvalue(expr, ifaces_context, context, 
-                        	*env.find(s), env, cxx_result_type);
-                        m_out << ";" << std::endl;
-                    	return std::make_pair("true", ident);
-                    }
-                    /* Otherwise we're referencing something in the dwarfhpp-generated headers. */
-                    else return std::make_pair("true", 
-                        ns_prefix + "::" + /*callee_namespace_name*/context.second); 
-                        // FIXME: should resolve in DWARF info
-                }
-            case CAKE_TOKEN(KEYWORD_THIS):
-            case CAKE_TOKEN(KEYWORD_THAT):
-            case CAKE_TOKEN(KEYWORD_SUCCESS):
-            case CAKE_TOKEN(KEYWORD_OUT):
-            case CAKE_TOKEN(MEMBER_SELECT):
-            case CAKE_TOKEN(INDIRECT_MEMBER_SELECT):
-            case CAKE_TOKEN(ELLIPSIS): /* ellipsis is 'access associated' */
-            case CAKE_TOKEN(ARRAY_SUBSCRIPT):
-            case CAKE_TOKEN(COMPLEMENT):
-            case CAKE_TOKEN(NOT):
-            case CAKE_TOKEN(MINUS): // may be unary or binary!
-            case CAKE_TOKEN(PLUS): // may be unary or binary!
-            // dereference
-            case CAKE_TOKEN(MULTIPLY): // may be unary (dereference) or binary
-            case CAKE_TOKEN(KEYWORD_DELETE):
-            // may be unary (address-of) or binary
-            case CAKE_TOKEN(BITWISE_AND):
-            case CAKE_TOKEN(KEYWORD_NEW):
-            case CAKE_TOKEN(KEYWORD_TIE):
-            case CAKE_TOKEN(KEYWORD_AS):
-            case CAKE_TOKEN(KEYWORD_IN_AS):
-            case CAKE_TOKEN(KEYWORD_OUT_AS):
-            case CAKE_TOKEN(DIVIDE):
-            case CAKE_TOKEN(MODULO):
-            case CAKE_TOKEN(SHIFT_LEFT):
-            case CAKE_TOKEN(SHIFT_RIGHT):
-            case CAKE_TOKEN(LESS):
-            case CAKE_TOKEN(GREATER):
-            case CAKE_TOKEN(LE):
-            case CAKE_TOKEN(GE):
-            case CAKE_TOKEN(EQ):
-            case CAKE_TOKEN(NEQ):
-            case CAKE_TOKEN(BITWISE_XOR):
-            case CAKE_TOKEN(BITWISE_OR):
-            case CAKE_TOKEN(LOGICAL_AND):
-            case CAKE_TOKEN(LOGICAL_OR):
-            case CAKE_TOKEN(CONDITIONAL): // $cond $caseTrue $caseFalse 
-            case CAKE_TOKEN(KEYWORD_FN):
-            case CAKE_TOKEN(SEMICOLON):
-            case CAKE_TOKEN(ANDALSO_THEN):
-            case CAKE_TOKEN(ORELSE_THEN):
-            	assert(false);
-            default:
-            	assert(false);
-        }
-    }
+	wrapper_file::emit_stub_expression_as_statement_list(
+			antlr::tree::Tree *expr,
+			link_derivation::iface_pair ifaces_context,
+			const request::module_name_pair& context, // sink module
+			const request::module_name_pair& source_context, // source module
+			///*boost::shared_ptr<dwarf::spec::type_die>*/ const std::string& cxx_result_type_name,
+			boost::shared_ptr<dwarf::spec::type_die> cxx_result_type,
+			environment env)
+	{
+		std::string ident;
+		switch(GET_TYPE(expr))
+		{
+			case CAKE_TOKEN(INVOKE_WITH_ARGS): // REMEMBER: algorithms are special
+				return emit_stub_function_call(
+					expr,
+					ifaces_context,
+					context, // sink module
+					source_context,
+					//cxx_result_type_name,
+					cxx_result_type,
+					env);
+			case CAKE_TOKEN(STRING_LIT):
+				ident = new_ident("bound");
+				m_out << "auto " << ident << " = ";
+				m_out << "cake::style_traits<0>::string_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
+				return std::make_pair("true", ident);
+			case CAKE_TOKEN(INT):
+				ident = new_ident("bound");
+				m_out << "auto " << ident << " = ";
+				m_out << "cake::style_traits<0>::int_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
+				return std::make_pair("true", ident);
+			case CAKE_TOKEN(FLOAT):
+				ident = new_ident("bound");
+				m_out << "auto " << ident << " = ";
+				m_out << "cake::style_traits<0>::float_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
+				return std::make_pair("true", ident);
+			case CAKE_TOKEN(KEYWORD_VOID):
+				//std::string ident = new_ident("bound");
+				//m_out << "auto " << ident << " = ";
+				//m_out << "cake::style_traits<0>::void_value()";
+				return std::make_pair("true", /*ident*/ "((void)0)");
+			case CAKE_TOKEN(KEYWORD_NULL):
+				ident = new_ident("bound");
+				m_out << "auto " << ident << " = ";
+				m_out << "cake::style_traits<0>::null_value();" << std::endl;
+				return std::make_pair("true", ident);
+			case CAKE_TOKEN(KEYWORD_TRUE):
+				ident = new_ident("bound");
+				m_out << "auto " << ident << " = ";
+				m_out << "cake::style_traits<0>::true_value();" << std::endl;
+				return std::make_pair("true", ident);
+			case CAKE_TOKEN(KEYWORD_FALSE):
+				ident = new_ident("bound");
+				m_out << "auto " << ident << " = ";
+				m_out << "cake::style_traits<0>::false_value();" << std::endl;
+				return std::make_pair("true", ident);
+			case CAKE_TOKEN(IDENT):
+				{
+					/* If it's in our environment, it might need value conversion. */
+					std::string s = CCP(GET_TEXT(expr));
+					if (env.find(s) != env.end())
+					{
+						ident = new_ident("bound");
+						m_out << "auto " << ident << " = ";
+						emit_bound_var_rvalue(expr, ifaces_context, context, 
+							*env.find(s), env, cxx_result_type);
+						m_out << ";" << std::endl;
+						return std::make_pair("true", ident);
+					}
+					/* Even if it isn't, it might need value conversion. */
+					/* Otherwise it might be an argument (hence need value conversion)
+					 * or a global/static thing (defined in the dwarfhpp-generated headers). */
+					else return std::make_pair("true", 
+						ns_prefix + "::" // namespace for the current link block
+						+ /*callee_namespace_name*/context.second + "::" // namespace for the current module
+						+ CCP(TO_STRING(expr)) // the ident itself
+						); 
+						// FIXME: should resolve in DWARF info
+				}
+			case CAKE_TOKEN(KEYWORD_THIS):
+			case CAKE_TOKEN(KEYWORD_THAT):
+			case CAKE_TOKEN(KEYWORD_SUCCESS):
+			case CAKE_TOKEN(KEYWORD_OUT):
+			case CAKE_TOKEN(MEMBER_SELECT):
+			case CAKE_TOKEN(INDIRECT_MEMBER_SELECT):
+			case CAKE_TOKEN(ELLIPSIS): /* ellipsis is 'access associated' */
+			case CAKE_TOKEN(ARRAY_SUBSCRIPT):
+			case CAKE_TOKEN(COMPLEMENT):
+			case CAKE_TOKEN(NOT):
+			case CAKE_TOKEN(MINUS): // may be unary or binary!
+			case CAKE_TOKEN(PLUS): // may be unary or binary!
+			// dereference
+			case CAKE_TOKEN(MULTIPLY): // may be unary (dereference) or binary
+			case CAKE_TOKEN(KEYWORD_DELETE):
+			// may be unary (address-of) or binary
+			case CAKE_TOKEN(BITWISE_AND):
+			case CAKE_TOKEN(KEYWORD_NEW):
+			case CAKE_TOKEN(KEYWORD_TIE):
+			case CAKE_TOKEN(KEYWORD_AS):
+			case CAKE_TOKEN(KEYWORD_IN_AS):
+			case CAKE_TOKEN(KEYWORD_OUT_AS):
+			case CAKE_TOKEN(DIVIDE):
+			case CAKE_TOKEN(MODULO):
+			case CAKE_TOKEN(SHIFT_LEFT):
+			case CAKE_TOKEN(SHIFT_RIGHT):
+			case CAKE_TOKEN(LESS):
+			case CAKE_TOKEN(GREATER):
+			case CAKE_TOKEN(LE):
+			case CAKE_TOKEN(GE):
+			case CAKE_TOKEN(EQ):
+			case CAKE_TOKEN(NEQ):
+			case CAKE_TOKEN(BITWISE_XOR):
+			case CAKE_TOKEN(BITWISE_OR):
+			case CAKE_TOKEN(LOGICAL_AND):
+			case CAKE_TOKEN(LOGICAL_OR):
+			case CAKE_TOKEN(CONDITIONAL): // $cond $caseTrue $caseFalse 
+			case CAKE_TOKEN(KEYWORD_FN):
+			case CAKE_TOKEN(SEMICOLON):
+			case CAKE_TOKEN(ANDALSO_THEN):
+			case CAKE_TOKEN(ORELSE_THEN):
+				assert(false);
+			case CAKE_TOKEN(KEYWORD_IN_ARGS):
+				/* This shouldn't happen! We only evaluate in_args in the contexts
+				 * where it may appear. */
+				 RAISE(expr, "cannot use in_args outside an argument eval context");
+			case CAKE_TOKEN(KEYWORD_OUT_ARGS):
+				/* ditto */
+				 RAISE(expr, "cannot use out_args outside an argument eval context");
+			default:
+				assert(false);
+		}
+	}
             
 	void
     wrapper_file::emit_bound_var_rvalue(antlr::tree::Tree *call_expr, 
@@ -1248,173 +1262,280 @@ namespace cake
             close_value_conversion();
         }
     }
+	
+	std::vector<
+		std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
+					dwarf::spec::subprogram_die::formal_parameter_iterator 
+		> 
+	>
+	wrapper_file::name_match_parameters(
+		boost::shared_ptr< dwarf::spec::subprogram_die > first,
+		boost::shared_ptr< dwarf::spec::subprogram_die > second)
+	{
+		std::vector<
+			std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
+						dwarf::spec::subprogram_die::formal_parameter_iterator 
+			> 
+		> out;
+		for (auto i_first = first->formal_parameter_children_begin();
+				i_first != first->formal_parameter_children_end();
+				i_first++)
+		{
+			for (auto i_second = second->formal_parameter_children_begin();
+				i_second != second->formal_parameter_children_end();
+				i_second++)
+			{
+				if ((*i_first)->get_name() && (*i_second)->get_name()
+					&& *(*i_first)->get_name() == *(*i_second)->get_name())
+				{
+					out.push_back(std::make_pair(i_first, i_second));
+				}
+			}
+		}
+		return out;
+	}
 
-    std::pair<std::string, std::string>
-    wrapper_file::emit_stub_function_call(
-        	antlr::tree::Tree *call_expr,
-            link_derivation::iface_pair ifaces_context,
-            const request::module_name_pair& sink_context, // sink module
-            //const request::module_name_pair& source_context,
-            //const dwarf::encap::Die_encap_subprogram& source_signature,
-            boost::shared_ptr<dwarf::spec::type_die> cxx_result_type, //*/ const std::string& cxx_result_type_name, // may be null
-            environment env)
-    {
+	std::pair<std::string, std::string>
+	wrapper_file::emit_stub_function_call(
+			antlr::tree::Tree *call_expr,
+			link_derivation::iface_pair ifaces_context,
+			const request::module_name_pair& sink_context, // sink module
+			const request::module_name_pair& source_context,
+			//const dwarf::encap::Die_encap_subprogram& source_signature,
+			boost::shared_ptr<dwarf::spec::type_die> cxx_result_type, //*/ const std::string& cxx_result_type_name, // may be null
+			environment env)
+	{
 		assert(GET_TYPE(call_expr) == CAKE_TOKEN(INVOKE_WITH_ARGS));
 		INIT;
-        // in new grammar, no longer a def. member name
-        BIND3(call_expr, argsMultiValue, MULTIVALUE);
-        // FIXME: function_name might actually be an expression! evaluate this first!
-        BIND3(call_expr, functionNameTree/*, DEFINITE_MEMBER_NAME*/, IDENT);
-        // auto mn = read_definite_member_name(memberNameExpr);
-        
-        auto return_type_name = //cxx_result_type_name;
-        	(cxx_result_type 
-            ? get_type_name(cxx_result_type) 
-            : "::cake::unspecified_wordsize_type");
+		// in new grammar, no longer a def. member name
+		BIND3(call_expr, argsMultiValue, MULTIVALUE);
+		// FIXME: function_name might actually be an expression! evaluate this first!
+		BIND3(call_expr, functionNameTree/*, DEFINITE_MEMBER_NAME*/, IDENT);
+		// auto mn = read_definite_member_name(memberNameExpr);
+		
+		auto return_type_name = //cxx_result_type_name;
+			(cxx_result_type 
+			? get_type_name(cxx_result_type) 
+			: "::cake::unspecified_wordsize_type");
 
-        std::string function_name = CCP(GET_TEXT(functionNameTree));
-        std::vector<std::string> mn(1, function_name);
-        auto callee(
-        	sink_context.first->all_compile_units().visible_resolve(
-                	mn.begin(), mn.end()
-                    ));
-        if (!callee || callee->get_tag() != DW_TAG_subprogram)
-        {
-        	RAISE(functionNameTree, "does not name a visible function");
-        }
+		std::string function_name = CCP(GET_TEXT(functionNameTree));
+		std::vector<std::string> mn(1, function_name);
+		auto callee(
+			sink_context.first->all_compile_units().visible_resolve(
+					mn.begin(), mn.end()
+					));
+		if (!callee || callee->get_tag() != DW_TAG_subprogram)
+		{
+			RAISE(functionNameTree, "does not name a visible function");
+		}
 
 		dwarf::encap::Die_encap_subprogram& callee_subprogram
-         = dynamic_cast<dwarf::encap::Die_encap_subprogram&>(*callee);
-        auto callee_return_type
-            = treat_subprogram_as_untyped(callee_subprogram) ?
-               0 : callee_subprogram.get_type();
-               
-        /* evaluate the arguments and bind temporary names to them */
-        auto success_ident = new_ident("success");
-        m_out << "bool " << success_ident << " = true; " << std::endl;
-        std::string value_ident = new_ident("value");
-        if (!callee_subprogram.get_type())
-        {
-        	m_out << "::cake::unspecified_wordsize_type"
-        	 << ' ' << value_ident << "; // unused" << std::endl;
-    	}
-        else
-        {
-        	m_out << get_type_name(*callee_subprogram.get_type())
-        	 << ' ' << value_ident << ";" << std::endl;
-        }
-        //m_out << "do" << std::endl
-        //	<< "{";
-        m_out << "// begin argument expression eval" << std::endl;
-        //m_out.inc_level();
-        std::vector<std::pair<std::string, std::string > > arg_names;
-        std::pair<std::string, std::string> names;
-        auto i_arg = callee_subprogram.formal_parameter_children_begin();
-        {
-            INIT;
-            FOR_ALL_CHILDREN(argsMultiValue)
-            {
-            	assert(i_arg != callee_subprogram.formal_parameter_children_end()
-                 && (*i_arg)->get_type());
-                names = emit_stub_expression_as_statement_list(
-                  n, ifaces_context, sink_context, 
-                  /* Result type is that of the *argument* that we're going to pass
-                   * this subexpression's result to. */
-                  (treat_subprogram_as_untyped(callee_subprogram) 
-                  ? boost::shared_ptr<dwarf::spec::type_die>()
-                  : *(*i_arg)->get_type()),
-                     //cxx_result_type/*_name*/, 
-                  env);
-                arg_names.push_back(names);
-                m_out << success_ident << " &= " << names.first << ";" << std::endl;
-                m_out << "if (" << success_ident << ") // okay to proceed with next arg?" 
-                	<< std::endl;
-                m_out << "{" << std::endl;
-                m_out.inc_level();
-                i_arg++;
-            }
-        }
-        m_out << "// end argument eval" << std::endl;
-        m_out << "// begin function call" << std::endl;
-        //m_out << args_success_ident << " = true;" << std::endl;
-        
-        // result and success of overall function call
-        //std::string success_ident = new_ident("success");
-        //m_out << "bool " << success_ident << ";" << std::endl;
-        //m_out << "if (" << success_ident << ")" << std::endl;
-        //m_out << "{" << std::endl;
-        //m_out.inc_level();
+		 = dynamic_cast<dwarf::encap::Die_encap_subprogram&>(*callee);
+		auto callee_return_type
+			= treat_subprogram_as_untyped(callee_subprogram) ?
+			   0 : callee_subprogram.get_type();
+			   
+		/* evaluate the arguments and bind temporary names to them */
+		auto success_ident = new_ident("success");
+		m_out << "bool " << success_ident << " = true; " << std::endl;
+		std::string value_ident = new_ident("value");
+		if (!callee_subprogram.get_type())
+		{
+			m_out << "::cake::unspecified_wordsize_type"
+			 << ' ' << value_ident << "; // unused" << std::endl;
+		}
+		else
+		{
+			m_out << get_type_name(*callee_subprogram.get_type())
+			 << ' ' << value_ident << ";" << std::endl;
+		}
+		//m_out << "do" << std::endl
+		//	<< "{";
+		m_out << "// begin argument expression eval" << std::endl;
+		//m_out.inc_level();
+		std::vector<std::pair<std::string, std::string > > arg_result_names;
+		std::vector< boost::optional<std::string> > arg_names_in_callee;
+		std::pair<std::string, std::string> names;
+		auto i_arg = callee_subprogram.formal_parameter_children_begin();
+		// iterate through multiValue and callee args in lock-step
+		{
+			INIT;
+			FOR_ALL_CHILDREN(argsMultiValue)
+			{
+				assert(i_arg != callee_subprogram.formal_parameter_children_end()
+				 && (*i_arg)->get_type());
+				
+				/* If the stub expression was a KEYWORD_IN_ARGS, then
+				 * the stub code emitted  has yielded multiple outputs 
+				 * and multiple successes. */
+				switch (GET_TYPE(n))
+				{
+					case CAKE_TOKEN(KEYWORD_IN_ARGS):
+						/* When we see in_args, we eagerly match *by name*
+						 * any argument in the source context (i.e. the event)
+						 *  that has not already been evaluated,
+						 * against any argument in the sink context
+						 *  that is not already paired with a previously evaluated argument,
+						 * and output them in their order of appearance in the callee.
+						 * It is an error if the resulting order
+						 * covers a noncontiguous range of arguments. */
+						auto matched_names = name_match_parameters(
+							ctxt.source_signature,
+							callee_subprogram);
+							// FIXME: do we match names against the event pattern
+							// (which may have made up its own names for an argument)
+							// or against the DWARF info?
+							// Well, a major use-case of in_args... is where we 
+							// explicitly avoid naming any arguments and just say "bar(...)"
+							// so we have to go with the DWARF. 
+							// But FIXME: we should warn if event pattern names would give
+							// a different mapping
+						/* Now filter these matches:
+						 * - discard any pair that precedes our current position in the callee; 
+						 * - I think that's all? 
+						 * And then 
+						 * sort them by position in the callee arg list
+						 * and check that they form a contiguous sequence 
+						 * starting at our current pos. */
+						for (auto i_out = matched_names.begin(); i_out != matched_names.end();
+							i_out++)
+						{
+							if (i_out->second < i_arg) out.erase(i_out);
+						}
+						// sort in order of the sink (callee) argument ordering
+						std::sort(
+							out,
+							[](const std::pair< 
+									dwarf::spec::subprogram_die::formal_parameter_iterator,
+									dwarf::spec::subprogram_die::formal_parameter_iterator >& a,
+								const std::pair< 
+									dwarf::spec::subprogram_die::formal_parameter_iterator,
+									dwarf::spec::subprogram_die::formal_parameter_iterator >& b)
+							{ return a.second < b.second; });
 
-        std::string raw_result_ident = new_ident("result");
+							
+						
+					case CAKE_TOKEN(KEYWORD_OUT_ARGS):
+						assert(false);
+					default:
+						// emit some stub code to evaluate this argument
+						names = emit_stub_expression_as_statement_list(
+						  n, ifaces_context, sink_context, source_context,
+						  /* Result type is that of the *argument* that we're going to pass
+						   * this subexpression's result to. */
+						  (treat_subprogram_as_untyped(callee_subprogram) 
+						  ? boost::shared_ptr<dwarf::spec::type_die>()
+						  : *(*i_arg)->get_type()),
+							 //cxx_result_type/*_name*/, 
+						  env);
+						// remember the names used for the output of this evaluation
+						arg_result_names.push_back(names);
+
+						/* If the stub expression was a KEYWORD_IN_ARGS, then
+						 * the stub code emitted  has yielded multiple outputs 
+						 * and multiple successes. */
+
+						// store the mapping to the callee argument
+						arg_names_in_callee.push_back((*i_arg)->get_name());
+						m_out << success_ident << " &= " << names.first << ";" << std::endl;
+						m_out << "if (" << success_ident << ") // okay to proceed with next arg?" 
+							<< std::endl;
+						m_out << "{" << std::endl;
+						m_out.inc_level();
+						i_arg++;
+			}
+		}
+		m_out << "// end argument eval" << std::endl;
+		m_out << "// begin function call" << std::endl;
+		//m_out << args_success_ident << " = true;" << std::endl;
+		
+		// result and success of overall function call
+		//std::string success_ident = new_ident("success");
+		//m_out << "bool " << success_ident << ";" << std::endl;
+		//m_out << "if (" << success_ident << ")" << std::endl;
+		//m_out << "{" << std::endl;
+		//m_out.inc_level();
+
+		std::string raw_result_ident = new_ident("result");
 		if (callee_subprogram.get_type())
-        {
-        	m_out << "auto " << raw_result_ident << " = ";
-        }
+		{
+			m_out << "auto " << raw_result_ident << " = ";
+		}
 
-        // emit the function name, as a symbol reference
-        m_out << "cake::" << m_d.namespace_name() << "::";
-        emit_symbol_reference_expr_from_dwarf_ident(
-        	function_name,
-            sink_context,
-            sink_context.first->all_compile_units());        
-        m_out << '(';
-        
-        for (auto i_name_pair = arg_names.begin(); i_name_pair != arg_names.end(); i_name_pair++)
-        {
-            if (i_name_pair != arg_names.begin()) m_out << ", ";
-        	m_out << i_name_pair->second;
-        }
-        m_out << ')';
-        
-        m_out << ";" << std::endl;
-        
-        // convert the function raw result to a success and value pair,
-        // in a style-dependent way
-        if (callee_subprogram.get_type())
-        {
-            m_out << success_ident << " = __cake_success_of(" 
-        	    << raw_result_ident << ");" << std::endl;
-            m_out << "if (" << success_ident << ")" << std::endl
-            << "{" << std::endl;
-            m_out.inc_level();
-                m_out << value_ident << " = __cake_value_of("
-        	        << raw_result_ident << ");" << std::endl;
-            m_out.dec_level();
-            m_out << "}" << std::endl;
-    	}
-        else m_out << success_ident << " = true;" << std::endl;
+		// emit the function name, as a symbol reference
+		m_out << "cake::" << m_d.namespace_name() << "::";
+		emit_symbol_reference_expr_from_dwarf_ident(
+			function_name,
+			sink_context,
+			sink_context.first->all_compile_units());		
+		m_out << '(';
+		m_out.inc_level();
+		for (auto i_name_pair = arg_result_names.begin(); i_name_pair != arg_result_names.end(); i_name_pair++)
+		{
+			if (i_name_pair != arg_result_names.begin()) m_out << ", ";
+			m_out << std::endl; // begin each argument on a new line
+			auto name_in_callee = arg_names_in_callee[i_name_pair - arg_result_names.begin()];
+			m_out << "/* argument name in callee: " 
+				<< (name_in_callee ? *name_in_callee : "(no name)")
+				<< " */ ";
+			m_out << i_name_pair->second;
+		}
+		m_out << ')';
+		m_out.dec_level();
+		
+		m_out << ";" << std::endl;
+		m_out << "// end function call" << std::endl;
+		
+		// convert the function raw result to a success and value pair,
+		// in a style-dependent way
+		m_out << "// begin output/error split" << std::endl;
+		if (callee_subprogram.get_type())
+		{
+			m_out << success_ident << " = __cake_success_of(" 
+				<< raw_result_ident << ");" << std::endl;
+			m_out << "if (" << success_ident << ")" << std::endl
+			<< "{" << std::endl;
+			m_out.inc_level();
+				m_out << value_ident << " = __cake_value_of("
+					<< raw_result_ident << ");" << std::endl;
+			m_out.dec_level();
+			m_out << "}" << std::endl;
+		}
+		else m_out << success_ident << " = true;" << std::endl;
+		m_out << "// end output/error split" << std::endl;
 
 		// we opened argcount  extra lexical blocks in the argument eval
-        for (unsigned i = 0; i < GET_CHILD_COUNT(argsMultiValue); i++)
-        {
-            m_out.dec_level();
-        	m_out << "} " /*"else " << success_ident << " = false;"*/ << std::endl;
-        }
-        
-        // set failure result
-        m_out << "// test whether we failed " << std::endl;
-        m_out << "if (!" << success_ident << ")" << std::endl;
-        m_out << "{" << std::endl;
-        m_out.inc_level();
-        if (callee_subprogram.get_type()) // only get a value if it returns something
-        {
-            m_out << value_ident << " = ::cake::failure<" 
-        	    <<  get_type_name(*callee_subprogram.get_type()) //return_type_name
-                << ">()();" << std::endl;
-    	}
-        m_out.dec_level();
-        m_out << "}" << std::endl;
-        
-        //m_out.dec_level();
-        //m_out << "} while(0);" << std::endl;
-        
-        //m_out << "if (!" << success_ident << ")" << std::endl
-        //	<< "{";
-        //m_out.inc_level();
-        
+		for (unsigned i = 0; i < GET_CHILD_COUNT(argsMultiValue); i++)
+		{
+			m_out.dec_level();
+			m_out << "} " /*"else " << success_ident << " = false;"*/ << std::endl;
+		}
+		
+		// set failure result
+		m_out << "// begin calculate overall expression success/failure and output " << std::endl;
+		m_out << "if (!" << success_ident << ")" << std::endl;
+		m_out << "{" << std::endl;
+		m_out.inc_level();
+		if (callee_subprogram.get_type()) // only get a value if it returns something
+		{
+			m_out << value_ident << " = ::cake::failure<" 
+				<<  get_type_name(*callee_subprogram.get_type()) //return_type_name
+				<< ">()();" << std::endl;
+		}
+		m_out.dec_level();
+		m_out << "}" << std::endl;
+		m_out << "// end calculate overall expression success/failure and output " << std::endl;
+		
+		//m_out.dec_level();
+		//m_out << "} while(0);" << std::endl;
+		
+		//m_out << "if (!" << success_ident << ")" << std::endl
+		//	<< "{";
+		//m_out.inc_level();
+		
 
 		return std::make_pair(success_ident, value_ident);
-    }
+	}
             
 //         	    ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
 //                 {
