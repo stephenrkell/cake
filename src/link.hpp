@@ -97,6 +97,8 @@ namespace cake {
     public:
     	static iface_pair sorted(iface_pair p) 
         { return p.first < p.second ? p : std::make_pair(p.second, p.first); }
+    	static iface_pair sorted(module_ptr p, module_ptr q) 
+        { return sorted(std::make_pair(p, q)); }
         
         std::set<iface_pair> all_iface_pairs;
     
