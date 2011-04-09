@@ -263,6 +263,24 @@ namespace cake
 		
 		return ret.tree;
 	}
+	antlr::tree::Tree *make_ident_expr(const std::string& ident)
+	{
+		// We do this by building a string and feeding it to the parser.
+	 	std::cerr << "creating ident AST for " << ident << std::endl;
+
+		char *dup = strdup(ident.c_str());
+		pANTLR3_INPUT_STREAM ss = antlr3StringStreamNew(
+			reinterpret_cast<uint8_t*>(dup), 
+			ANTLR3_ENC_UTF8, ident.size(), (uint8_t *)"(no file)");
+		cakeCLexer *lexer = cakeCLexerNew(ss);
+		antlr::CommonTokenStream *tokenStream = antlr3CommonTokenStreamSourceNew(
+			ANTLR3_SIZE_HINT, TOKENSOURCE(lexer));
+		cakeCParser *parser = cakeCParserNew(tokenStream); 
+		// HACK: use stubPrimitiveExpression to build idents
+		cakeCParser_stubPrimitiveExpression_return ret = parser->stubPrimitiveExpression(parser);
+	
+		return ret.tree;
+	}
 	
 	std::string cake_token_text_from_ident(const std::string& arg)
 	{

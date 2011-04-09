@@ -69,6 +69,8 @@ namespace cake {
             module_ptr sink;
             antlr::tree::Tree *sink_expr;
             antlr::tree::Tree *sink_infix_stub;
+
+            antlr::tree::Tree *return_leg;
             
             // if we created a temporary AST, for implicit rules, free these ptrs
             antlr::tree::Tree *source_pattern_to_free; 
@@ -126,6 +128,12 @@ namespace cake {
 		corresponding_dwarf_types(boost::shared_ptr<dwarf::spec::type_die> type,
 			module_ptr corresp_module,
 			bool flow_from_type_module_to_corresp_module);
+			
+		boost::shared_ptr<dwarf::spec::type_die>
+		unique_corresponding_dwarf_type(
+			boost::shared_ptr<dwarf::spec::type_die> type,
+			module_ptr corresp_module,
+			bool flow_from_type_module_to_corresp_module);
 
 		typedef unsigned long module_tag_t;
 		
@@ -167,6 +175,7 @@ namespace cake {
     	        module_ptr sink,
                 antlr::tree::Tree *sink_expr,
                 antlr::tree::Tree *sink_infix_stub,
+				antlr::tree::Tree *return_leg,
                 bool free_source = false,
                 bool free_sink = false);
         void add_value_corresp(

@@ -1,3 +1,5 @@
+CXX ?= c++
+
 CXXFLAGS += -fno-eliminate-unused-debug-symbols -fno-eliminate-unused-debug-types
 
 SRC := $(wildcard *.cpp)
@@ -46,7 +48,7 @@ clean::
 #include $(HDR_DEPS)
 
 $(DEPS) : .%.d : %.cpp
-	g++ -MM $(CXXFLAGS) "$<"  > "$@"
+	$(CXX) -MM $(CXXFLAGS) "$<"  > "$@"
 
 ifneq ($(MAKECMDGOALS),clean)
 -include $(DEPS)
@@ -54,14 +56,14 @@ endif
 
 # new implicit rule for compiling C++
 %.o: %.cpp
-	g++ -c -o "$@" ${CXXFLAGS} "$<"
+	$(CXX) -c -o "$@" ${CXXFLAGS} "$<"
 
 %.hpp.gch: %.hpp
-	g++ -o "$@" ${CXXFLAGS} "$<"
+	$(CXX) -o "$@" ${CXXFLAGS} "$<"
 
 #$(warning OBJS is $(OBJS))
 cake: parser-recursive $(OBJS) 
-	g++ $(CXXFLAGS) $(LDFLAGS) \
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) \
 	 $(OBJS) parser/cakeCParser.o parser/cakeCLexer.o $(LDLIBS) -o "$@" 
 
 .PHONY: test

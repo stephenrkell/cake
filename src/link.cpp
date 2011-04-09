@@ -527,7 +527,7 @@ namespace cake
 				//	<< '=' << "__real_" << i_wrap->first << ' ';
 
 				/* Generate the wrapper */
-				wrap_code.emit_wrapper(i_wrap->first, i_wrap->second, r.module_inverse_tbl);
+				wrap_code.emit_wrapper(i_wrap->first, i_wrap->second);
 			}
 			else
 			{
@@ -645,8 +645,9 @@ namespace cake
 									BIND3(correspHead, sourceInfixStub, INFIX_STUB_EXPR);
 									BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
 									BIND2(correspHead, sinkExpr);
+									BIND3(correspHead, returnEvent, RETURN_EVENT);
 									add_event_corresp(left, sourcePattern, sourceInfixStub,
-										right, sinkExpr, sinkInfixStub);
+										right, sinkExpr, sinkInfixStub, returnEvent);
 								}
 								break;
 							case CAKE_TOKEN(RL_DOUBLE_ARROW):
@@ -657,8 +658,9 @@ namespace cake
 									BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
 									BIND3(correspHead, sourceInfixStub, INFIX_STUB_EXPR);
 									BIND3(correspHead, sourcePattern, EVENT_PATTERN);
+									BIND3(correspHead, returnEvent, RETURN_EVENT);
 									add_event_corresp(right, sourcePattern, sourceInfixStub,
-										left, sinkExpr, sinkInfixStub);
+										left, sinkExpr, sinkInfixStub, returnEvent);
 								}
 								break;
 							case CAKE_TOKEN(BI_DOUBLE_ARROW):
@@ -669,10 +671,11 @@ namespace cake
 									BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
 									BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
 									BIND3(correspHead, rightPattern, EVENT_PATTERN);
+									BIND3(correspHead, returnEvent, RETURN_EVENT);
 									add_event_corresp(left, leftPattern, leftInfixStub, 
-										right, rightPattern, rightInfixStub);
+										right, rightPattern, rightInfixStub, returnEvent);
 									add_event_corresp(right, rightPattern, rightInfixStub,
-										left, leftPattern, leftInfixStub);
+										left, leftPattern, leftInfixStub, returnEvent);
 								}
 								break;
 							default: RAISE(correspHead, "expected a double-stemmed arrow");
@@ -780,6 +783,7 @@ namespace cake
 		module_ptr sink,
 		antlr::tree::Tree *sink_expr,
 		antlr::tree::Tree *sink_infix_stub,
+		antlr::tree::Tree *return_leg,
 		bool free_source,
 		bool free_sink)
 	{
@@ -793,6 +797,7 @@ namespace cake
 							/*.sink = */ sink, // sink is the *provider*
 							/*.sink_expr = */ sink_expr,
 							/*.sink_infix_stub = */ sink_infix_stub,
+							return_leg,
 							/*.source_pattern_to_free = */ (free_source) ? source_pattern : 0,
 							/*.sink_pattern_to_free = */ (free_sink) ? sink_expr : 0 }));
 	}
@@ -1143,6 +1148,7 @@ namespace cake
 						providing_iface, // sink is the provider
 						tmp_sink_pattern, 
 						0, // no infix stub
+						0, // no return event
 						true, true);
 				}
 			}
@@ -1370,6 +1376,19 @@ namespace cake
 		}
 		return found;
 	}	
+	boost::shared_ptr<dwarf::spec::type_die>
+	link_derivation::unique_corresponding_dwarf_type(
+		boost::shared_ptr<dwarf::spec::type_die> type,
+		module_ptr corresp_module,
+		bool flow_from_type_module_to_corresp_module)
+	{
+		auto result = this->corresponding_dwarf_types(
+			type,
+			corresp_module,
+			flow_from_type_module_to_corresp_module);
+		if (result.size() == 1) return result.at(0);
+		else return boost::shared_ptr<dwarf::spec::type_die>();
+	}
 
 	void link_derivation::compute_wrappers() 
 	{

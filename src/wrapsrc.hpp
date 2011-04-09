@@ -49,41 +49,31 @@ namespace cake
     
 	    struct bound_var_info
         {
-        	boost::shared_ptr<dwarf::spec::type_die> type; // is a STATIC type (DWARF-supplied bound)
-            //const request::module_name_pair& defining_module;
-			module_ptr defining_module;
-            boost::shared_ptr<dwarf::spec::program_element_die> origin;
-            std::string prefix;
-            int count;
-            bound_var_info(wrapper_file& w,
-            	const std::string& prefix,
-            	boost::shared_ptr<dwarf::spec::type_die> type,
-	            module_ptr defining_module,
-	            boost::shared_ptr<dwarf::spec::program_element_die> origin);
-            // special version for formal parameters! works out count and prefix
-            // -- note: not virtual, so make sure we only use this for formal_parameter DIEs
-            bound_var_info(wrapper_file& w,
-            	//const std::string& prefix,
-            	boost::shared_ptr<dwarf::spec::type_die> type,
-	            module_ptr defining_module,
-	            boost::shared_ptr<dwarf::spec::formal_parameter_die> origin);
-            bound_var_info(wrapper_file& w,
-            	//const std::string& prefix,
-            	boost::shared_ptr<dwarf::spec::type_die> type,
-	            const module_ptr defining_module,
-	            boost::shared_ptr<dwarf::spec::unspecified_parameters_die> origin);
+			std::string cxx_name;
+        	boost::shared_ptr<dwarf::spec::type_die> cxx_type; // is a STATIC type (DWARF-supplied bound)
+			module_ptr valid_in_module;
         };
-        typedef std::map<std::string, bound_var_info> environment;
+        //typedef std::map<std::string, bound_var_info> environment;
+		struct environment : public std::map<std::string, bound_var_info>
+		{
+		private:
+			typedef std::map<std::string, bound_var_info> super;
+		public:
+			const bound_var_info& operator[](const std::string& k) const
+			{ auto found = this->find(k); assert(found != this->end()); return found->second; }
+			bound_var_info& operator[](const std::string& k) 
+			{ return this->super::operator[](k);  }
+		};
         typedef environment::value_type binding;
-        std::string cxx_name_for_binding(const binding& binding)
-        {
-        	/* FIXME: this logic needs to match the logic used in emit_function_header
-             * in the case of arguments. */
-            std::ostringstream ident_str;
-            ident_str << "__cake_" << binding.second.prefix << binding.second.count 
-            	<< "_" << binding.first;
-            return ident_str.str();
-        }
+//         instd::string cxx_name_for_binding(const binding& binding)
+//         {
+//         	/* FIXME: this logic needs to match the logic used in emit_function_header
+//              * in the case of arguments. */
+//             std::ostringstream ident_str;
+//             ident_str << "__cake_" << binding.second.prefix << binding.second.count 
+//             	<< "_" << binding.first;
+//             return ident_str.str();
+//         }
 		
 		/* All code-generation functions take one of these as an argument. 
 		 * However, which of its members must be present for a given language
@@ -100,6 +90,7 @@ namespace cake
 			{
 				module_ptr source;
 				module_ptr sink;
+				module_ptr current;
 			} modules;
 			
 			// source event 
@@ -127,37 +118,47 @@ namespace cake
 			
 			context(wrapper_file& w, module_ptr source, module_ptr sink, 
 				const environment& initial_env) 
-			: req(w.r), derivation(w.d), ns_prefix(w.ns_prefix), 
-			  modules({source, sink}), opt_source(), dwarf_context(), env(initial_env) {}
+			: req(w.m_r), derivation(w.m_d), ns_prefix(w.ns_prefix), 
+			  modules({source, sink, source}), opt_source(), 
+			  dwarf_context((dwarf_context_s)
+			                {source->get_ds().toplevel(),
+			                 sink->get_ds().toplevel()}), 
+			  env(initial_env) {}
 		};
-        
-		bool subprogram_returns_void(
-        	boost::shared_ptr<dwarf::spec::subprogram_die> subprogram);
 		
-        bool treat_subprogram_as_untyped(
-        	boost::shared_ptr<dwarf::spec::subprogram_die> subprogram);
+		bool subprogram_returns_void(
+			boost::shared_ptr<dwarf::spec::subprogram_die> subprogram);
+		
+		bool treat_subprogram_as_untyped(
+			boost::shared_ptr<dwarf::spec::subprogram_die> subprogram);
 
 		module_ptr module_of_die(boost::shared_ptr<dwarf::spec::basic_die> p_d);
-            
-        std::string get_type_name(
-        	boost::shared_ptr<dwarf::spec::type_die> t/*,
-            	const std::string& namespace_prefix*/);
+			
+		std::string get_type_name(
+			boost::shared_ptr<dwarf::spec::type_die> t/*,
+				const std::string& namespace_prefix*/);
 		
 		// Cake high-level constructs
 		environment initial_environment(
-            antlr::tree::Tree *pattern,
-            module_ptr source_module);
+			antlr::tree::Tree *pattern,
+			module_ptr source_module);
+		environment merge_environment(
+			const environment& env,
+			const environment& new_bindings
+			);
+		environment crossover_environment(
+			const environment& env,
+			module_ptr new_module_context
+			);
 		
-        void open_value_conversion(
-	    	link_derivation::iface_pair ifaces_context,
-    	    boost::shared_ptr<dwarf::spec::type_die> from_type,
-            //const std::string& from_namespace,
-            module_ptr from_module,
-            boost::shared_ptr<dwarf::spec::type_die> to_type/*,
-            const std::string& to_namespace*/
-            , module_ptr to_module);
-        
-        void close_value_conversion();
+		void open_value_conversion(
+			link_derivation::iface_pair ifaces_context,
+			boost::shared_ptr<dwarf::spec::type_die> from_type,
+			boost::shared_ptr<dwarf::spec::type_die> to_type,
+			module_ptr from_module = module_ptr(),
+			module_ptr to_module = module_ptr());
+		
+		void close_value_conversion();
 		
 		std::vector<
 			std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
@@ -168,8 +169,7 @@ namespace cake
 			boost::shared_ptr< dwarf::spec::subprogram_die > first,
 			boost::shared_ptr< dwarf::spec::subprogram_die > second);
 		
-		// FIXME: don't provide trivial emitters
-		void emit_component_pair_classname(link_derivation::iface_pair p);
+		std::string component_pair_classname(link_derivation::iface_pair p);
 		
 		std::string new_ident(const std::string& prefix)
 		{
@@ -178,7 +178,8 @@ namespace cake
 			out << prefix << "_" << count++;
 			return out.str();
 		}
-
+		static const std::string wrapper_arg_name_prefix;
+		
 //    	void emit_event_pattern_as_function_call(
 //        	antlr::tree::Tree *pattern,
 //            const request::module_name_pair& sink_context, // sink module
@@ -186,61 +187,67 @@ namespace cake
 //            const dwarf::encap::Die_encap_subprogram& source_signature,
 //            environment env);
 		// 
-	    void emit_pattern_condition(
+	    void write_pattern_condition(
 			const context& ctxt,
             antlr::tree::Tree *pattern); 
             // FIXME: also need context about naming environment, to determine 
             // which names are new (to bind) and which denote preexisting values.
 //        	const link_derivation::ev_corresp_entry& corresp_pair);
-
-	    void emit_sink_action(
-			const context& ctxt,
-        	antlr::tree::Tree *action);
         
-        std::pair<std::string, std::string>
-        emit_event_corresp_stub(
+		struct post_emit_status
+		{
+			std::string result_fragment;
+			std::string success_fragment;
+			environment new_bindings;
+		};
+		
+        //std::pair<std::string, std::string>
+        //emit_event_corresp_stub(
+		//	const context& ctxt,
+    	//    antlr::tree::Tree *stub);
+
+		post_emit_status
+		emit_stub_expression_as_statement_list(
 			const context& ctxt,
-    	    antlr::tree::Tree *stub);
+			antlr::tree::Tree *expr,
+			boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type);   
 
-	    std::pair<std::string, std::string> 
-        emit_stub_expression_as_statement_list(
+		post_emit_status
+		emit_stub_function_call(
 			const context& ctxt,
-    		antlr::tree::Tree *expr);   
+			antlr::tree::Tree *call_expr,
+			boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type);
 
-		std::pair<std::string, std::string> 
-        emit_stub_function_call(
-        	const context& ctxt,
-			antlr::tree::Tree *call_expr);
-
-		void 
-		emit_bound_var_rvalue(
-			const context& ctxt, 
-			const binding& bound_var);
+//		//void 
+//		std::string
+//		//emit_bound_var_rvalue(
+//			reference_bound_variable(
+//			const context& ctxt, 
+//			const binding& bound_var);
 
 		// C++ primitives.
-		void emit_function_header(
+		void write_function_header(
 			antlr::tree::Tree *event_pattern,
 			const std::string& function_name_to_use,
 			boost::shared_ptr<dwarf::spec::subprogram_die> subprogram,
 			const std::string& arg_name_prefix,
-			const request::module_name_pair& caller_context,
+			module_ptr caller_context,
 			bool emit_types = true,
 			boost::shared_ptr<dwarf::spec::subprogram_die> 
 				unique_called_subprogram = boost::shared_ptr<dwarf::spec::subprogram_die>());
 
-		void emit_symbol_reference_expr_from_dwarf_ident(
+		std::string get_dwarf_ident(
 			const context& ctxt,
 			antlr::tree::Tree *definite_member_name);
 
-		void emit_symbol_reference_expr_from_dwarf_ident(
+		std::string get_dwarf_ident(
 			const context& ctxt,
 			const std::string& ident);
 
-		void emit_constant_expr(
+		std::string constant_expr_eval_and_cxxify(
 			const context& ctxt,
 			antlr::tree::Tree *constant_expr);
-		
-		// compile-time evaluator
+
 		long double eval_const_expr(
 			const context& ctxt,
 			antlr::tree::Tree *expr);

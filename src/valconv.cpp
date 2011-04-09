@@ -400,26 +400,26 @@ namespace cake
 
 			std::string from_ident;
 			wrapper_file::environment env;
-			env.insert(std::make_pair("__cake_from", 
-				wrapper_file::bound_var_info(
-					w,
+			env.insert(std::make_pair(std::string("__cake_from"), 
+				(wrapper_file::bound_var_info) {
 					"from",
 					source_data_type,
-					pre_context_pair,
-					boost::shared_ptr<dwarf::spec::program_element_die>(source_data_type)
-				)));
+					source_module
+					}));
+			wrapper_file::context ctxt(w, source_module, target_module, env);
 
-			auto names = w.emit_stub_expression_as_statement_list(
-        		i_name_matched->second.stub, modules, pre_context_pair, post_context_pair,
-            	boost::shared_ptr<dwarf::spec::type_die>(), env);
-			m_out << "assert(" << names.first << ");" << std::endl;
+			auto result = w.emit_stub_expression_as_statement_list(ctxt,
+				i_name_matched->second.stub,
+				sink_data_type);
+				//, modules, pre_context_pair, post_context_pair,
+				//boost::shared_ptr<dwarf::spec::type_die>(), env);
+			m_out << "assert(" << result.success_fragment << ");" << std::endl;
 			m_out << "__cake_p_buf->" << i_name_matched->first
 				<< " = ";
-			w.emit_component_pair_classname(modules);
+			m_out << w.component_pair_classname(modules);
 			m_out << "::value_convert_from_"
 				<< ((modules.first == source_module) ? "first_to_second" : "second_to_first")
 				<< "<" << "__typeof(__cake_p_buf->" << i_name_matched->first << ")"
-				//get_type_name(/*target_type*/ i_name_matched->second. )
 				<< ">(__cake_from." << i_name_matched->first << ");" << std::endl;
 		}
 

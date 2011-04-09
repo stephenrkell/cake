@@ -4,6 +4,7 @@
 #include "link.hpp"
 #include "wrapsrc.hpp"
 #include <sstream>
+#include <algorithm>
 #include <cmath>
 
 using boost::dynamic_pointer_cast;
@@ -12,6 +13,8 @@ using boost::shared_ptr;
 
 namespace cake
 {
+	const std::string wrapper_file::wrapper_arg_name_prefix = "__cake_arg";
+
 	bool wrapper_file::treat_subprogram_as_untyped(
 		boost::shared_ptr<dwarf::spec::subprogram_die> subprogram)
 	{
@@ -38,12 +41,12 @@ namespace cake
 		return false;
 	}			
 	
-   void wrapper_file::emit_function_header(
+   void wrapper_file::write_function_header(
         antlr::tree::Tree *event_pattern,
         const std::string& function_name_to_use,
         shared_ptr<subprogram_die> subprogram,
         const std::string& arg_name_prefix,
-        const module_ptr calling_module, // HACK: don't do this; make a pre-pass to guess signature & store in caller's DWARF info
+        module_ptr calling_module, // HACK: don't do this; make a pre-pass to guess signature & store in caller's DWARF info
         bool emit_types /*= true*/,
 		boost::shared_ptr<dwarf::spec::subprogram_die> unique_called_subprogram)
     {
@@ -68,14 +71,14 @@ namespace cake
 				if (found_vec.size() == 1)
 				{
 					// we're in luck
-					emit_component_type_name(found_vec.at(0));
+					m_out << get_type_name(found_vec.at(0));
 				}
 				else 
 				{
 					m_out << " ::cake::unspecified_wordsize_type";
 				}
 			}
-            else emit_component_type_name(*ret_type);
+            else m_out << get_type_name(*ret_type);
              
             m_out << ' ';
         }
@@ -155,14 +158,14 @@ namespace cake
 					if ((*i_fp)->get_name())
 					{
                     	// output the variable name, prefixed 
-                    	m_out << ' ' << arg_name_prefix << argnum << '_' << *(*i_fp)->get_name();
+                    	m_out << ' ' << arg_name_prefix << argnum /*<< '_' << *(*i_fp)->get_name()*/;
 					}
 					else
 					{
                     	// output the argument type and a dummy name
                     	//if (emit_types) m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
                     	//    *(*i_fp)->get_type()));
-                    	m_out << ' ' << arg_name_prefix << argnum << "_dummy"/* << argnum*/;
+                    	m_out << ' ' << arg_name_prefix << argnum /*<< "_dummy"/* << argnum*/;
 					}
 					goto next;
 				}
@@ -198,7 +201,7 @@ namespace cake
                                     if (emit_types) m_out << (ignore_dwarf_args ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
                                 	    *(*i_arg)->get_type()));
                                     // output the variable name, prefixed 
-                                    m_out << ' ' << arg_name_prefix << argnum << '_' << mn.at(0);
+                                    m_out << ' ' << arg_name_prefix << argnum /*<< '_' << mn.at(0)*/;
 	                            } break;
                             case CAKE_TOKEN(INDEFINITE_MEMBER_NAME):
                     	    case CAKE_TOKEN(METAVAR):
@@ -206,7 +209,7 @@ namespace cake
                             	// output the argument type and a dummy name
                                 if (emit_types) m_out << (ignore_dwarf_args ? "::cake::unspecified_wordsize_type" : compiler.name_for(
                                 	*(*i_arg)->get_type()));
-                                m_out << ' ' << arg_name_prefix << argnum << "_dummy"/* << argnum*/;
+                                m_out << ' ' << arg_name_prefix << argnum /*<< "_dummy"/* << argnum*/;
                                 break;
                             default: RAISE_INTERNAL(valuePattern, "not a value pattern");
                         } // end switch
@@ -279,14 +282,14 @@ namespace cake
 				if ((*i_fp)->get_name())
 				{
                     // output the variable name, prefixed 
-                    m_out << ' ' << arg_name_prefix << argnum << '_' << *(*i_fp)->get_name();
+                    m_out << ' ' << arg_name_prefix << argnum /*<< '_' << *(*i_fp)->get_name()*/;
 				}
 				else
 				{
                     // output the argument type and a dummy name
                     //if (emit_types) m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
                     //    *(*i_fp)->get_type()));
-                    m_out << ' ' << arg_name_prefix << argnum << "_dummy"/* << argnum*/;
+                    m_out << ' ' << arg_name_prefix << argnum/* << "_dummy"/* << argnum*/;
 				}
 				goto next;
         } // end switch
@@ -361,26 +364,26 @@ namespace cake
 		// output prototype for __real_
 		m_out << "extern \"C\" { " << std::endl;
 		m_out << "extern ";
-		emit_function_header(
+		write_function_header(
 				corresps.at(0)->second.source_pattern,
-				"__real_" + *callsite_signature.get_name(),
+				"__real_" + *callsite_signature->get_name(),
 				callsite_signature,
-				"__cake_arg", module_of_die(callsite_signature), true, unique_called_subprogram);
+				wrapper_arg_name_prefix, module_of_die(callsite_signature), true, unique_called_subprogram);
 		m_out << " __attribute__((weak));" << std::endl;
 		// output prototype for __wrap_
-		emit_function_header(
+		write_function_header(
 				corresps.at(0)->second.source_pattern,
-				"__wrap_" + *callsite_signature.get_name(),
+				"__wrap_" + *callsite_signature->get_name(),
 				callsite_signature,
-				"__cake_arg", module_of_die(callsite_signature), true, unique_called_subprogram);
+				wrapper_arg_name_prefix, module_of_die(callsite_signature), true, unique_called_subprogram);
 		m_out << ';' << std::endl;
 		m_out << "} // end extern \"C\"" << std::endl;
 		// output wrapper
-		emit_function_header(
+		write_function_header(
 				corresps.at(0)->second.source_pattern,
-				"__wrap_" + *callsite_signature.get_name(),
+				"__wrap_" + *callsite_signature->get_name(),
 				callsite_signature,
-				"__cake_arg", module_of_die(callsite_signature), true, unique_called_subprogram);
+				wrapper_arg_name_prefix, module_of_die(callsite_signature), true, unique_called_subprogram);
 		m_out << std::endl;
 		m_out << " {";
 		m_out.inc_level();
@@ -397,123 +400,346 @@ namespace cake
 		 */
 
 		// 3. emit wrapper definition -- this is a sequence of "if" statements
-        for (link_derivation::ev_corresp_pair_ptr_list::iterator i_pcorresp = corresps.begin();
-        		i_pcorresp != corresps.end(); i_pcorresp++)
-        {
-            antlr::tree::Tree *pattern = (*i_pcorresp)->second.source_pattern;
-            antlr::tree::Tree *action = (*i_pcorresp)->second.sink_expr;
-            module_ptr source = (*i_pcorresp)->second.source;
-            module_ptr sink = (*i_pcorresp)->second.sink;
+		for (link_derivation::ev_corresp_pair_ptr_list::iterator i_pcorresp = corresps.begin();
+				i_pcorresp != corresps.end(); i_pcorresp++)
+		{
+			antlr::tree::Tree *pattern = (*i_pcorresp)->second.source_pattern;
+			antlr::tree::Tree *action = (*i_pcorresp)->second.sink_expr;
+			antlr::tree::Tree *return_leg = (*i_pcorresp)->second.return_leg;
+			antlr::tree::Tree *source_infix_stub = (*i_pcorresp)->second.source_infix_stub;
+			antlr::tree::Tree *sink_infix_stub = (*i_pcorresp)->second.sink_infix_stub;
+			module_ptr source = (*i_pcorresp)->second.source;
+			module_ptr sink = (*i_pcorresp)->second.sink;
 
 			// create a code generation context
 			context ctxt(*this, 
 				source, sink,
-				initial_environment(pattern, source_module));
+				initial_environment(pattern, source));
 			
 			// emit a condition
 			m_out << "if (";
-			emit_pattern_condition(ctxt, pattern); // emit if-test
+			write_pattern_condition(ctxt, pattern); // emit if-test
 				
-            m_out << ")" << std::endl;
-            m_out << "{";
-            m_out.inc_level();
-            m_out << std::endl;
+			m_out << ")" << std::endl;
+			m_out << "{";
+			m_out.inc_level();
+			m_out << std::endl;
 			
-			// emit sink action, including return statement
-            emit_sink_action(ctxt, action);
+			// here goes the pre-arrow infix stub
+			auto status1 = 
+				(source_infix_stub && GET_CHILD_COUNT(source_infix_stub) > 0) ?
+					emit_stub_expression_as_statement_list(
+						ctxt,
+						source_infix_stub,
+						shared_ptr<type_die>()) // FIXME: really no type expectations here?
+				: (post_emit_status){"((void)0)", "true", environment()};
+			// now update the environment to add new let-bindings and "it"
+			// FIXME: handle failure of the infix stub here
+			auto saved_env1 = ctxt.env;
+			auto new_env1 = merge_environment(ctxt.env, status1.new_bindings);
+			new_env1["__cake_it"] = (bound_var_info) {
+				status1.result_fragment,
+				shared_ptr<type_die>(),
+				ctxt.modules.source };
+
+			// crossover point
+			ctxt.modules.current = ctxt.modules.sink;
+			m_out << "// source->sink crossover point" << std::endl;
+			ctxt.env = crossover_environment(new_env1, sink);
+			m_out << "update_co_objects(REP_ID(" << m_d.name_of_module(source)
+				<< "), REP_ID(" << m_d.name_of_module(sink) << "));" << std::endl;
+			// -- we need to modify the environment:
+
+			// FIXME: here goes the post-arrow infix stub
+			auto status2 = 
+				(sink_infix_stub && GET_CHILD_COUNT(sink_infix_stub) > 0) ?
+					emit_stub_expression_as_statement_list(
+					ctxt,
+					sink_infix_stub,
+					shared_ptr<type_die>()) // FIXME: really no type expectations here?
+					: (post_emit_status){"((void)0)", "true", environment()};
+			auto saved_env2 = ctxt.env;
+			auto new_env2 = merge_environment(ctxt.env, status2.new_bindings);
+			new_env2["__cake_it"] = (bound_var_info) {
+				status2.result_fragment,
+				shared_ptr<type_die>(),
+				ctxt.modules.sink };
+			
+			// emit sink action, *NOT* including return statement
+			std::cerr << "Processing stub action: " << CCP(TO_STRING_TREE(action)) << std::endl;
+			assert(GET_TYPE(action) == CAKE_TOKEN(EVENT_SINK_AS_STUB));
+			post_emit_status status3;
+			{
+				INIT;
+				BIND2(action, stub);
+
+				std::cerr << "Emitting event correspondence stub: "
+					<< CCP(TO_STRING_TREE(stub)) << std::endl;
+				m_out << "// " << CCP(TO_STRING_TREE(stub)) << std::endl;
+
+				// the sink action is defined by a stub, so evaluate that 
+				
+				// -- the cxx_expected_type is FIXME for now, the unique
+				// corresponding type of the return value
+				// -- this is broken when the return leg might change the cxx type of "it"
+				boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type 
+					= treat_subprogram_as_untyped(ctxt.opt_source->signature) 
+						? boost::shared_ptr<dwarf::spec::type_die>()
+						: m_d.unique_corresponding_dwarf_type(
+							*ctxt.opt_source->signature->get_type(),
+							ctxt.modules.sink,
+							true /* flow_from_type_module_to_corresp_module */);
+				std::cerr << "Event sink stub is: " << CCP(TO_STRING_TREE(stub)) << std::endl;
+				assert(GET_TYPE(stub) == CAKE_TOKEN(INVOKE_WITH_ARGS));
+				status3 = emit_stub_expression_as_statement_list(
+					ctxt, stub, cxx_expected_type);
+			}
+			// update environment
+			auto new_env3 = merge_environment(ctxt.env, status3.new_bindings);
+			new_env3["__cake_it"] = (bound_var_info) {
+				status3.result_fragment,
+				shared_ptr<type_die>(),
+				ctxt.modules.sink };
+			
+			// crossover point
+			m_out << "// source<-sink crossover point" << std::endl;
+			m_out << "update_co_objects(REP_ID(" << m_d.name_of_module(sink)
+				<< "), REP_ID(" << m_d.name_of_module(source) << "));" << std::endl;
+			ctxt.modules.current = ctxt.modules.source;
+			// update environment
+			ctxt.env = crossover_environment(new_env3, source);
+			
+			// emit the return leg, if there is one; otherwise, status is the old status
+			auto status4 = 
+				(return_leg && GET_CHILD_COUNT(return_leg) > 0) ?
+					emit_stub_expression_as_statement_list(
+					ctxt,
+					return_leg,
+					subprogram_returns_void(ctxt.opt_source->signature) ? 
+						shared_ptr<type_die>()
+					:	*ctxt.opt_source->signature->get_type())
+					: status3;
+			// update environment -- just "it"
+			auto new_env4 = merge_environment(ctxt.env, status4.new_bindings);
+			new_env4["__cake_it"] = (bound_var_info) {
+				status4.result_fragment,
+				shared_ptr<type_die>(),
+				ctxt.modules.source };
+			ctxt.env = new_env4;
+			
+			// emit the return statement
+			if (!subprogram_returns_void(ctxt.opt_source->signature)) 
+			{
+				/* Main problem here is that we don't know the C++ type of the
+				 * stub's result value. So we have to make value_convert available
+				 * as a function template here. Hopefully this will work. */
+
+				// now return from the wrapper as appropriate for the stub's exit status
+				m_out << "if (" << status4.success_fragment << ") return "
+					<< ctxt.env["__cake_it"].cxx_name;
+
+				m_out << ";" << std::endl;
+
+				m_out << "else return __cake_failure_with_type_of(" 
+					<< ctxt.env["__cake_it"].cxx_name << ");" << std::endl;
+				//m_out << "return "; // don't dangle return
+			}
+			else
+			{
+				// but for safety, to avoid fall-through in the wrapper
+				m_out << "return;" << std::endl; 
+			}
 
 			/* The sink action should leave us with a return value (if any)
 			 * and a success state / error value. We then encode these and
 			 * output the return statement *here*. */
-            m_out.dec_level();
-            m_out << "}" << std::endl;
-        }
+			m_out.dec_level();
+			m_out << "}" << std::endl;
+		}
 		
 		// 4. if none of the wrapper conditions was matched 
 		m_out << "else ";
 		m_out << "return ";
-		emit_function_header(
+		write_function_header(
 				corresps.at(0)->second.source_pattern,
-				"__real_" + *callsite_signature.get_name(),
+				"__real_" + *callsite_signature->get_name(),
 				callsite_signature,
-				"__cake_arg", module_of_die(callsite_signature), false, unique_called_subprogram);
+				wrapper_arg_name_prefix, module_of_die(callsite_signature), false, unique_called_subprogram);
 		m_out << ';' << std::endl; // end of return statement
 		m_out.dec_level();
 		m_out << '}' << std::endl; // end of block
 	}
 
-    wrapper_file::bound_var_info::bound_var_info(
-    	wrapper_file& w,
-        const std::string& prefix,
-        boost::shared_ptr<dwarf::spec::type_die> type,
-	    module_ptr defining_module,
-	    boost::shared_ptr<dwarf::spec::program_element_die> origin)
-        : prefix(prefix), type(type), defining_module(defining_module), origin(origin)
-        {
-            // this version is *not* for formal parameters! since they should
-            // have different names
-            assert((origin->get_tag() != DW_TAG_formal_parameter)
-                || (std::cerr << *origin, false));
-            this->count = w.binding_count++;
-        }
-    // special version for formal parameters! works out count and prefix
-    // -- note: not virtual, so make sure we only use this for formal_parameter DIEs
-    wrapper_file::bound_var_info::bound_var_info(
-    	wrapper_file& w,
-        //const std::string& prefix,
-        boost::shared_ptr<dwarf::spec::type_die> type,
-	    module_ptr defining_module,
-	    boost::shared_ptr<dwarf::spec::formal_parameter_die> origin)
-        : prefix("arg"), type(type), defining_module(defining_module), origin(origin) 
-    {
-        assert(origin || (std::cerr << std::hex << &origin << std::dec << std::endl, false));
-        assert(origin->get_parent() || (std::cerr << *origin, false));
-        auto p_subprogram = boost::dynamic_pointer_cast<dwarf::spec::subprogram_die>(
-            origin->get_parent());
-        int i = 0;
-        bool found = false;
-        for (auto i_fp = p_subprogram->formal_parameter_children_begin();
-            i_fp != p_subprogram->formal_parameter_children_end();
-            i_fp++)
-        {
-            if ((*i_fp)->get_offset() == origin->get_offset())
-            {
-                found = true;
-                break;
-            }
-            else ++i;
-        }
-        if (!found) throw InternalError(0, "couldn't discover argument position");
+//     wrapper_file::bound_var_info::bound_var_info(
+//     	wrapper_file& w,
+//         boost::shared_ptr<dwarf::spec::type_die> type,
+// 	    module_ptr defining_module,
+// 	    const std::string& cxx_name)
+//         : prefix(cxx_name), type(type), defining_module(defining_module), origin(origin)
+//         {
+//             // this version is *not* for formal parameters! since they should
+//             // have different names
+//             assert((origin->get_tag() != DW_TAG_formal_parameter)
+//                 || (std::cerr << *origin, false));
+//             this->count = w.binding_count++; // ignored
+// 			std::ostringstream s;
+// 			s << prefix << count;
+// 			this->cxx_name = s.str();
+//         }
+//     // special version for formal parameters! works out count and prefix
+//     // -- note: not virtual, so make sure we only use this for formal_parameter DIEs
+//     wrapper_file::bound_var_info::bound_var_info(
+//     	wrapper_file& w,
+//         //const std::string& prefix,
+//         boost::shared_ptr<dwarf::spec::type_die> type,
+// 	    module_ptr defining_module,
+// 	    boost::shared_ptr<dwarf::spec::formal_parameter_die> origin)
+//         : prefix("arg"), type(type), defining_module(defining_module), origin(origin) 
+//     {
+//         assert(origin || (std::cerr << std::hex << &origin << std::dec << std::endl, false));
+//         assert(origin->get_parent() || (std::cerr << *origin, false));
+//         auto p_subprogram = boost::dynamic_pointer_cast<dwarf::spec::subprogram_die>(
+//             origin->get_parent());
+//         int i = 0;
+//         bool found = false;
+//         for (auto i_fp = p_subprogram->formal_parameter_children_begin();
+//             i_fp != p_subprogram->formal_parameter_children_end();
+//             i_fp++)
+//         {
+//             if ((*i_fp)->get_offset() == origin->get_offset())
+//             {
+//                 found = true;
+//                 break;
+//             }
+//             else ++i;
+//         }
+//         if (!found) throw InternalError(0, "couldn't discover argument position");
+// 
+//         count = i;
+// 		std::ostringstream s;
+// 		s << prefix << count;
+// 		this->cxx_name = s.str();
+//     }
+//     wrapper_file::bound_var_info::bound_var_info(
+//     	wrapper_file& w,
+//         //const std::string& prefix,
+//         boost::shared_ptr<dwarf::spec::type_die> type,
+// 	    module_ptr defining_module,
+// 	    boost::shared_ptr<dwarf::spec::unspecified_parameters_die> origin)
+//         : prefix("arg"), type(type), defining_module(defining_module), origin(origin) 
+//     {
+//         // We keep in the wrapper_file a map keyed on a stable identifier
+//         // for the DIE, which counts the arguments that we've bound from
+//         // this particular unspecified_parameters die, so that we can issue
+//         // a new arg number for each one.
+// 
+//         // NOTE: this assumes that in the same wrapper_file, we don't 
+//         // ever do more than one round of binding names to the same arguments
+//         // -- otherwise we'll get a continuation of the previous sequence
+//         // of numbers.
+// 
+//         // FIXME: doesn't work for varargs at the moment!
+//         // We need to get the number of declared arguments, and start
+//         // the count there rather than at zero (at present).
+//         count = w.arg_counts[w.get_stable_die_ident(origin)]++;
+// 		std::ostringstream s;
+// 		s << prefix << count;
+// 		this->cxx_name = s.str();
+//     }
 
-        count = i;
-    }
-    wrapper_file::bound_var_info::bound_var_info(
-    	wrapper_file& w,
-        //const std::string& prefix,
-        boost::shared_ptr<dwarf::spec::type_die> type,
-	    module_ptr defining_module,
-	    boost::shared_ptr<dwarf::spec::unspecified_parameters_die> origin)
-        : prefix("arg"), type(type), defining_module(defining_module), origin(origin) 
-    {
-        // We keep in the wrapper_file a map keyed on a stable identifier
-        // for the DIE, which counts the arguments that we've bound from
-        // this particular unspecified_parameters die, so that we can issue
-        // a new arg number for each one.
+	wrapper_file::environment 
+	wrapper_file::crossover_environment(
+		const environment& env,
+		module_ptr new_module_context
+		)
+	{
+		/* Here we:
+		 * - emit a bunch of code generating new cxx names for each binding;
+		 * - this code also applies value conversions;
+		 * - we resolve immediate aliasing, since we may have multiple bindings
+		 *   for the same C++ variable;
+		 * - we don't (FIXME) do anything about indirect aliasing yet. This is
+		 *   where different C++ variables reach the same object(s).
+		 *   We only want to apply a given value correspondence
+		 *   (update or initialization) once per object per crossing.
+		 *   Ultimately this means giving each crossing a timestamp,
+		 *   and remembering, for any co-object,
+		 *   at which timestamp it was last updated.
+		 *   The update_co_objects pass, which happens after us, can then avoid
+		 *   re-running any rules which we have only just applied here. 
+		 *   This is the "object graph semantics" in the thesis: these semantics
+		 *   apply for any given crossover point (although the thesis doesn't
+		 *   use the phrase "crossover point", sadly). */
+		
+		environment new_env;
+		for (auto i_binding = env.begin(); i_binding != env.end(); i_binding++)
+		{
+			// sanity check
+			assert(i_binding->second.valid_in_module != new_module_context);
+			
+			// create a new cxx ident for the binding
+			auto ident = new_ident("xover_" + i_binding->first);
+			
+			// output its initialization
+			auto target_type = m_d.unique_corresponding_dwarf_type(
+				i_binding->second.cxx_type,
+				new_module_context,
+				true /* flow_from_type_module_to_corresp_module */);
+			m_out << "auto " << ident << " = ";
+			open_value_conversion(
+				link_derivation::sorted(new_module_context, i_binding->second.valid_in_module),
+				i_binding->second.cxx_type,
+				target_type
+			);
+			m_out << i_binding->second.cxx_name;
+			close_value_conversion();
+			
+			// add it to the new environment
+			new_env[i_binding->first] = (bound_var_info) {
+				ident,
+				target_type,
+				new_module_context
+			};
+		}
+		// sanity check
+		assert(new_env.size() == env.size());
+		
+		return new_env;
+	}
 
-        // NOTE: this assumes that in the same wrapper_file, we don't 
-        // ever do more than one round of binding names to the same arguments
-        // -- otherwise we'll get a continuation of the previous sequence
-        // of numbers.
+	wrapper_file::environment 
+	wrapper_file::merge_environment(
+		const environment& env,
+		const environment& new_bindings
+		)
+	{
+		environment new_env = env;
+	
+		// sanity check: all elements should be valid in the same module
+		module_ptr seen_module = 
+			(env.size() > 0)  ? env.begin()->second.valid_in_module : module_ptr();
+		
+		for (auto i_new = new_bindings.begin();
+				i_new != new_bindings.end();
+				i_new++)
+		{
+			if (seen_module)
+			{
+				assert(i_new->second.valid_in_module == seen_module);
+			}
+			else seen_module = i_new->second.valid_in_module;
+			
+			new_env.insert(*i_new);
+		}
+		
+		return new_env;
+	}
 
-        // FIXME: doesn't work for varargs at the moment!
-        // We need to get the number of declared arguments, and start
-        // the count there rather than at zero (at present).
-        count = w.arg_counts[w.get_stable_die_ident(origin)]++;
-    }
-    
-	environment wrapper_file::initial_environment(
-		module_ptr source_module,
-		antlr::tree::Tree *pattern)
+	wrapper_file::environment 
+	wrapper_file::initial_environment(
+		antlr::tree::Tree *pattern,
+		module_ptr source_module
+		)
 	{
 		environment env, *out_env = &env;
 		
@@ -581,28 +807,27 @@ namespace cake
 			BIND3(pattern, eventParameterNamesAnnotation, KEYWORD_NAMES);
 			definite_member_name call_mn = read_definite_member_name(memberNameExpr);
 			if (call_mn.size() != 1) RAISE(memberNameExpr, "may not be compound");			
-			auto caller = request_context.first->all_compile_units().visible_resolve(
+			auto caller = source_module->get_ds().toplevel()->visible_resolve(
 				call_mn.begin(), call_mn.end());
 			if (!caller) RAISE(memberNameExpr, "does not name a visible function");
 			if ((*caller).get_tag() != DW_TAG_subprogram) 
 				RAISE(memberNameExpr, "does not name a visible function"); 
-			auto caller_subprogram = dynamic_cast<dwarf::encap::Die_encap_subprogram&>(*caller);
+			auto caller_subprogram = boost::dynamic_pointer_cast<subprogram_die>(caller);
 			
 			int argnum = 0;
-			dwarf::encap::formal_parameters_iterator i_caller_arg 
-			 = caller_subprogram.formal_parameters_begin();
-			int dummycount = 0;
+			auto i_caller_arg = caller_subprogram->formal_parameter_children_begin();
+			//int dummycount = 0;
 			FOR_REMAINING_CHILDREN(eventPattern)
 			{
 				boost::shared_ptr<dwarf::spec::type_die> p_arg_type = boost::shared_ptr<dwarf::spec::type_die>();
 				boost::shared_ptr<dwarf::spec::program_element_die> p_arg_origin;
 				
-				if (i_caller_arg == caller_subprogram.formal_parameters_end())
+				if (i_caller_arg == caller_subprogram->formal_parameter_children_end())
 				{
-					if (caller_subprogram.unspecified_parameters_begin() !=
-						caller_subprogram.unspecified_parameters_end())
+					if (caller_subprogram->unspecified_parameters_children_begin() !=
+						caller_subprogram->unspecified_parameters_children_end())
 					{
-						p_arg_origin = *caller_subprogram.unspecified_parameters_children_begin();
+						p_arg_origin = *caller_subprogram->unspecified_parameters_children_begin();
 					}
 					else RAISE(eventPattern, "too many arguments for function");
 				}
@@ -623,55 +848,48 @@ namespace cake
 					INIT;
 					BIND2(annotatedValuePattern, valuePattern);
 					
-					/* No matter what sort of value pattern we find, we generate a
-					 * bound name for the argument of the wrapper function. If the
-					 * pattern doesn't provide a name, it will be generated. So our
-					 * chosen name depends on the kind of pattern. */
-					std::string bound_name;
+					/* No matter what sort of value pattern we find, we generate at
+					 * least one binding for the argument of the wrapper function. If the
+					 * pattern doesn't provide a friendly name, only the default
+					 * __cake_arg name will be generated. Otherwise, *two* names will be
+					 * generated. */
+					boost::optional<std::string> friendly_name;
+					std::ostringstream s; s << wrapper_arg_name_prefix << argnum;
+					std::string basic_name = s.str();
 					switch(GET_TYPE(valuePattern))
 					{
 						case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
 							// could match anything, so bind name and continue
 							definite_member_name mn = read_definite_member_name(valuePattern);
 							if (mn.size() != 1) RAISE(valuePattern, "may not be compound");
-							bound_name = mn.at(0);
+							friendly_name = mn.at(0);
 						} break;
 						case CAKE_TOKEN(KEYWORD_CONST):
 						case CAKE_TOKEN(INDEFINITE_MEMBER_NAME): {
-							std::ostringstream s; s << "dummy"; s << dummycount++;
-							bound_name = s.str();
+							// we will bind a basic name but not a friendly one
 						} break;
 						default: RAISE(valuePattern, "unexpected token");
 					}
-					/* Now insert the binding. Which constructor we use depends on
-					 * whether the argument in the caller is described by a formal_parameter
-					 * or unspecified_parameters DIE. */
-					if (origin_as_fp)
-					{
-						out_env->insert(std::make_pair(bound_name, bound_var_info(
-							*this, //"arg",  -- this is inferred from the ^^^ constructor overload?
-							p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
-							source_module, // the *source* module
-							origin_as_fp)));  // the DIE of the argument in the caller's info
-					}
-					else
-					{
-						out_env->insert(std::make_pair(bound_name, bound_var_info(
-							*this, //"arg", 
-							p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
-							source_module,
-							origin_as_unspec)));  // the DIE of the argument in the caller's info
-					}
+					out_env->insert(std::make_pair(basic_name, 
+						(bound_var_info) { basic_name, // use the same name for both
+						p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
+						source_module 
+						}));
+					if (friendly_name) out_env->insert(std::make_pair(*friendly_name, 
+						(bound_var_info) { *friendly_name,
+						p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
+						source_module
+						}));
 				} // end ALIAS3(annotatedValuePattern
 				++argnum;
-				if (i_caller_arg != caller_subprogram.formal_parameters_end()) i_caller_arg++;
+				if (i_caller_arg != caller_subprogram->formal_parameter_children_end()) i_caller_arg++;
 			} // end FOR_REMAINING_CHILDREN(eventPattern
 		} // end ALIAS3(pattern, eventPattern, EVENT_PATTERN)
 		
 		return env;
 	} // end 
 					
-	void wrapper_file::emit_pattern_condition(
+	void wrapper_file::write_pattern_condition(
 			const context& ctxt,
 			antlr::tree::Tree *pattern)
 	{
@@ -689,7 +907,7 @@ namespace cake
 			
 			int argnum = 0;
 
-			int dummycount = 0;
+			//int dummycount = 0;
 			FOR_REMAINING_CHILDREN(eventPattern)
 			{
 				ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
@@ -709,24 +927,22 @@ namespace cake
 							assert(ctxt.env.find(bound_name) != ctxt.env.end());
 						} break;
 						case CAKE_TOKEN(INDEFINITE_MEMBER_NAME): {
-							std::ostringstream s; s << "dummy"; s << dummycount++;
+							// names beginning "dummy" are *not* in the environment
+							std::ostringstream s; s << wrapper_arg_name_prefix << argnum;
 							bound_name = s.str();
 							// no conditions -- match anything (and don't bind)
 						} break;
 						case CAKE_TOKEN(KEYWORD_CONST): {
-							std::ostringstream s; s << "dummy"; s << dummycount++;
+							// here we are matching a constant argument
+							std::ostringstream s; s << // "dummy"; s << dummycount++;
+								wrapper_arg_name_prefix << argnum;
 							bound_name = s.str();
 							boost::shared_ptr<dwarf::spec::type_die> p_arg_type;
 							// find bound val's type, if it's a formal parameter
 							assert(ctxt.env.find(bound_name) != ctxt.env.end());
 							
 							// recover argument type, if we have one
-							if (ctxt.env[bound_name].origin->get_tag()
-								== DW_TAG_formal_parameter)
-							{
-								p_arg_type = dynamic_pointer_cast<formal_parameter_die>(
-									ctxt.env[bound_name].origin)->get_type();
-							}
+							p_arg_type = ctxt.env[bound_name].cxx_type;
 							// we have a condition to output
 							if (emitted) m_out << " && ";
 							m_out << "cake::equal<";
@@ -738,8 +954,8 @@ namespace cake
 		" ::cake::unspecified_wordsize_type" );
 							m_out << ">()(";
 							//m_out << "arg" << argnum << ", ";
-							m_out << cxx_name_for_binding(*env.ctxt.find(bound_name)) << ", ";
-							emit_constant_expr(valuePattern, request_context);
+							m_out << ctxt.env[bound_name].cxx_name << ", ";
+							m_out << constant_expr_eval_and_cxxify(ctxt, valuePattern);
 							m_out << ")";
 							emitted = true;
 						} break;
@@ -750,65 +966,6 @@ namespace cake
 			}
 		}
 		if (!emitted) m_out << "true";
-	}
-
-
-	void wrapper_file::emit_sink_action(
-			const context& ctxt,
-			antlr::tree::Tree *action)
-	{
-		// this is a crossover point, so insert conversions according to context
-		std::cerr << "Processing stub action: " << CCP(TO_STRING_TREE(action)) << std::endl;
-		assert(GET_TYPE(action) == CAKE_TOKEN(EVENT_SINK_AS_STUB));
-		INIT;
-		BIND2(action, stub);
-		
-		std::cerr << "Emitting event correspondence stub: "
-			<< CCP(TO_STRING_TREE(stub)) << std::endl;
-		m_out << "// " << CCP(TO_STRING_TREE(stub)) << std::endl;
-		
-		// the sink action is defined by a stub, so evaluate that 
-
-		boost::shared_ptr<dwarf::spec::type_die> convert_to 
-			= treat_subprogram_as_untyped(ctxt.opt_source->signature) 
-				? boost::shared_ptr<dwarf::spec::type_die>()
-				: *source_signature.get_type();
-		
-		// the sink action is defined by a stub, so evaluate that 
-		// "names" will contain (success-varname, output-varname)
-		std::cerr << "Event sink stub is: " << CCP(TO_STRING_TREE(stub)) << std::endl;
-		assert(GET_TYPE(stub) == CAKE_TOKEN(INVOKE_WITH_ARGS));
-		auto names = emit_stub_expression_as_statement_list(
-			stub, ctxt); // FIXME: need convert_to?
-
-		if (!subprogram_returns_void(ctxt.opt_source->signature)) 
-		{
-			/* Main problem here is that we don't know the C++ type of the
-			* stub's result value. So we have to make value_convert available
-			* as a function template here. Hopefully this will work. */
-			
-			// now return from the wrapper as appropriate for the stub's exit status
-			m_out << "if (" << names.first << ") return ";
-			open_value_conversion(
-				link_derivation::sorted(ctxt.modules.source, ctxt.modules.second),
-				boost::shared_ptr<dwarf::spec::type_die>(), 
-				ctxt.modules.sink, 
-				convert_to , source_context.first);
-
-			// output result
-			m_out << names.second;
-
-			/*if (!subprogram_returns_void(callee_subprogram))*/ close_value_conversion();
-			m_out << ";" << std::endl;
-
-			m_out << "else return __cake_failure_with_type_of(" << names.second << ");" << std::endl;
-			m_out << "return ";
-		}
-		else
-		{
-			/* do nothing! No return is necessary. */
-		}
-		return names;
 	}
 	
 //	 void
@@ -866,10 +1023,14 @@ namespace cake
     void wrapper_file::open_value_conversion(
     	link_derivation::iface_pair ifaces_context,
     	boost::shared_ptr<dwarf::spec::type_die> from_type,
-        module_ptr from_module,
         boost::shared_ptr<dwarf::spec::type_die> to_type,
+        module_ptr from_module,
         module_ptr to_module)
     {
+		assert((from_type || from_module)
+			&& (to_type || to_module));
+		if (!from_module) from_module = module_of_die(from_type);
+		if (!to_module) to_module = module_of_die(to_type);
     	assert((!from_type || module_of_die(from_type) == from_module)
         	&& (!to_type || module_of_die(to_type) == to_module));
         
@@ -887,7 +1048,7 @@ namespace cake
         else
         {
         	// use the function template
-            emit_component_pair_classname(ifaces_context);
+            m_out << component_pair_classname(ifaces_context);
             
             if (ifaces_context.first == from_module)
             {
@@ -914,13 +1075,15 @@ namespace cake
 		m_out << ")";
 	}
     
-    void wrapper_file::emit_component_pair_classname(link_derivation::iface_pair ifaces_context)
+    std::string wrapper_file::component_pair_classname(link_derivation::iface_pair ifaces_context)
     {
-    	m_out << "cake::component_pair< " 
+		std::ostringstream s;
+    	s << "cake::component_pair< " 
         		<< ns_prefix << "::" << m_d.name_of_module(ifaces_context.first) << "::marker"
         		<< ", "
               	<< ns_prefix << "::" << m_d.name_of_module(ifaces_context.second) << "::marker"
                 << ">";
+		return s.str();
 	}
     
     /* We can emit stub expressions as *either* expressions or statements. As a statement 
@@ -946,110 +1109,178 @@ namespace cake
      their own statements and given names. Then we can reference their result by name.
      This will make debugging the generated code easier, although perhaps verbose. */
 
-	std::pair<std::string, std::string> 
+	wrapper_file::post_emit_status
 	wrapper_file::emit_stub_expression_as_statement_list(
+			const context& ctxt,
 			antlr::tree::Tree *expr,
-			link_derivation::iface_pair ifaces_context,
-			const request::module_name_pair& context, // sink module
-			const request::module_name_pair& source_context, // source module
-			///*boost::shared_ptr<dwarf::spec::type_die>*/ const std::string& cxx_result_type_name,
-			boost::shared_ptr<dwarf::spec::type_die> cxx_result_type,
-			environment env)
+			shared_ptr<type_die> expected_cxx_type)
+// 			,
+// 			link_derivation::iface_pair ifaces_context,
+// 			const request::module_name_pair& context, // sink module
+// 			const request::module_name_pair& source_context, // source module
+// 			///*boost::shared_ptr<dwarf::spec::type_die>*/ const std::string& cxx_result_type_name,
+// 			boost::shared_ptr<dwarf::spec::type_die> cxx_result_type,
+// 			environment env)
 	{
 		std::string ident;
 		switch(GET_TYPE(expr))
 		{
 			case CAKE_TOKEN(INVOKE_WITH_ARGS): // REMEMBER: algorithms are special
+				// and so is assert!
 				return emit_stub_function_call(
+					ctxt,
 					expr,
-					ifaces_context,
-					context, // sink module
-					source_context,
-					//cxx_result_type_name,
-					cxx_result_type,
-					env);
+					expected_cxx_type);
+					
+//					expr,
+//					ifaces_context,
+//					context, // sink module
+//					source_context,
+//					//cxx_result_type_name,
+//					cxx_result_type,
+//					env);
 			case CAKE_TOKEN(STRING_LIT):
-				ident = new_ident("bound");
+				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::string_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
-				return std::make_pair("true", ident);
+				return (post_emit_status){ident, "true", environment()};
 			case CAKE_TOKEN(INT):
-				ident = new_ident("bound");
+				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::int_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
-				return std::make_pair("true", ident);
+				return (post_emit_status){ident, "true", environment()};
 			case CAKE_TOKEN(FLOAT):
-				ident = new_ident("bound");
+				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::float_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
-				return std::make_pair("true", ident);
+				return (post_emit_status){ident, "true", environment()};
 			case CAKE_TOKEN(KEYWORD_VOID):
-				//std::string ident = new_ident("bound");
+				//std::string ident = new_ident("temp");
 				//m_out << "auto " << ident << " = ";
 				//m_out << "cake::style_traits<0>::void_value()";
-				return std::make_pair("true", /*ident*/ "((void)0)");
+				return (post_emit_status){"((void)0)", "true", environment()};
 			case CAKE_TOKEN(KEYWORD_NULL):
-				ident = new_ident("bound");
+				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::null_value();" << std::endl;
-				return std::make_pair("true", ident);
+				return (post_emit_status){ident, "true", environment()};
 			case CAKE_TOKEN(KEYWORD_TRUE):
-				ident = new_ident("bound");
+				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::true_value();" << std::endl;
-				return std::make_pair("true", ident);
+				return (post_emit_status){ident, "true", environment()};
 			case CAKE_TOKEN(KEYWORD_FALSE):
-				ident = new_ident("bound");
+				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::false_value();" << std::endl;
-				return std::make_pair("true", ident);
+				return (post_emit_status){ident, "true", environment()};
 			case CAKE_TOKEN(IDENT):
 				{
-					/* If it's in our environment, it might need value conversion. */
-					std::string s = CCP(GET_TEXT(expr));
-					if (env.find(s) != env.end())
-					{
-						ident = new_ident("bound");
-						m_out << "auto " << ident << " = ";
-						emit_bound_var_rvalue(expr, ifaces_context, context, 
-							*env.find(s), env, cxx_result_type);
-						m_out << ";" << std::endl;
-						return std::make_pair("true", ident);
-					}
-					/* Even if it isn't, it might need value conversion. */
-					/* Otherwise it might be an argument (hence need value conversion)
-					 * or a global/static thing (defined in the dwarfhpp-generated headers). */
-					else return std::make_pair("true", 
-						ns_prefix + "::" // namespace for the current link block
-						+ /*callee_namespace_name*/context.second + "::" // namespace for the current module
-						+ CCP(TO_STRING(expr)) // the ident itself
-						); 
-						// FIXME: should resolve in DWARF info
+// 					/* If it's in our environment, it might need value conversion. */
+// 					std::string s = CCP(GET_TEXT(expr));
+// 					if (ctxt.env.find(s) != ctxt.env.end())
+// 					{
+// 						ident = new_ident("temp");
+// 						m_out << "auto " << ident << " = ";
+// 						emit_bound_var_rvalue(ctxt, *ctxt.env.find(s)/*, ifaces_context, context, 
+// 							*env.find(s), env, cxx_result_type*/);
+// 						m_out << ";" << std::endl;
+// 						return std::make_pair("true", ident);
+// 					}
+// 					/* Even if it isn't, it might need value conversion. */
+// 					/* Otherwise it might be an argument (hence need value conversion)
+// 					 * or a global/static thing (defined in the dwarfhpp-generated headers). */
+// 					else return std::make_pair("true", 
+// 						ctxt.ns_prefix + "::" // namespace for the current link block
+// 						+ /*callee_namespace_name*//*context.second*/ name_for_module(ctxt.modules.sink) + "::" // namespace for the current module
+// 						+ CCP(TO_STRING(expr)) // the ident itself
+// 						); 
+// 						// FIXME: should resolve in DWARF info
+					assert(ctxt.env.find(CCP(GET_TEXT(expr))) != ctxt.env.end());
+					/* When do we get asked to emit an IDENT?
+					 * Suppose we're recursively evaluating a big expression.
+					 * Eventually we will get down to the idents.
+					 * There's no point expanding an ident to an ident.
+					 * So broaden our interface slightly:
+					 * just as "names.second" can include "true" for trivial successes,
+					 * so "names.first" can include a simple ident reference or
+					 * value conversion. */
+					//assert(false);
+					
+					//emit_bound_var_rvalue(ctxt, *ctxt.env.find(CCP(GET_TEXT(expr))));
+					assert(ctxt.env[CCP(GET_TEXT(expr))].valid_in_module
+						== ctxt.modules.current);
+					return (post_emit_status){ ctxt.env[CCP(GET_TEXT(expr))].cxx_name,
+						"true", environment() };
+					//return std::make_pair(
+					//	reference_bound_variable(ctxt, *ctxt.env.find(CCP(GET_TEXT(expr)))),
+					//	"true");
 				}
 			case CAKE_TOKEN(KEYWORD_THIS):
 			case CAKE_TOKEN(KEYWORD_THAT):
+
 			case CAKE_TOKEN(KEYWORD_SUCCESS):
+
 			case CAKE_TOKEN(KEYWORD_OUT):
+
 			case CAKE_TOKEN(MEMBER_SELECT):
 			case CAKE_TOKEN(INDIRECT_MEMBER_SELECT):
 			case CAKE_TOKEN(ELLIPSIS): /* ellipsis is 'access associated' */
 			case CAKE_TOKEN(ARRAY_SUBSCRIPT):
-			case CAKE_TOKEN(COMPLEMENT):
-			case CAKE_TOKEN(NOT):
+
+			// memory management
+			case CAKE_TOKEN(KEYWORD_DELETE):
+			case CAKE_TOKEN(KEYWORD_NEW):
+			case CAKE_TOKEN(KEYWORD_TIE):
+
+			// these affect the expected cxx type
+			case CAKE_TOKEN(KEYWORD_AS):
+			case CAKE_TOKEN(KEYWORD_IN_AS):
+			case CAKE_TOKEN(KEYWORD_OUT_AS):
+				assert(false);
+			
+			ambiguous_arity_ops:
+			// may be unary (address-of) or binary
+			case CAKE_TOKEN(BITWISE_AND):
 			case CAKE_TOKEN(MINUS): // may be unary or binary!
 			case CAKE_TOKEN(PLUS): // may be unary or binary!
 			// dereference
 			case CAKE_TOKEN(MULTIPLY): // may be unary (dereference) or binary
-			case CAKE_TOKEN(KEYWORD_DELETE):
-			// may be unary (address-of) or binary
-			case CAKE_TOKEN(BITWISE_AND):
-			case CAKE_TOKEN(KEYWORD_NEW):
-			case CAKE_TOKEN(KEYWORD_TIE):
-			case CAKE_TOKEN(KEYWORD_AS):
-			case CAKE_TOKEN(KEYWORD_IN_AS):
-			case CAKE_TOKEN(KEYWORD_OUT_AS):
+			{
+				switch(GET_CHILD_COUNT(expr))
+				{
+					case 2:
+						goto binary_al_ops;
+					case 1:
+						goto unary_al_ops;
+					default: RAISE_INTERNAL(expr, "bad AST structure -- must be unary or binary");
+				}
+			}
+			
+			/* HACK: for unary and binary arithmetic/logic ops, we just
+			 * blast out the C++ code*/
+
+			unary_al_ops:
+			case CAKE_TOKEN(COMPLEMENT):
+			case CAKE_TOKEN(NOT):
+			// + others from ambiguous goto: BITWISE_AND, MINUS, PLUS, MULTIPLY
+			{
+				auto result = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 0),
+					shared_ptr<type_die>());
+				ident = new_ident("temp");
+				m_out << "auto " << ident << " = "
+					<< CCP(TO_STRING(expr)) << result.result_fragment << ";" << std::endl;
+				return (post_emit_status) { ident, 
+					result.success_fragment, // no *new* failures added, so delegate failure
+					environment() };
+			}
+			
+			binary_al_ops:
 			case CAKE_TOKEN(DIVIDE):
 			case CAKE_TOKEN(MODULO):
+			// we could try to catch divide-by-zero errors here, but we don't
 			case CAKE_TOKEN(SHIFT_LEFT):
 			case CAKE_TOKEN(SHIFT_RIGHT):
 			case CAKE_TOKEN(LESS):
@@ -1060,13 +1291,42 @@ namespace cake
 			case CAKE_TOKEN(NEQ):
 			case CAKE_TOKEN(BITWISE_XOR):
 			case CAKE_TOKEN(BITWISE_OR):
+			// + others from ambiguous goto: BITWISE_AND, MINUS, PLUS, MULTIPLY
+			{
+				auto resultL = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 0),
+					shared_ptr<type_die>());
+				auto resultR = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 1),
+					shared_ptr<type_die>());
+				ident = new_ident("temp");
+
+				m_out << "auto " << ident << " = "
+					<< resultL.result_fragment 
+					<< " " << CCP(TO_STRING(expr)) << " "
+					<< resultR.result_fragment << ";" << std::endl;
+				return (post_emit_status) { ident, 
+					"(" + resultL.success_fragment + " && " + resultR.success_fragment + ")", 
+						// no *new* failures added, so delegate failure
+					environment() };
+			}
+
+			// these have short-circuit semantics
 			case CAKE_TOKEN(LOGICAL_AND):
 			case CAKE_TOKEN(LOGICAL_OR):
+			
 			case CAKE_TOKEN(CONDITIONAL): // $cond $caseTrue $caseFalse 
+			
 			case CAKE_TOKEN(KEYWORD_FN):
+			
+			sequencing_ops:
 			case CAKE_TOKEN(SEMICOLON):
 			case CAKE_TOKEN(ANDALSO_THEN):
 			case CAKE_TOKEN(ORELSE_THEN):
+				// these are the only place where we add to the environment, since
+				// "let" expressions are no use in other contexts
 				assert(false);
 			case CAKE_TOKEN(KEYWORD_IN_ARGS):
 				// ACTUALLY this might happen, if we use in_args in its standalone sense
@@ -1083,46 +1343,98 @@ namespace cake
 		}
 	}
 
-	void
-	wrapper_file::emit_bound_var_rvalue(
-		const context& ctxt, 
-		const binding& bound_var) // FIXME: need cxx_result_type too
-	{
-		/* There are a few cases here:
-		 * -- the bound var was defined as an argument;
-		 * -- the bound var was defined in an infix stub on the remote side;
-		 * -- the bound var was defined in an infix stub on the local side;
-		 * -- the bound var was defined in the local stub itself;
-		 * -- FIXME: stuff to do with return events 
-		 
-		 * We disambiguate using our args & other context, 
-		 * deduce the C++ variable name/prefix that we require,
-		 * and insert value conversions as necessary. */
-		
-		if (sink_context == bound_var.second.defining_module)
-		{
-			/* We don't need a value conversion in this case. */
-			std::string name = cxx_name_for_binding(bound_var);
-			m_out << name;
-			//return std::make_pair("true", name);
-		}
-		else
-		{
-			assert(result_type);
-			open_value_conversion(
-				ifaces_context,
-				bound_var.second.type,
-				bound_var.second.defining_module,
-				result_type, 
-				module_of_die(result_type)
-				);
-				
-			std::string name = cxx_name_for_binding(bound_var);
-			m_out << name;
-			
-			close_value_conversion();
-		}
-	}
+// 	//void
+// 	std::string
+// 	//wrapper_file::emit_bound_var_rvalue(
+// 	wrapper_file::reference_bound_variable(
+// 		const context& ctxt, 
+// 		const binding& bound_var) // FIXME: need cxx_result_type too
+// 	{
+// 		/* There are a few cases here:
+// 		 * -- the bound var was defined as an argument;
+// 		 * -- the bound var was defined in an infix stub on the remote side;
+// 		 * -- the bound var was defined in an infix stub on the local side;
+// 		 * -- the bound var was defined in the local stub itself;
+// 		 * -- FIXME: stuff to do with return events 
+// 		 
+// 		 * We disambiguate using our args & other context, 
+// 		 * deduce the C++ variable name/prefix that we require,
+// 		 * and insert value conversions as necessary. */
+// 		
+// 		if (ctxt.modules.sink == bound_var.second.defining_module)
+// 		{
+// 			/* We don't need a value conversion in this case. */
+// 			std::string name = cxx_name_for_binding(bound_var);
+// 			m_out << name;
+// 			//return std::make_pair("true", name);
+// 		}
+// 		else
+// 		{
+// 			/* If we need to name a target type every time we open a value conversion,
+// 			 * this could get difficult. Or perhaps not -- this could/should be the
+// 			 * only place where we do it. So what do we really need to know? Thesis says:
+// 			 *
+// 			 * "All value correspondences are implicitly invoked from within an event
+// 			 * correspondence or another value correspondence. In these contexts, both a
+// 			 * "from" and a "to" data type are usually available. Ambiguity in either one
+// 			 * of these may therefore be tolerated, if their pairing is sufficient to
+// 			 * select a unique correspondence."
+// 			 *
+// 			 * In other words, whenever we're evaluating an expression, we should have a 
+// 			 " "to" data type in mind. But we'll need it only in a few cases. 
+// 			 * We hopefully won't need it for intermediate results of the same expression,
+// 			 * because we won't be applying value correspondences there.
+// 			 * But WAIT: what if our bound variables are deep within some complex stub 
+// 			 * expression structure? What's the relationship between the C++ type that
+// 			 * we have to convert the bound variable to, and the "overall" required C++ type
+// 			 * for the expression? Can we compute this as we're recursing down the
+// 			 * expression? It's possible, yes. This means we're doing type-checking of our
+// 			 * stub code whether we like it or not! Note that types are always simple
+// 			 * because we're not following indirection---pointers are opaque.
+// 			 * What about polymorphic operators like arithmetic? If our stub says:
+// 			 * foo(a, b) --> { 2 * (a + b) }
+// 			 * then how do we disambiguate between potentially many correspondences
+// 			 * between typeof(a) and typeof(b) in the RHS component?
+// 			 * I think the answer is that for operators, we fall back on "auto" in C++-land
+// 			 * which is good for picking up the compiler's treatment of primitive types,
+// 			 * but this has the knock-on effect that we require a unique corresponding type
+// 			 * for typeof(a) and typeof(b).
+// 			 * Can argue that this is reasonable: polymorphic operators are more likely
+// 			 * to be working on base types,
+// 			 * whereas user-defined types are more likely to have their own specific
+// 			 * functions for dealing with them.
+// 			 * It'd be a different story if we have foo(a,b) --> f(a,b)
+// 			 * because we have a type expectation for each argument.
+// 			 * So we are in fact making use of type constraints in our given interfaces
+// 			 * to select among value correspondences
+// 			 * Python would not solve this problem,
+// 			 * and arguably has it worse? Hmm, probably not.
+// 			 * This thing about propagating type information should really be in the
+// 			 * thesis. I mean, it is, in the paragraph that we quote, but it's not clear
+// 			 * enough. A one-sentence addition would be helpful.
+// 			 * We could get around this "cleanly" i.e. arse-coveringly
+// 			 * by decreeing
+// 			 * (1) that Cake's built-in operators are only defined for particular DWARF types;
+// 			 * (2) that these must correspond uniquely across components, and
+// 			 * (3) not just uniquely, but "sanely" i.e. meaning-preservingly.
+// 			 */
+// 			assert(result_type);
+// 			open_value_conversion(
+// 				//ifaces_context,
+// 				link_derivation::sorted(ctxt.modules.source, ctxt.modules.sink),
+// 				
+// 				bound_var.second.type,
+// 				bound_var.second.defining_module,
+// 				result_type, 
+// 				module_of_die(result_type)
+// 				);
+// 				
+// 			std::string name = cxx_name_for_binding(bound_var);
+// 			m_out << name;
+// 			
+// 			close_value_conversion();
+// 		}
+// 	}
 	
 	std::vector<
 		std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
@@ -1156,10 +1468,11 @@ namespace cake
 		return out;
 	}
 
-	std::pair<std::string, std::string>
+	wrapper_file::post_emit_status
 	wrapper_file::emit_stub_function_call(
-			const context& context,
-			antlr::tree::Tree *call_expr) // FIXME: need cxx_result_type too
+			const context& ctxt,
+			antlr::tree::Tree *call_expr,
+			shared_ptr<type_die> expected_cxx_type) 
 	{
 		assert(GET_TYPE(call_expr) == CAKE_TOKEN(INVOKE_WITH_ARGS));
 		INIT;
@@ -1169,63 +1482,75 @@ namespace cake
 		BIND3(call_expr, functionNameTree/*, DEFINITE_MEMBER_NAME*/, IDENT);
 		// auto mn = read_definite_member_name(memberNameExpr);
 		
-		auto return_type_name = //cxx_result_type_name;
-			(cxx_result_type 
-			? get_type_name(cxx_result_type) 
-			: "::cake::unspecified_wordsize_type");
+		//auto return_type_name = //cxx_result_type_name;
+		//	(cxx_result_type 
+		//	? get_type_name(cxx_result_type) 
+		//	: "::cake::unspecified_wordsize_type");
 
 		std::string function_name = CCP(GET_TEXT(functionNameTree));
 		std::vector<std::string> mn(1, function_name);
-		auto callee(
-			sink_context.first->all_compile_units().visible_resolve(
-					mn.begin(), mn.end()
-					));
+		auto callee = ctxt.modules.sink->get_ds().toplevel()->visible_resolve(
+					mn.begin(), mn.end());
 		if (!callee || callee->get_tag() != DW_TAG_subprogram)
 		{
 			RAISE(functionNameTree, "does not name a visible function");
 		}
 
-		dwarf::encap::Die_encap_subprogram& callee_subprogram
-		 = dynamic_cast<dwarf::encap::Die_encap_subprogram&>(*callee);
+		auto callee_subprogram
+		 = boost::dynamic_pointer_cast<subprogram_die>(callee);
 		auto callee_return_type
 			= treat_subprogram_as_untyped(callee_subprogram) ?
-			   0 : callee_subprogram.get_type();
+			   0 : callee_subprogram->get_type();
 			   
 		/* evaluate the arguments and bind temporary names to them */
 		auto success_ident = new_ident("success");
 		m_out << "bool " << success_ident << " = true; " << std::endl;
 		std::string value_ident = new_ident("value");
-		if (!callee_subprogram.get_type())
+		if (!callee_subprogram->get_type())
 		{
 			m_out << "::cake::unspecified_wordsize_type"
 			 << ' ' << value_ident << "; // unused" << std::endl;
 		}
 		else
 		{
-			m_out << get_type_name(*callee_subprogram.get_type())
+			m_out << get_type_name(*callee_subprogram->get_type())
 			 << ' ' << value_ident << ";" << std::endl;
 		}
 		//m_out << "do" << std::endl
 		//	<< "{";
 		m_out << "// begin argument expression eval" << std::endl;
 		//m_out.inc_level();
-		std::vector<std::pair<std::string, std::string > > arg_result_names;
+		std::vector< post_emit_status > arg_results;
 		std::vector< boost::optional<std::string> > arg_names_in_callee;
-		std::pair<std::string, std::string> names;
-		auto i_arg = callee_subprogram.formal_parameter_children_begin();
+		post_emit_status result;
+		dwarf::spec::subprogram_die::formal_parameter_iterator i_arg
+		 = callee_subprogram->formal_parameter_children_begin();
 		// iterate through multiValue and callee args in lock-step
 		{
 			INIT;
 			FOR_ALL_CHILDREN(argsMultiValue)
 			{
-				assert(i_arg != callee_subprogram.formal_parameter_children_end()
+				assert(i_arg != callee_subprogram->formal_parameter_children_end()
 				 && (*i_arg)->get_type());
-				
+				int args_for_this_ast_node = 1; // will be overridden in in_args handling
+				// for in_args handling:
+				std::vector<
+					std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
+								dwarf::spec::subprogram_die::formal_parameter_iterator 
+					> 
+				> matched_names;				
+				std::vector<
+					std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
+								dwarf::spec::subprogram_die::formal_parameter_iterator 
+					> 
+				>::iterator i_matched_name;				
 				/* If the stub expression was a KEYWORD_IN_ARGS, then
 				 * the stub code emitted  has yielded multiple outputs 
 				 * and multiple successes. */
 				switch (GET_TYPE(n))
 				{
+					case CAKE_TOKEN(KEYWORD_OUT_ARGS):
+						assert(false);
 					case CAKE_TOKEN(KEYWORD_IN_ARGS):
 						/* When we see in_args, we eagerly match *by name*
 						 * any argument in the source context (i.e. the event)
@@ -1235,7 +1560,7 @@ namespace cake
 						 * and output them in their order of appearance in the callee.
 						 * It is an error if the resulting order
 						 * covers a noncontiguous range of arguments. */
-						auto matched_names = name_match_parameters(
+						matched_names = name_match_parameters(
 							ctxt.opt_source->signature,
 							callee_subprogram);
 							// FIXME: do we match names against the event pattern
@@ -1256,11 +1581,19 @@ namespace cake
 						for (auto i_out = matched_names.begin(); i_out != matched_names.end();
 							i_out++)
 						{
-							if (i_out->second < i_arg) out.erase(i_out);
+							dwarf::spec::subprogram_die::formal_parameter_iterator i_test;
+							i_test = i_out->second;
+							if (i_test < i_arg)
+							{
+								i_out = matched_names.erase(i_out);
+								// erase returns the one after the erased item...
+								i_out--; // ... which we want to come round next iteration
+							}
 						}
 						// sort in order of the sink (callee) argument ordering
 						std::sort(
-							out,
+							matched_names.begin(),
+							matched_names.end(),
 							[](const std::pair< 
 									dwarf::spec::subprogram_die::formal_parameter_iterator,
 									dwarf::spec::subprogram_die::formal_parameter_iterator >& a,
@@ -1268,39 +1601,87 @@ namespace cake
 									dwarf::spec::subprogram_die::formal_parameter_iterator,
 									dwarf::spec::subprogram_die::formal_parameter_iterator >& b)
 							{ return a.second < b.second; });
+						// do they form a contiguous sequence starting at current pos?
+						if (matched_names.begin() == matched_names.end())
+						{
+							RAISE(n, "no arguments to name-match");
+						}
+						if (matched_names.begin()->second != i_arg)
+						{
+							RAISE(n, "name-matching args do not start here");
+						}
+						for (auto i_out = matched_names.begin(); i_out != matched_names.end(); i_out++)
+						{
+							if (i_out + 1 != matched_names.end()
+							// in the callee arg list, i.e. ->second, they must be contiguous
+								&& (i_out + 1)->second != (i_out->second + 1))
+							{
+								RAISE(n, "name-matching args are non-contiguous");
+							}
+						}
+						// override the count of args we're emitting in this AST iteration
+						args_for_this_ast_node = matched_names.size();
+						// start the iterator
+						i_matched_name = matched_names.begin();
+						// now what? well, we simply evaluate them in order. What order?
+						// the order they appear in the *callee*, so that we can keep
+						// i_arg moving forward
+						do
+						{
+							// what's the binding of the argument in the caller? 
+							{
+								std::ostringstream s;
+								s << wrapper_arg_name_prefix << (i_matched_name - matched_names.begin());
 
-							
-						
-					case CAKE_TOKEN(KEYWORD_OUT_ARGS):
-						assert(false);
+								// emit some stub code to evaluate this argument
+								result = emit_stub_expression_as_statement_list(
+								  ctxt, 
+								  // we need to manufacture an AST node: IDENT(arg_name_in_caller)
+								  make_ident_expr(s.str()),
+								  /* Result type is that of the *argument* that we're going to pass
+								   * this subexpression's result to. */
+								  (treat_subprogram_as_untyped(callee_subprogram) 
+								  ? boost::shared_ptr<dwarf::spec::type_die>()
+								  : *(*i_arg)->get_type()));
+								// next time round we will handle the next matched name
+								++i_matched_name;
+							}
+							// the rest is like the simple case
+							goto remember_arg_names;
 					default:
-						// emit some stub code to evaluate this argument
-						names = emit_stub_expression_as_statement_list(
-						  n, ifaces_context, sink_context, source_context,
-						  /* Result type is that of the *argument* that we're going to pass
-						   * this subexpression's result to. */
-						  (treat_subprogram_as_untyped(callee_subprogram) 
-						  ? boost::shared_ptr<dwarf::spec::type_die>()
-						  : *(*i_arg)->get_type()),
-							 //cxx_result_type/*_name*/, 
-						  env);
-						// remember the names used for the output of this evaluation
-						arg_result_names.push_back(names);
+							// emit some stub code to evaluate this argument -- simple case
+							result = emit_stub_expression_as_statement_list(
+							  ctxt, n,
+							  /* Result type is that of the *argument* that we're going to pass
+							   * this subexpression's result to. */
+							  (treat_subprogram_as_untyped(callee_subprogram) 
+							  ? boost::shared_ptr<dwarf::spec::type_die>()
+							  : *(*i_arg)->get_type()));
+							// remember the names used for the output of this evaluation
+					remember_arg_names:
+							arg_results.push_back(result);
 
-						/* If the stub expression was a KEYWORD_IN_ARGS, then
-						 * the stub code emitted  has yielded multiple outputs 
-						 * and multiple successes. */
+							/* If the stub expression was a KEYWORD_IN_ARGS, then
+							 * the stub code emitted  has yielded multiple outputs 
+							 * and multiple successes. */
 
-						// store the mapping to the callee argument
-						arg_names_in_callee.push_back((*i_arg)->get_name());
-						m_out << success_ident << " &= " << names.first << ";" << std::endl;
-						m_out << "if (" << success_ident << ") // okay to proceed with next arg?" 
-							<< std::endl;
-						m_out << "{" << std::endl;
-						m_out.inc_level();
-						i_arg++;
-			}
-		}
+							// store the mapping to the callee argument
+							arg_names_in_callee.push_back((*i_arg)->get_name());
+					output_control:
+							m_out << success_ident << " &= " << result.success_fragment << ";" << std::endl;
+							m_out << "if (" << success_ident << ") // okay to proceed with next arg?" 
+								<< std::endl;
+							m_out << "{" << std::endl;
+							m_out.inc_level();
+					next_arg_in_callee_sequence:
+							i_arg++;
+						} // end do
+						while (--args_for_this_ast_node > 0);
+					finished_argument_eval_for_current_ast_node:
+						break;
+				} // end switch
+			} // end FOR_ALL_CHILDREN
+		} // end INIT argsMultiValue
 		m_out << "// end argument eval" << std::endl;
 		m_out << "// begin function call" << std::endl;
 		//m_out << args_success_ident << " = true;" << std::endl;
@@ -1313,28 +1694,28 @@ namespace cake
 		//m_out.inc_level();
 
 		std::string raw_result_ident = new_ident("result");
-		if (callee_subprogram.get_type())
+		if (callee_subprogram->get_type())
 		{
 			m_out << "auto " << raw_result_ident << " = ";
 		}
 
 		// emit the function name, as a symbol reference
 		m_out << "cake::" << m_d.namespace_name() << "::";
-		emit_symbol_reference_expr_from_dwarf_ident(
-			function_name,
-			sink_context,
-			sink_context.first->all_compile_units());		
+		m_out << get_dwarf_ident(
+			ctxt,
+			function_name);		
 		m_out << '(';
 		m_out.inc_level();
-		for (auto i_name_pair = arg_result_names.begin(); i_name_pair != arg_result_names.end(); i_name_pair++)
+		for (auto i_result = arg_results.begin(); 
+			i_result != arg_results.end(); i_result++)
 		{
-			if (i_name_pair != arg_result_names.begin()) m_out << ", ";
+			if (i_result != arg_results.begin()) m_out << ", ";
 			m_out << std::endl; // begin each argument on a new line
-			auto name_in_callee = arg_names_in_callee[i_name_pair - arg_result_names.begin()];
+			auto name_in_callee = arg_names_in_callee[i_result - arg_results.begin()];
 			m_out << "/* argument name in callee: " 
 				<< (name_in_callee ? *name_in_callee : "(no name)")
 				<< " */ ";
-			m_out << i_name_pair->second;
+			m_out << i_result->result_fragment;
 		}
 		m_out << ')';
 		m_out.dec_level();
@@ -1345,7 +1726,7 @@ namespace cake
 		// convert the function raw result to a success and value pair,
 		// in a style-dependent way
 		m_out << "// begin output/error split" << std::endl;
-		if (callee_subprogram.get_type())
+		if (callee_subprogram->get_type())
 		{
 			m_out << success_ident << " = __cake_success_of(" 
 				<< raw_result_ident << ");" << std::endl;
@@ -1372,10 +1753,10 @@ namespace cake
 		m_out << "if (!" << success_ident << ")" << std::endl;
 		m_out << "{" << std::endl;
 		m_out.inc_level();
-		if (callee_subprogram.get_type()) // only get a value if it returns something
+		if (callee_subprogram->get_type()) // only get a value if it returns something
 		{
 			m_out << value_ident << " = ::cake::failure<" 
-				<<  get_type_name(*callee_subprogram.get_type()) //return_type_name
+				<<  get_type_name(*callee_subprogram->get_type()) //return_type_name
 				<< ">()();" << std::endl;
 		}
 		m_out.dec_level();
@@ -1390,7 +1771,7 @@ namespace cake
 		//m_out.inc_level();
 		
 
-		return std::make_pair(success_ident, value_ident);
+		return (post_emit_status){success_ident, value_ident, environment()};
 	}
             
 //         	    ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
@@ -1446,40 +1827,42 @@ namespace cake
 //         if (!subprogram_returns_void(callee_subprogram)) close_value_conversion();
 //     }
     
-    void wrapper_file::emit_constant_expr(
-        	antlr::tree::Tree *constant_expr,
-    	    const request::module_name_pair& request_context)
-    {
-    	//m_out << CCP(TO_STRING_TREE(constant_expr));
-        assert(GET_TYPE(constant_expr) == CAKE_TOKEN(KEYWORD_CONST));
-        INIT;
-        BIND2(constant_expr, child);
-        switch(GET_TYPE(child))
-        {
-        	case CAKE_TOKEN(STRING_LIT):
-            	m_out << CCP(GET_TEXT(child));
-                break;
-            case CAKE_TOKEN(KEYWORD_NULL):
-            	m_out << "0";
-                break;
-            case CAKE_TOKEN(SET_CONST):
-            	RAISE(child, "set constants not yet supported"); // FIXME            
-            //case CAKE_TOKEN(CONST_ARITH):
-            case CAKE_TOKEN(CONST_ARITH):
-            {
-            	long double result = eval_const_expr(constant_expr, request_context);
-                m_out << result;
-                break;
-            }            
-            default: 
-            	RAISE(child, "expected a constant expression");
-        }
-    }
+	std::string wrapper_file::constant_expr_eval_and_cxxify(
+		const context& ctxt,
+		antlr::tree::Tree *constant_expr)
+	{
+		//m_out << CCP(TO_STRING_TREE(constant_expr));
+		std::ostringstream s;
+		assert(GET_TYPE(constant_expr) == CAKE_TOKEN(KEYWORD_CONST));
+		INIT;
+		BIND2(constant_expr, child);
+		switch(GET_TYPE(child))
+		{
+			case CAKE_TOKEN(STRING_LIT):
+				s << CCP(GET_TEXT(child));
+				break;
+			case CAKE_TOKEN(KEYWORD_NULL):
+				s << "0";
+				break;
+			case CAKE_TOKEN(SET_CONST):
+				RAISE(child, "set constants not yet supported"); // FIXME			
+			//case CAKE_TOKEN(CONST_ARITH):
+			case CAKE_TOKEN(CONST_ARITH):
+			{
+				long double result = eval_const_expr(ctxt, constant_expr);
+				s << result; // trivial cxxify :-)
+				break;
+			}			
+			default: 
+				RAISE(child, "expected a constant expression");
+		}
+		return s.str();
+	}
     
     // FIXME: something better than this naive long double implementation please
     long double wrapper_file::eval_const_expr(
-    	antlr::tree::Tree *expr,
-        const request::module_name_pair& request_context)
+    	const context& ctxt,
+		antlr::tree::Tree *expr)
     {
     	switch (GET_TYPE(expr))
         {
@@ -1487,24 +1870,23 @@ namespace cake
             	return atoi(CCP(GET_TEXT(expr)));
             case CAKE_TOKEN(SHIFT_LEFT): 
             	return 
-                	eval_const_expr(GET_CHILD(expr, 0), request_context) 
-                    	* powl(2.0, eval_const_expr(GET_CHILD(expr, 0), request_context));
+                	eval_const_expr(ctxt, GET_CHILD(expr, 0))
+                    	* powl(2.0, eval_const_expr(ctxt, GET_CHILD(expr, 0)));
             case CAKE_TOKEN(SHIFT_RIGHT):
             	return 
-                	eval_const_expr(GET_CHILD(expr, 0), request_context) 
-                    	* powl(2.0, eval_const_expr(GET_CHILD(expr, 0), request_context));
+                	eval_const_expr(ctxt, GET_CHILD(expr, 0))
+                    	* powl(2.0, eval_const_expr(ctxt, GET_CHILD(expr, 0)));
 
             case CAKE_TOKEN(KEYWORD_CONST):
             case CAKE_TOKEN(CONST_ARITH):
-            	return eval_const_expr(GET_CHILD(expr, 0), request_context);
+            	return eval_const_expr(ctxt, GET_CHILD(expr, 0));
             default: RAISE(expr, "unsupported constant expression syntax");
         }
     }
     
-    void wrapper_file::emit_symbol_reference_expr_from_dwarf_ident(
-            antlr::tree::Tree *dmn, 
-    	    const request::module_name_pair& request_context, 
-            dwarf::abstract::Die_abstract_has_named_children<dwarf::encap::die>& dwarf_context)
+    std::string wrapper_file::get_dwarf_ident(
+			const context& ctxt,
+            antlr::tree::Tree *dmn)
     {
     	definite_member_name mn(dmn);
         
@@ -1512,24 +1894,33 @@ namespace cake
 //         << "cake::" 
 //         	<< m_d.namespace_name() << "::" // namespace enclosing this module's wrapper definitions
             
-    	m_out << request_context.second << "::" // namespace specifically for this module
+		std::ostringstream s;
+		shared_ptr<with_named_children_die> scope
+		 = (ctxt.modules.current == ctxt.modules.source)
+		 	? ctxt.dwarf_context.source_decl
+			: ctxt.dwarf_context.sink_decl;
+		
+    	s << m_d.name_of_module(ctxt.modules.current) << "::" // namespace specifically for this module
             << definite_member_name(
             		*(
-                    	((*(dwarf_context.resolve(
+                    	((*(scope->resolve(
                     		mn.begin(), mn.end())
                           )).ident_path_from_cu())
                      )
                  );
+		return s.str();
     }
     
-    void wrapper_file::emit_symbol_reference_expr_from_dwarf_ident(
-            const std::string& ident, 
-    	    const request::module_name_pair& request_context, 
-            dwarf::abstract::Die_abstract_has_named_children<dwarf::encap::die>& dwarf_context)
+    std::string
+	wrapper_file::get_dwarf_ident(
+		const context& ctxt,
+		const std::string& ident)
     {
     	std::vector<std::string> mn(1, ident);
-    	m_out << request_context.second << "::" // namespace specifically for this module
+		std::ostringstream s;
+    	s << m_d.name_of_module(ctxt.modules.current) << "::" // namespace specifically for this module
         	<< ident;
+		return s.str();
         // Just output the ident! -- 
         // why did we feed this into resolve and then generate the path again?
             //<< definite_member_name(
