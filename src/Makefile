@@ -13,7 +13,7 @@ OBJS += $(patsubst %.cpp,%.o,$(SRC))
 
 LDLIBS := -lantlr3c
 LDLIBS += -ldwarfpp -ldwarf -lelf
-LDLIBS += -lsrk31c++ -lc++fileno -lboost_filesystem -lboost_regex 
+LDLIBS += -lsrk31c++ -lc++fileno -lboost_filesystem -lboost_regex -lboost_system
 
 CXXFLAGS += -Iparser/include -Iinclude
 CXXFLAGS += -g3 -O0 -Wall -std=c++0x 

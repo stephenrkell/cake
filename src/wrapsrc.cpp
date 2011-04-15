@@ -681,10 +681,12 @@ namespace cake
 			auto ident = new_ident("xover_" + i_binding->first);
 			
 			// output its initialization
-			auto target_type = m_d.unique_corresponding_dwarf_type(
+			auto target_type = i_binding->second.cxx_type ?
+				 m_d.unique_corresponding_dwarf_type(
 				i_binding->second.cxx_type,
 				new_module_context,
-				true /* flow_from_type_module_to_corresp_module */);
+				true /* flow_from_type_module_to_corresp_module */)
+				: shared_ptr<type_die>();
 			m_out << "auto " << ident << " = ";
 			open_value_conversion(
 				link_derivation::sorted(new_module_context, i_binding->second.valid_in_module),
@@ -1612,9 +1614,11 @@ namespace cake
 						}
 						for (auto i_out = matched_names.begin(); i_out != matched_names.end(); i_out++)
 						{
-							if (i_out + 1 != matched_names.end()
+							auto i_next_matched_name = i_out; i_next_matched_name++;
+							auto i_next_callee_parameter = i_out->second; i_next_callee_parameter++;
+							if (i_next_matched_name != matched_names.end()
 							// in the callee arg list, i.e. ->second, they must be contiguous
-								&& (i_out + 1)->second != (i_out->second + 1))
+								&& i_next_matched_name->second != i_next_callee_parameter)
 							{
 								RAISE(n, "name-matching args are non-contiguous");
 							}
