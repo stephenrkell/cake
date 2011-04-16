@@ -71,7 +71,7 @@ namespace cake
 		skipped_value_conversion(wrapper_file& w, 
 			srk31::indenting_ostream& out, 
 			const basic_value_conversion& basic, const std::string& reason) 
-		: value_conversion(w, out, basic) {}
+		: value_conversion(w, out, basic), reason(reason) {}
 		
 		void emit() { emit_body(); }
 		void emit_body()

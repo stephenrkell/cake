@@ -1,4 +1,5 @@
 #define MAX_REPS 8
+extern int next_rep_id; // the next rep ID to issue
 
 #ifndef MIN
 #define MIN(a,b) ((a)<(b)?(a):(b))

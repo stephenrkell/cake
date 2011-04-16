@@ -50,7 +50,7 @@ namespace cake
 	    struct bound_var_info
         {
 			std::string cxx_name;
-        	boost::shared_ptr<dwarf::spec::type_die> cxx_type; // is a STATIC type (DWARF-supplied bound)
+			std::string cxx_typeof; // names a STATIC immediate type 
 			module_ptr valid_in_module;
         };
         //typedef std::map<std::string, bound_var_info> environment;
@@ -100,7 +100,7 @@ namespace cake
 				boost::shared_ptr<dwarf::spec::subprogram_die> signature;
 				
 				// we may have an event pattern
-				boost::optional< antlr::tree::Tree * > opt_pattern;
+				antlr::tree::Tree *opt_pattern;
 				
 				// FIXME: how do we get at the names bound?
 			};
@@ -150,13 +150,17 @@ namespace cake
 			const environment& env,
 			module_ptr new_module_context
 			);
-		
+
 		void open_value_conversion(
 			link_derivation::iface_pair ifaces_context,
-			boost::shared_ptr<dwarf::spec::type_die> from_type,
-			boost::shared_ptr<dwarf::spec::type_die> to_type,
+			int rule_tag,
+			boost::shared_ptr<dwarf::spec::type_die> from_type, // most precise
+			boost::shared_ptr<dwarf::spec::type_die> to_type, 
+			boost::optional<std::string> from_typeof = boost::optional<std::string>(), // mid-precise
+			boost::optional<std::string> to_typeof = boost::optional<std::string>(),
 			module_ptr from_module = module_ptr(),
-			module_ptr to_module = module_ptr());
+			module_ptr to_module = module_ptr()
+		);
 		
 		void close_value_conversion();
 		
@@ -200,6 +204,7 @@ namespace cake
 			std::string success_fragment;
 			environment new_bindings;
 		};
+		static const std::string NO_VALUE;
 		
         //std::pair<std::string, std::string>
         //emit_event_corresp_stub(
@@ -209,14 +214,14 @@ namespace cake
 		post_emit_status
 		emit_stub_expression_as_statement_list(
 			const context& ctxt,
-			antlr::tree::Tree *expr,
-			boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type);   
+			antlr::tree::Tree *expr/*,
+			boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type*/);   
 
 		post_emit_status
 		emit_stub_function_call(
 			const context& ctxt,
-			antlr::tree::Tree *call_expr,
-			boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type);
+			antlr::tree::Tree *call_expr/*,
+			boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type*/);
 
 //		//void 
 //		std::string

@@ -34,24 +34,48 @@ namespace cake
         } 
 	}; 
     template <> 
-    struct value_convert<int, unspecified_wordsize_type, 0> 
+    struct value_convert<wordsize_integer_type, unspecified_wordsize_type, 0> 
     { 
-        unspecified_wordsize_type operator ()(const int& from) const 
+        unspecified_wordsize_type operator ()(const wordsize_integer_type& from) const 
         { 
+			assert(sizeof (wordsize_integer_type) == sizeof (unspecified_wordsize_type));
         	unspecified_wordsize_type ret 
              = reinterpret_cast<unspecified_wordsize_type>(from);  
             return ret;
         } 
 	}; 
+#if defined (X86_64) || (defined (__x86_64__))
+    template <> 
+    struct value_convert<int, unspecified_wordsize_type, 0> 
+    { 
+        unspecified_wordsize_type operator ()(const int& from) const 
+        { 
+        	unspecified_wordsize_type ret 
+             = reinterpret_cast<unspecified_wordsize_type>(static_cast<long>(from));  
+            return ret;
+        } 
+	}; 
+#endif
+    template <> 
+    struct value_convert<unspecified_wordsize_type, wordsize_integer_type, 0> 
+    { 
+        wordsize_integer_type operator ()(const unspecified_wordsize_type& from) const 
+        {
+			assert(sizeof (wordsize_integer_type) == sizeof (unspecified_wordsize_type));
+    	    return reinterpret_cast<wordsize_integer_type>(from);
+        } 
+	}; 
+#if defined (X86_64) || (defined (__x86_64__))
     template <> 
     struct value_convert<unspecified_wordsize_type, int, 0> 
     { 
         int operator ()(const unspecified_wordsize_type& from) const 
-        { 
-    	    return reinterpret_cast<int>(from);
+        {
+    	    return static_cast<int>(reinterpret_cast<long>(from));
         } 
 	}; 
-    // handle those pesky zero-length array
+#endif
+   // handle those pesky zero-length array
     template <typename FromZeroArray, typename T> 
     struct value_convert<FromZeroArray[0], T, 0> 
     { 

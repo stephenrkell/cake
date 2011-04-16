@@ -403,14 +403,14 @@ namespace cake
 			env.insert(std::make_pair(std::string("__cake_from"), 
 				(wrapper_file::bound_var_info) {
 					"from",
-					source_data_type,
+					/* source_data_type, */ std::string("__cake_from"),
 					source_module
 					}));
 			wrapper_file::context ctxt(w, source_module, target_module, env);
 
 			auto result = w.emit_stub_expression_as_statement_list(ctxt,
-				i_name_matched->second.stub,
-				sink_data_type);
+				i_name_matched->second.stub/*,
+				sink_data_type*/);
 				//, modules, pre_context_pair, post_context_pair,
 				//boost::shared_ptr<dwarf::spec::type_die>(), env);
 			m_out << "assert(" << result.success_fragment << ");" << std::endl;

@@ -14,6 +14,7 @@ using boost::shared_ptr;
 namespace cake
 {
 	const std::string wrapper_file::wrapper_arg_name_prefix = "__cake_arg";
+	const std::string wrapper_file::NO_VALUE = "__cake_arg";
 
 	bool wrapper_file::treat_subprogram_as_untyped(
 		boost::shared_ptr<dwarf::spec::subprogram_die> subprogram)
@@ -59,7 +60,7 @@ namespace cake
         {
         	if (subprogram_returns_void(subprogram)) m_out << "void";
             else if (treat_subprogram_as_untyped(subprogram) && !unique_called_subprogram) m_out << 
-            	" ::cake::unspecified_wordsize_type";
+            	/* " ::cake::unspecified_wordsize_type"; */ " ::cake::wordsize_integer_type"; // HACK!
 			else if (treat_subprogram_as_untyped(subprogram) && unique_called_subprogram)
 			{
 				// look for a _unique_ _corresponding_ type and use that
@@ -371,14 +372,17 @@ namespace cake
 				wrapper_arg_name_prefix, module_of_die(callsite_signature), true, unique_called_subprogram);
 		m_out << " __attribute__((weak));" << std::endl;
 		// output prototype for __wrap_
+		m_out << "namespace cake { namespace " << m_d.namespace_name() << " {" << std::endl;
 		write_function_header(
 				corresps.at(0)->second.source_pattern,
 				"__wrap_" + *callsite_signature->get_name(),
 				callsite_signature,
 				wrapper_arg_name_prefix, module_of_die(callsite_signature), true, unique_called_subprogram);
 		m_out << ';' << std::endl;
+		m_out << "} } // end cake and link namespaces" << std::endl;
 		m_out << "} // end extern \"C\"" << std::endl;
-		// output wrapper
+		// output wrapper -- put it in the link block's namespace, so it can see definitions etc.
+		m_out << "namespace cake { namespace " << m_d.namespace_name() << " {" << std::endl;
 		write_function_header(
 				corresps.at(0)->second.source_pattern,
 				"__wrap_" + *callsite_signature->get_name(),
@@ -415,6 +419,7 @@ namespace cake
 			context ctxt(*this, 
 				source, sink,
 				initial_environment(pattern, source));
+			ctxt.opt_source = (context::source_info_s){ callsite_signature, 0 };
 			
 			// emit a condition
 			m_out << "if (";
@@ -425,28 +430,32 @@ namespace cake
 			m_out.inc_level();
 			m_out << std::endl;
 			
+			// our context now has a pattern too
+			ctxt.opt_source->opt_pattern = pattern;
+			
 			// here goes the pre-arrow infix stub
 			auto status1 = 
 				(source_infix_stub && GET_CHILD_COUNT(source_infix_stub) > 0) ?
 					emit_stub_expression_as_statement_list(
 						ctxt,
-						source_infix_stub,
-						shared_ptr<type_die>()) // FIXME: really no type expectations here?
-				: (post_emit_status){"((void)0)", "true", environment()};
+						source_infix_stub/*,
+						shared_ptr<type_die>()*/) // FIXME: really no type expectations here?
+				: (post_emit_status){NO_VALUE, "true", environment()};
 			// now update the environment to add new let-bindings and "it"
 			// FIXME: handle failure of the infix stub here
 			auto saved_env1 = ctxt.env;
 			auto new_env1 = merge_environment(ctxt.env, status1.new_bindings);
-			new_env1["__cake_it"] = (bound_var_info) {
+			if (status1.result_fragment != NO_VALUE) new_env1["__cake_it"] = (bound_var_info) {
 				status1.result_fragment,
-				shared_ptr<type_die>(),
+				status1.result_fragment,  //shared_ptr<type_die>(),
 				ctxt.modules.source };
+				
 
 			// crossover point
 			ctxt.modules.current = ctxt.modules.sink;
 			m_out << "// source->sink crossover point" << std::endl;
 			ctxt.env = crossover_environment(new_env1, sink);
-			m_out << "update_co_objects(REP_ID(" << m_d.name_of_module(source)
+			m_out << "sync_all_co_objects(REP_ID(" << m_d.name_of_module(source)
 				<< "), REP_ID(" << m_d.name_of_module(sink) << "));" << std::endl;
 			// -- we need to modify the environment:
 
@@ -455,14 +464,14 @@ namespace cake
 				(sink_infix_stub && GET_CHILD_COUNT(sink_infix_stub) > 0) ?
 					emit_stub_expression_as_statement_list(
 					ctxt,
-					sink_infix_stub,
-					shared_ptr<type_die>()) // FIXME: really no type expectations here?
-					: (post_emit_status){"((void)0)", "true", environment()};
+					sink_infix_stub/*,
+					shared_ptr<type_die>()*/) // FIXME: really no type expectations here?
+					: (post_emit_status){NO_VALUE, "true", environment()};
 			auto saved_env2 = ctxt.env;
 			auto new_env2 = merge_environment(ctxt.env, status2.new_bindings);
-			new_env2["__cake_it"] = (bound_var_info) {
+			if (status2.result_fragment != NO_VALUE) new_env2["__cake_it"] = (bound_var_info) {
 				status2.result_fragment,
-				shared_ptr<type_die>(),
+				status2.result_fragment, //shared_ptr<type_die>(),
 				ctxt.modules.sink };
 			
 			// emit sink action, *NOT* including return statement
@@ -482,57 +491,66 @@ namespace cake
 				// -- the cxx_expected_type is FIXME for now, the unique
 				// corresponding type of the return value
 				// -- this is broken when the return leg might change the cxx type of "it"
-				boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type 
-					= treat_subprogram_as_untyped(ctxt.opt_source->signature) 
-						? boost::shared_ptr<dwarf::spec::type_die>()
-						: m_d.unique_corresponding_dwarf_type(
-							*ctxt.opt_source->signature->get_type(),
-							ctxt.modules.sink,
-							true /* flow_from_type_module_to_corresp_module */);
+// 				boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type 
+// 					= treat_subprogram_as_untyped(ctxt.opt_source->signature) 
+// 						? boost::shared_ptr<dwarf::spec::type_die>()
+// 						: m_d.unique_corresponding_dwarf_type(
+// 							*ctxt.opt_source->signature->get_type(),
+// 							ctxt.modules.sink,
+// 							true /* flow_from_type_module_to_corresp_module */);
 				std::cerr << "Event sink stub is: " << CCP(TO_STRING_TREE(stub)) << std::endl;
 				assert(GET_TYPE(stub) == CAKE_TOKEN(INVOKE_WITH_ARGS));
 				status3 = emit_stub_expression_as_statement_list(
-					ctxt, stub, cxx_expected_type);
+					ctxt, stub/*, cxx_expected_type*/);
 			}
 			// update environment
 			auto new_env3 = merge_environment(ctxt.env, status3.new_bindings);
-			new_env3["__cake_it"] = (bound_var_info) {
+			if (status3.result_fragment != NO_VALUE) new_env3["__cake_it"] = (bound_var_info) {
 				status3.result_fragment,
-				shared_ptr<type_die>(),
+				status3.result_fragment, //shared_ptr<type_die>(),
 				ctxt.modules.sink };
 			
 			// crossover point
 			m_out << "// source<-sink crossover point" << std::endl;
-			m_out << "update_co_objects(REP_ID(" << m_d.name_of_module(sink)
+			m_out << "sync_all_co_objects(REP_ID(" << m_d.name_of_module(sink)
 				<< "), REP_ID(" << m_d.name_of_module(source) << "));" << std::endl;
 			ctxt.modules.current = ctxt.modules.source;
 			// update environment
 			ctxt.env = crossover_environment(new_env3, source);
 			
+			m_out << "// begin return leg of rule" << std::endl;
 			// emit the return leg, if there is one; otherwise, status is the old status
 			auto status4 = 
 				(return_leg && GET_CHILD_COUNT(return_leg) > 0) ?
 					emit_stub_expression_as_statement_list(
 					ctxt,
-					return_leg,
+					return_leg/*,
 					subprogram_returns_void(ctxt.opt_source->signature) ? 
 						shared_ptr<type_die>()
-					:	*ctxt.opt_source->signature->get_type())
+					:	*ctxt.opt_source->signature->get_type()*/)
 					: status3;
 			// update environment -- just "it"
 			auto new_env4 = merge_environment(ctxt.env, status4.new_bindings);
-			new_env4["__cake_it"] = (bound_var_info) {
+			if (status4.result_fragment != NO_VALUE) new_env4["__cake_it"] = (bound_var_info) {
 				status4.result_fragment,
-				shared_ptr<type_die>(),
+				status4.result_fragment, //shared_ptr<type_die>(),
 				ctxt.modules.source };
 			ctxt.env = new_env4;
+			m_out << "// end return leg of rule" << std::endl;
 			
 			// emit the return statement
+			m_out << "// begin return logic" << std::endl;
 			if (!subprogram_returns_void(ctxt.opt_source->signature)) 
 			{
 				/* Main problem here is that we don't know the C++ type of the
 				 * stub's result value. So we have to make value_convert available
 				 * as a function template here. Hopefully this will work. */
+				 
+				if (ctxt.env.find("__cake_it") == ctxt.env.end())
+				{
+					RAISE(ctxt.opt_source->opt_pattern, 
+						"cannot synthesise a return value out of no value (void)");
+				}
 
 				// now return from the wrapper as appropriate for the stub's exit status
 				m_out << "if (" << status4.success_fragment << ") return "
@@ -553,6 +571,7 @@ namespace cake
 			/* The sink action should leave us with a return value (if any)
 			 * and a success state / error value. We then encode these and
 			 * output the return statement *here*. */
+			m_out << "// end return logic" << std::endl;
 			m_out.dec_level();
 			m_out << "}" << std::endl;
 		}
@@ -568,6 +587,7 @@ namespace cake
 		m_out << ';' << std::endl; // end of return statement
 		m_out.dec_level();
 		m_out << '}' << std::endl; // end of block
+		m_out << "} } // end link and cake namespaces" << std::endl;
 	}
 
 //     wrapper_file::bound_var_info::bound_var_info(
@@ -681,25 +701,58 @@ namespace cake
 			auto ident = new_ident("xover_" + i_binding->first);
 			
 			// output its initialization
-			auto target_type = i_binding->second.cxx_type ?
-				 m_d.unique_corresponding_dwarf_type(
-				i_binding->second.cxx_type,
-				new_module_context,
-				true /* flow_from_type_module_to_corresp_module */)
-				: shared_ptr<type_die>();
+// 			auto target_type = i_binding->second.cxx_typeof ?
+// 				m_d.unique_corresponding_dwarf_type(
+// 				i_binding->second.cxx_type,
+// 				new_module_context,
+// 				true /* flow_from_type_module_to_corresp_module */)
+// 				: shared_ptr<type_die>();
 			m_out << "auto " << ident << " = ";
 			open_value_conversion(
 				link_derivation::sorted(new_module_context, i_binding->second.valid_in_module),
-				i_binding->second.cxx_type,
-				target_type
+				0, // rule_tag -- FIXME!
+				boost::shared_ptr<dwarf::spec::type_die>(), // no precise from type
+				boost::shared_ptr<dwarf::spec::type_die>(), // no precise to type
+				i_binding->second.cxx_typeof, // from typeof is in the binding
+				boost::optional<std::string>(), // NO precise to typeof, 
+				   // BUT maybe we could start threading a context-demanded type through? 
+				   // It's not clear how we'd get this here -- scan future uses of each xover'd binding?
+				   // i.e. we only get it *later* when we try to emit some stub logic that uses this binding
+				i_binding->second.valid_in_module, // from_module is 
+				new_module_context
 			);
+			
+			/* Specifying value conversions:
+			 * we have a source typeof (implicit in the argument), 
+			 * a target module, perhaps strengthened by a contextual typeof requirement
+			 * (i.e. could be "auto", or could be a field type)
+			 * maybe a rule ID 
+			 * (capturing the information lost in erasing typedefs from source/target types).
+			 */
+			 
+			/* NOTE: at some point we are going to have to start caring about
+			 * typedefs versus their concrete data types,
+			 * and use this distinction to choose the appropriate RuleTag. 
+			 * Can we get back from a typeof string to a typedef? Not easily. 
+			 * We'll have to propagate the RuleIds from wherever typedefs
+			 * or artificial data types creep in: 
+			 * in function arguments,
+			 * in "as" expressions,
+			 * in field accesses
+			 * -- we can't just pass the names of these things to __typeof,
+			 * because that will only select the concrete type (cxx compiler doesn't distinguish).
+			 * Instead, we need to generate both the __typeof *and* the RuleTag
+			 * at the same time. This might be a problem when we do propagation of
+			 * unique_corresponding_type... although val corresps may be expressed
+			 * in terms of typedefs, so perhaps not. */
 			m_out << i_binding->second.cxx_name;
 			close_value_conversion();
+			m_out << ";" << std::endl;
 			
 			// add it to the new environment
 			new_env[i_binding->first] = (bound_var_info) {
 				ident,
-				target_type,
+				ident,
 				new_module_context
 			};
 		}
@@ -874,12 +927,12 @@ namespace cake
 					}
 					out_env->insert(std::make_pair(basic_name, 
 						(bound_var_info) { basic_name, // use the same name for both
-						p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
+						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
 						source_module 
 						}));
 					if (friendly_name) out_env->insert(std::make_pair(*friendly_name, 
 						(bound_var_info) { *friendly_name,
-						p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
+						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
 						source_module
 						}));
 				} // end ALIAS3(annotatedValuePattern
@@ -944,12 +997,13 @@ namespace cake
 							assert(ctxt.env.find(bound_name) != ctxt.env.end());
 							
 							// recover argument type, if we have one
-							p_arg_type = ctxt.env[bound_name].cxx_type;
+							//p_arg_type = ctxt.env[bound_name].cxx_type;
 							// we have a condition to output
 							if (emitted) m_out << " && ";
 							m_out << "cake::equal<";
-							if (p_arg_type) m_out << get_type_name(p_arg_type);
-							else m_out << " ::cake::unspecified_wordsize_type";
+							//if (p_arg_type) m_out << get_type_name(p_arg_type);
+							//else m_out << " ::cake::unspecified_wordsize_type";
+							m_out << "__typeof(" << bound_name << ")";
 							m_out << ", "
  << (	(GET_TYPE(GET_CHILD(valuePattern, 0)) == CAKE_TOKEN(STRING_LIT)) ? " ::cake::style_traits<0>::STRING_LIT" :
 		(GET_TYPE(GET_CHILD(valuePattern, 0)) == CAKE_TOKEN(CONST_ARITH)) ? " ::cake::style_traits<0>::CONST_ARITH" :
@@ -1022,54 +1076,78 @@ namespace cake
             : (namespace_prefix + "::" + compiler.fq_name_for(t)));
     }
     
-    void wrapper_file::open_value_conversion(
-    	link_derivation::iface_pair ifaces_context,
-    	boost::shared_ptr<dwarf::spec::type_die> from_type,
-        boost::shared_ptr<dwarf::spec::type_die> to_type,
-        module_ptr from_module,
-        module_ptr to_module)
+	void wrapper_file::open_value_conversion(
+		link_derivation::iface_pair ifaces,
+		int rule_tag,
+		boost::shared_ptr<dwarf::spec::type_die> from_type, // most precise
+		boost::shared_ptr<dwarf::spec::type_die> to_type, 
+		boost::optional<std::string> from_typeof /* = boost::optional<std::string>()*/, // mid-precise
+		boost::optional<std::string> to_typeof/* = boost::optional<std::string>()*/,
+		module_ptr from_module/* = module_ptr()*/,
+		module_ptr to_module/* = module_ptr()*/)
     {
 		assert((from_type || from_module)
 			&& (to_type || to_module));
-		if (!from_module) from_module = module_of_die(from_type);
-		if (!to_module) to_module = module_of_die(to_type);
-    	assert((!from_type || module_of_die(from_type) == from_module)
-        	&& (!to_type || module_of_die(to_type) == to_module));
-        
-        // if we have a "from that" type, use it directly
-        if (from_type)
-        {
-            m_out << "cake::value_convert<";
-            if (from_type) m_out << get_type_name(from_type/*, ns_prefix + "::" + from_namespace_unprefixed*/);
-            else m_out << " ::cake::unspecified_wordsize_type";
-            m_out << ", ";
-            if (to_type) m_out << get_type_name(to_type/*, ns_prefix + "::" + to_namespace_unprefixed*/); 
-            else m_out << " ::cake::unspecified_wordsize_type";
-            m_out << ">()(";
-        }
-        else
-        {
-        	// use the function template
-            m_out << component_pair_classname(ifaces_context);
+		// fill in less-precise info from more-precise
+		if (!from_module && from_type) from_module = module_of_die(from_type);
+		if (!to_module && to_type) to_module = module_of_die(to_type);
+		assert(from_module);
+		assert(to_module);
+		// check consistency
+		assert((!from_type || module_of_die(from_type) == from_module)
+		&& (!to_type || module_of_die(to_type) == to_module));
+		// we must have either a from_type of a from_typeof
+		assert(from_type || from_typeof);
+		std::string from_typestring = from_type ? get_type_name(from_type) 
+			: (std::string("__typeof(") + *from_typeof + ")");
+		// ... this is NOT true for to_type: if we don't have a to_type or a to_typeof, 
+		// we will use use the corresponding_type template
+       
+//         // if we have a "from that" type, use it directly
+//         if (from_type)
+//         {
+//             m_out << "cake::value_convert<";
+//             if (from_type) m_out << get_type_name(from_type/*, ns_prefix + "::" + from_namespace_unprefixed*/);
+//             else m_out << " ::cake::unspecified_wordsize_type";
+//             m_out << ", ";
+//             if (to_type) m_out << get_type_name(to_type/*, ns_prefix + "::" + to_namespace_unprefixed*/); 
+//             else m_out << " ::cake::unspecified_wordsize_type";
+//             m_out << ">()(";
+//         }
+//         else
+//         {
+		
+        	// nowe we ALWAYS use the function template
+            m_out << component_pair_classname(ifaces);
+			
+			std::string to_typestring;
+			if (to_type) to_typestring = get_type_name(to_type);
+			else if (to_typeof) to_typestring = "__typeof(" + *to_typeof + ")";
+			else
+			{
+				to_typestring = std::string("::cake::") + "corresponding_type_to_"
+					+ ((to_module == ifaces.first) ? ("second< " + component_pair_classname(ifaces) + ", " + from_typestring + ", 0, true>::in_first")
+					                               : ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", 0, true>::in_second"));
+			}
             
-            if (ifaces_context.first == from_module)
+            if (ifaces.first == from_module)
             {
-            	assert(ifaces_context.second == to_module);
+            	assert(ifaces.second == to_module);
                 
-                m_out << "::value_convert_from_first_to_second<" 
-                << (to_type ? get_type_name(to_type) : " ::cake::unspecified_wordsize_type" )
-                << ">(";
+                m_out << "::value_convert_from_first_to_second< " 
+                << to_typestring //(" ::cake::unspecified_wordsize_type" )
+                << ", " << rule_tag << ">(";
             }
             else 
             {
-            	assert(ifaces_context.second == from_module);
-            	assert(ifaces_context.first == to_module);
+            	assert(ifaces.second == from_module);
+            	assert(ifaces.first == to_module);
 
-                m_out << "::value_convert_from_second_to_first<" 
-                << (to_type ? get_type_name(to_type) : " ::cake::unspecified_wordsize_type" )
-                << ">(";
+                m_out << "::value_convert_from_second_to_first< " 
+                << to_typestring //" ::cake::unspecified_wordsize_type" )
+                << ", " << rule_tag << ">(";
             }
-        }
+//        }
     }
     
     void wrapper_file::close_value_conversion()
@@ -1114,8 +1192,8 @@ namespace cake
 	wrapper_file::post_emit_status
 	wrapper_file::emit_stub_expression_as_statement_list(
 			const context& ctxt,
-			antlr::tree::Tree *expr,
-			shared_ptr<type_die> expected_cxx_type)
+			antlr::tree::Tree *expr/*,
+			shared_ptr<type_die> expected_cxx_type*/)
 // 			,
 // 			link_derivation::iface_pair ifaces_context,
 // 			const request::module_name_pair& context, // sink module
@@ -1131,8 +1209,8 @@ namespace cake
 				// and so is assert!
 				return emit_stub_function_call(
 					ctxt,
-					expr,
-					expected_cxx_type);
+					expr/*,
+					expected_cxx_type*/);
 					
 //					expr,
 //					ifaces_context,
@@ -1160,7 +1238,7 @@ namespace cake
 				//std::string ident = new_ident("temp");
 				//m_out << "auto " << ident << " = ";
 				//m_out << "cake::style_traits<0>::void_value()";
-				return (post_emit_status){"((void)0)", "true", environment()};
+				return (post_emit_status){NO_VALUE, "true", environment()};
 			case CAKE_TOKEN(KEYWORD_NULL):
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
@@ -1269,8 +1347,8 @@ namespace cake
 			{
 				auto result = emit_stub_expression_as_statement_list(
 					ctxt,
-					GET_CHILD(expr, 0),
-					shared_ptr<type_die>());
+					GET_CHILD(expr, 0)/*,
+					shared_ptr<type_die>()*/);
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = "
 					<< CCP(TO_STRING(expr)) << result.result_fragment << ";" << std::endl;
@@ -1297,12 +1375,12 @@ namespace cake
 			{
 				auto resultL = emit_stub_expression_as_statement_list(
 					ctxt,
-					GET_CHILD(expr, 0),
-					shared_ptr<type_die>());
+					GET_CHILD(expr, 0)/*,
+					shared_ptr<type_die>()*/);
 				auto resultR = emit_stub_expression_as_statement_list(
 					ctxt,
-					GET_CHILD(expr, 1),
-					shared_ptr<type_die>());
+					GET_CHILD(expr, 1)/*,
+					shared_ptr<type_die>()*/);
 				ident = new_ident("temp");
 
 				m_out << "auto " << ident << " = "
@@ -1473,8 +1551,8 @@ namespace cake
 	wrapper_file::post_emit_status
 	wrapper_file::emit_stub_function_call(
 			const context& ctxt,
-			antlr::tree::Tree *call_expr,
-			shared_ptr<type_die> expected_cxx_type) 
+			antlr::tree::Tree *call_expr/*,
+			shared_ptr<type_die> expected_cxx_type*/) 
 	{
 		assert(GET_TYPE(call_expr) == CAKE_TOKEN(INVOKE_WITH_ARGS));
 		INIT;
@@ -1508,12 +1586,13 @@ namespace cake
 		auto success_ident = new_ident("success");
 		m_out << "bool " << success_ident << " = true; " << std::endl;
 		std::string value_ident = new_ident("value");
-		if (!callee_subprogram->get_type())
+		if (treat_subprogram_as_untyped(callee_subprogram)
+			&& !subprogram_returns_void(callee_subprogram))
 		{
-			m_out << "::cake::unspecified_wordsize_type"
+			m_out << /* "::cake::unspecified_wordsize_type" */ "int" // HACK: this is what our fake DWARF will say
 			 << ' ' << value_ident << "; // unused" << std::endl;
 		}
-		else
+		else if (!subprogram_returns_void(callee_subprogram))
 		{
 			m_out << get_type_name(*callee_subprogram->get_type())
 			 << ' ' << value_ident << ";" << std::endl;
@@ -1606,7 +1685,8 @@ namespace cake
 						// do they form a contiguous sequence starting at current pos?
 						if (matched_names.begin() == matched_names.end())
 						{
-							RAISE(n, "no arguments to name-match");
+							// no arguments to name-match
+							goto finished_argument_eval_for_current_ast_node; // naughty
 						}
 						if (matched_names.begin()->second != i_arg)
 						{
@@ -1641,12 +1721,12 @@ namespace cake
 								result = emit_stub_expression_as_statement_list(
 								  ctxt, 
 								  // we need to manufacture an AST node: IDENT(arg_name_in_caller)
-								  make_ident_expr(s.str()),
+								  make_ident_expr(s.str())//,
 								  /* Result type is that of the *argument* that we're going to pass
 								   * this subexpression's result to. */
-								  (treat_subprogram_as_untyped(callee_subprogram) 
+								  /*(treat_subprogram_as_untyped(callee_subprogram) 
 								  ? boost::shared_ptr<dwarf::spec::type_die>()
-								  : *(*i_arg)->get_type()));
+								  : *(*i_arg)->get_type())*/);
 								// next time round we will handle the next matched name
 								++i_matched_name;
 							}
@@ -1655,12 +1735,13 @@ namespace cake
 					default:
 							// emit some stub code to evaluate this argument -- simple case
 							result = emit_stub_expression_as_statement_list(
-							  ctxt, n,
-							  /* Result type is that of the *argument* that we're going to pass
-							   * this subexpression's result to. */
-							  (treat_subprogram_as_untyped(callee_subprogram) 
-							  ? boost::shared_ptr<dwarf::spec::type_die>()
-							  : *(*i_arg)->get_type()));
+							  ctxt, n//,
+// 							  /* Result type is that of the *argument* that we're going to pass
+// 							   * this subexpression's result to. */
+// 							  (treat_subprogram_as_untyped(callee_subprogram) 
+// 							  ? boost::shared_ptr<dwarf::spec::type_die>()
+// 							  : *(*i_arg)->get_type())*/
+							  );
 							// remember the names used for the output of this evaluation
 					remember_arg_names:
 							arg_results.push_back(result);
@@ -1729,7 +1810,7 @@ namespace cake
 		
 		// convert the function raw result to a success and value pair,
 		// in a style-dependent way
-		m_out << "// begin output/error split" << std::endl;
+		m_out << "// begin output/error split for the function call overall" << std::endl;
 		if (callee_subprogram->get_type())
 		{
 			m_out << success_ident << " = __cake_success_of(" 
@@ -1741,12 +1822,13 @@ namespace cake
 					<< raw_result_ident << ");" << std::endl;
 			m_out.dec_level();
 			m_out << "}" << std::endl;
+			
 		}
 		else m_out << success_ident << " = true;" << std::endl;
-		m_out << "// end output/error split" << std::endl;
+		m_out << "// end output/error split for the function call overall" << std::endl;
 
 		// we opened argcount  extra lexical blocks in the argument eval
-		for (unsigned i = 0; i < GET_CHILD_COUNT(argsMultiValue); i++)
+		for (unsigned i = 0; i < arg_results.size(); i++)
 		{
 			m_out.dec_level();
 			m_out << "} " /*"else " << success_ident << " = false;"*/ << std::endl;
@@ -1757,10 +1839,12 @@ namespace cake
 		m_out << "if (!" << success_ident << ")" << std::endl;
 		m_out << "{" << std::endl;
 		m_out.inc_level();
-		if (callee_subprogram->get_type()) // only get a value if it returns something
+		if (!subprogram_returns_void(callee_subprogram)) // only get a value if it returns something
 		{
 			m_out << value_ident << " = ::cake::failure<" 
-				<<  get_type_name(*callee_subprogram->get_type()) //return_type_name
+				<<  (treat_subprogram_as_untyped(callee_subprogram)
+					 ? /* "unspecified_wordsize_type " */ "int" // HACK! "int" is what our fake DWARF will say, for now
+					 : get_type_name(*callee_subprogram->get_type())) //return_type_name
 				<< ">()();" << std::endl;
 		}
 		m_out.dec_level();
@@ -1775,7 +1859,7 @@ namespace cake
 		//m_out.inc_level();
 		
 
-		return (post_emit_status){success_ident, value_ident, environment()};
+		return (post_emit_status){value_ident, success_ident, environment()};
 	}
             
 //         	    ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
