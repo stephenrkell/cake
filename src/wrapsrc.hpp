@@ -148,7 +148,8 @@ namespace cake
 			);
 		environment crossover_environment(
 			const environment& env,
-			module_ptr new_module_context
+			module_ptr new_module_context,
+			const std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& constraints
 			);
 
 		void open_value_conversion(

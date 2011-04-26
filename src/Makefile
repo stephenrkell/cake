@@ -1,6 +1,8 @@
-CXX ?= c++
+#CXX ?= c++
+CXX ?= g++-4.5
 
-CXXFLAGS += -fno-eliminate-unused-debug-symbols -fno-eliminate-unused-debug-types
+CXXFLAGS += -fno-eliminate-unused-debug-symbols -fno-eliminate-unused-debug-types 
+CXXFLAGS += -DBOOST_HAS_RVALUE_REFS
 
 SRC := $(wildcard *.cpp)
 DEPS = $(patsubst %.cpp,.%.d,$(SRC))

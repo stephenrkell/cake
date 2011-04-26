@@ -134,6 +134,14 @@ namespace cake {
 			boost::shared_ptr<dwarf::spec::type_die> type,
 			module_ptr corresp_module,
 			bool flow_from_type_module_to_corresp_module);
+		
+		void merge_guessed_argument_info_at_callsites();
+		
+		void 
+		find_type_expectations_in_stub(module_ptr module,
+			antlr::tree::Tree *stub, 
+			boost::shared_ptr<dwarf::spec::type_die> current_type_expectation,
+			std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& out);
 
 		typedef unsigned long module_tag_t;
 		
@@ -205,6 +213,9 @@ namespace cake {
         	module_ptr sink,
         	boost::shared_ptr<dwarf::spec::type_die> sink_data_type,
 			bool source_is_on_left);
+		void 
+		find_usage_contexts(const std::string& ident,
+			antlr::tree::Tree *t, std::vector<antlr::tree::Tree *>& out);
 		void compute_wrappers();
         module_tag_t module_tag(module_ptr module) 
 		{ return reinterpret_cast<module_tag_t>(module.get()); }

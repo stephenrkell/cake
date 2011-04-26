@@ -49,6 +49,7 @@ namespace cake
         definite_member_name(antlr::tree::Tree *t);
             
 		friend std::ostream& operator<<(std::ostream&, const definite_member_name&);
+		operator std::string () const { std::ostringstream s; s << *this; return s.str(); }
 	};
 	std::ostream& operator<<(std::ostream&, const definite_member_name&);
 	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName);

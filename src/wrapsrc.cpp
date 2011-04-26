@@ -454,7 +454,12 @@ namespace cake
 			// crossover point
 			ctxt.modules.current = ctxt.modules.sink;
 			m_out << "// source->sink crossover point" << std::endl;
-			ctxt.env = crossover_environment(new_env1, sink);
+			std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> > constraints;
+			if (sink_infix_stub) m_d.find_type_expectations_in_stub(
+				sink, sink_infix_stub, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
+			m_d.find_type_expectations_in_stub(
+				sink, action, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
+			ctxt.env = crossover_environment(new_env1, sink, constraints);
 			m_out << "sync_all_co_objects(REP_ID(" << m_d.name_of_module(source)
 				<< "), REP_ID(" << m_d.name_of_module(sink) << "));" << std::endl;
 			// -- we need to modify the environment:
@@ -516,7 +521,11 @@ namespace cake
 				<< "), REP_ID(" << m_d.name_of_module(source) << "));" << std::endl;
 			ctxt.modules.current = ctxt.modules.source;
 			// update environment
-			ctxt.env = crossover_environment(new_env3, source);
+			std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> > 
+			return_constraints;
+			if (return_leg) m_d.find_type_expectations_in_stub(
+				source, return_leg, boost::shared_ptr<dwarf::spec::type_die>(), return_constraints);
+			ctxt.env = crossover_environment(new_env3, source, return_constraints);
 			
 			m_out << "// begin return leg of rule" << std::endl;
 			// emit the return leg, if there is one; otherwise, status is the old status
@@ -670,7 +679,8 @@ namespace cake
 	wrapper_file::environment 
 	wrapper_file::crossover_environment(
 		const environment& env,
-		module_ptr new_module_context
+		module_ptr new_module_context,
+		const std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& constraints
 		)
 	{
 		/* Here we:
@@ -690,6 +700,34 @@ namespace cake
 		 *   This is the "object graph semantics" in the thesis: these semantics
 		 *   apply for any given crossover point (although the thesis doesn't
 		 *   use the phrase "crossover point", sadly). */
+		 
+		/* NOTE: 
+		 * Making the crossover means doing value correspondence selection.
+		 * The type that we select for a local in the new context should
+		 * depend on annotations, from the following sources:
+		 * * type annotations, respecting typedefs, in the (unique) *source* of the value;
+		 * * explicit "as" annotations in the stub code
+		 * * type annotations, respecting typedefs, in the (possibly many) *sinks* of the value.
+		 *
+		 * The many sinks must all be consistent.
+		 * If the value is a pointer, there's an interesting question about the 
+		 * reached objects: does the pointer's static type imply constraints on
+		 * what these objects' corresponding types should be? Answer: no! Cake's
+		 * dynamic semantics mean that we don't use the static type of the pointer
+		 * directly. Currently we use it indirectly in the dynamic points-to
+		 * analysis. */
+		
+		// If I get all this working, what will happen in my foobarbaz case?
+		// We'll determine that the crossed-over arg needs to be an "int",
+		// hence avoiding use of __typeof,
+		// and just invoking value_convert directly from wordsize_type to int
+		// -- which will work because of the default conversions we added
+		// in the prelude.
+		// We don't need a nonzero RuleTag -- this only happens when we have
+		// typedefs.
+		
+		// SO -- do x86-64 "int" arguments get promoted to 64-bit width?
+		// NO -- they stay at 32-bit width! BUT pointers are 64-bit width. Argh.
 		
 		environment new_env;
 		for (auto i_binding = env.begin(); i_binding != env.end(); i_binding++)
@@ -700,19 +738,41 @@ namespace cake
 			// create a new cxx ident for the binding
 			auto ident = new_ident("xover_" + i_binding->first);
 			
+			/* Work out the target type expectations, using constraints */
+			boost::shared_ptr<dwarf::spec::type_die> precise_to_type;
+			int rule_tag = 0; // FIXME: handle annotations / typedefs in the *source*
+			auto iter_pair = constraints.equal_range(i_binding->first);
+			for (auto i_type = iter_pair.first; i_type != iter_pair.second; i_type++)
+			{
+				/* There are a few cases here. 
+				 * - all identical, all concrete: no problem
+				 * - all identical, all *the same* artificial: no problem
+				 * - different, all *concretely* the same but one artificial type:
+				 *   go with the artificial.
+				 *
+				 * FIXME: for now, we don't handle the artificial cases. */
+				if (precise_to_type)
+				{
+					if (precise_to_type->iterator_here() == i_type->second->iterator_here())
+					{
+						// okay, same DIE, so continue
+						continue;
+					}
+					else
+					{
+						assert(false);
+					}
+				}
+				else precise_to_type = i_type->second; // 
+			}
+			
 			// output its initialization
-// 			auto target_type = i_binding->second.cxx_typeof ?
-// 				m_d.unique_corresponding_dwarf_type(
-// 				i_binding->second.cxx_type,
-// 				new_module_context,
-// 				true /* flow_from_type_module_to_corresp_module */)
-// 				: shared_ptr<type_die>();
 			m_out << "auto " << ident << " = ";
 			open_value_conversion(
 				link_derivation::sorted(new_module_context, i_binding->second.valid_in_module),
-				0, // rule_tag -- FIXME!
+				rule_tag, // defaults to 0, but may have been set above
 				boost::shared_ptr<dwarf::spec::type_die>(), // no precise from type
-				boost::shared_ptr<dwarf::spec::type_die>(), // no precise to type
+				precise_to_type, // defaults to no precise to type, but may have been set above
 				i_binding->second.cxx_typeof, // from typeof is in the binding
 				boost::optional<std::string>(), // NO precise to typeof, 
 				   // BUT maybe we could start threading a context-demanded type through? 
@@ -931,7 +991,7 @@ namespace cake
 						source_module 
 						}));
 					if (friendly_name) out_env->insert(std::make_pair(*friendly_name, 
-						(bound_var_info) { *friendly_name,
+						(bound_var_info) { basic_name,
 						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
 						source_module
 						}));
@@ -1118,7 +1178,7 @@ namespace cake
 //         {
 		
         	// nowe we ALWAYS use the function template
-            m_out << component_pair_classname(ifaces);
+            //m_out << component_pair_classname(ifaces);
 			
 			std::string to_typestring;
 			if (to_type) to_typestring = get_type_name(to_type);
@@ -1129,24 +1189,28 @@ namespace cake
 					+ ((to_module == ifaces.first) ? ("second< " + component_pair_classname(ifaces) + ", " + from_typestring + ", 0, true>::in_first")
 					                               : ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", 0, true>::in_second"));
 			}
-            
-            if (ifaces.first == from_module)
-            {
-            	assert(ifaces.second == to_module);
+//             
+//             if (ifaces.first == from_module)
+//             {
+//             	assert(ifaces.second == to_module);
                 
-                m_out << "::value_convert_from_first_to_second< " 
-                << to_typestring //(" ::cake::unspecified_wordsize_type" )
-                << ", " << rule_tag << ">(";
-            }
-            else 
-            {
-            	assert(ifaces.second == from_module);
-            	assert(ifaces.first == to_module);
-
-                m_out << "::value_convert_from_second_to_first< " 
-                << to_typestring //" ::cake::unspecified_wordsize_type" )
-                << ", " << rule_tag << ">(";
-            }
+                //m_out << "::value_convert_from_first_to_second< " 
+                ///<< to_typestring //(" ::cake::unspecified_wordsize_type" )
+                //<< ", " << rule_tag << ">(";
+				m_out << "::cake::value_convert<" << std::endl
+					<< from_typestring << ", " << std::endl
+					<< to_typestring << ", " << std::endl
+					<< rule_tag << ">()(";
+//             }
+//             else 
+//             {
+//             	assert(ifaces.second == from_module);
+//             	assert(ifaces.first == to_module);
+// 
+//                 m_out << "::value_convert_from_second_to_first< " 
+//                 << to_typestring //" ::cake::unspecified_wordsize_type" )
+//                 << ", " << rule_tag << ">(";
+//             }
 //        }
     }
     

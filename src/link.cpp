@@ -229,6 +229,9 @@ namespace cake
 			}
 		}
 		
+		// propagate guessed argument info
+		merge_guessed_argument_info_at_callsites();
+		
 		// generate wrappers
 		compute_wrappers();
 	}
@@ -241,6 +244,375 @@ namespace cake
 	
 	}
 	
+	void link_derivation::merge_guessed_argument_info_at_callsites()
+	{
+		/* For each declared function that is untyped, 
+		 * we look for an event pattern which matches it
+		 * (across all event correspondences)
+		 * -- we might get zero or more.
+		 * If they don't agree on at least the cardinality of arguments,
+		 * we raise a warning (since varargs doesn't work as hoped yet).
+		 * We add a DWARF formal_parameter DIE for each of these.
+		 * For each of these, we may add a name
+		 * -- if each of the found event patterns uses the same name, make that the name.
+		 * For each, we may also add a type
+		 * -- if the pattern has an ident,
+		 *    and that ident is used in the RHS stub,
+		 *    and we can work out a type from this
+		 * HMM... sounds like we want to refactor the stub emission code
+		 * s.t. we can re-use the logic for expanding in_args...
+		 * emission is somewhat separate from walking?
+		 * Some aspects of emission are done in a pre-pass?
+		 * Want the "type analysis" walking here too: 
+		 * find places where an ident is interpreted "as"
+		 * or used in a context where the originating or expected type is a typedef
+		 * having distinct correspondences. */
+		 
+		for (auto i_mod = r.module_tbl.begin(); i_mod != r.module_tbl.end(); i_mod++)
+		{
+			for (auto i_dfs = i_mod->second->get_ds().begin();
+				i_dfs != i_mod->second->get_ds().end();
+				i_dfs++)
+			{
+				if ((*i_dfs)->get_tag() == DW_TAG_subprogram)
+				{
+					auto subprogram = boost::dynamic_pointer_cast<
+						dwarf::spec::subprogram_die>(*i_dfs);
+					if (subprogram->get_declaration()
+						&& *subprogram->get_declaration())
+					{
+						if (subprogram->formal_parameter_children_begin()
+							== subprogram->formal_parameter_children_end()
+							&& subprogram->unspecified_parameters_children_begin()
+							!= subprogram->unspecified_parameters_children_end())
+						{
+							// we're on! search for event patterns
+							struct pattern_info
+							{
+								std::vector<std::string> call_argnames;
+								antlr::tree::Tree *pattern;
+								ev_corresp *corresp;
+							};
+							std::multimap<std::string, pattern_info> patterns;
+							std::vector<std::string> callnames;
+							// patterns could be in any link block featuring this module...
+							// ... so we just want to check against the source module
+							for (auto i_corresp = ev_corresps.begin();
+								i_corresp != ev_corresps.end();
+								i_corresp++)
+							{
+								if (i_corresp->second.source == i_mod->second
+									&& i_corresp->second.source_pattern)
+								{
+									auto p = i_corresp->second.source_pattern;
+									assert(GET_TYPE(p) == CAKE_TOKEN(EVENT_PATTERN));
+									switch (GET_TYPE(p))
+									{
+										case CAKE_TOKEN(EVENT_WITH_CONTEXT_SEQUENCE): {
+// 											INIT;
+// 											BIND3(p, sequenceHead, CONTEXT_SEQUENCE);
+// 											{
+// 												// descend looking for atomic patterns
+// 												FOR_ALL_CHILDREN(sequenceHead)
+// 												{
+// 													switch(GET_TYPE(n))
+// 													{
+// 														case CAKE_TOKEN(KEYWORD_LET):
+// 															
+// 
+// 														case CAKE_TOKEN(ELLIPSIS):
+// 															continue;
+// 														default: RAISE_INTERNAL(n, 
+// 															"not a context predicate");
+// 												}
+// 											}
+											assert(false); // see to this later
+										}
+										case CAKE_TOKEN(EVENT_PATTERN):
+										{
+											INIT;
+											BIND3(p, eventContext, EVENT_CONTEXT);
+											BIND2(p, memberNameExpr); // name of call being matched -- can ignore this here
+											BIND3(p, eventCountPredicate, EVENT_COUNT_PREDICATE);
+											BIND3(p, eventParameterNamesAnnotation, KEYWORD_NAMES);
+											std::vector<std::string> argnames;
+											FOR_REMAINING_CHILDREN(p)
+											{
+												ALIAS3(n, annotatedValueBindingPatternHead, 
+													ANNOTATED_VALUE_PATTERN);
+												{
+													INIT;
+													BIND2(annotatedValueBindingPatternHead, arg);
+													assert(arg);
+													switch(GET_TYPE(arg))
+													{
+														case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+															argnames.push_back(
+																CCP(GET_TEXT(arg)));
+															break;
+														default: assert(false);
+
+													}
+												}
+											}
+											// add this pattern
+											patterns.insert(std::make_pair(
+												definite_member_name(memberNameExpr),
+												(pattern_info) {
+												argnames,
+												p,
+												&i_corresp->second
+												}
+											));
+											callnames.push_back(definite_member_name(memberNameExpr));
+										} // end case EVENT_PATTERN
+										break;
+										default: RAISE(p, "didn't understand event pattern");
+									} // end switch(GET_TYPE(p))
+								} // end if we found a source pattern in this module
+							} // end for all corresps
+							
+							// now we've gathered all the patterns we can, 
+							// iterate through them by call names
+							for (auto i_callname = callnames.begin(); i_callname != callnames.end();
+								i_callname++)
+							{
+								auto patterns_seq = patterns.equal_range(*i_callname);
+								boost::optional<std::vector<std::string> > seen_argnames;
+								bool argnames_identical = true;
+								for (auto i_pattern = patterns_seq.first;
+									i_pattern != patterns_seq.second;
+									i_pattern++)
+								{
+									if (!seen_argnames) seen_argnames = i_pattern->second.call_argnames;
+									else if (i_pattern->second.call_argnames != *seen_argnames)
+									{
+										// HMM: seen non-equivalent argnames for the same arg
+										argnames_identical = false;
+										std::cerr << "Warning: different patterns use non-identical argnames "
+											<< "for subprogram " 
+											<< *subprogram->get_name() << std::endl;
+										seen_argnames = boost::optional<std::vector<std::string> >();
+									}
+								}
+								if (argnames_identical)
+								{
+									/* Okay, go ahead and add name attrs */
+									assert(seen_argnames);
+									auto encap_subprogram =
+										boost::dynamic_pointer_cast<dwarf::encap::subprogram_die>(
+											subprogram);
+									for (auto i_name = seen_argnames->begin();
+										i_name != seen_argnames->end();
+										i_name++)
+									{
+										auto created =
+											dwarf::encap::factory::get_factory(
+												dwarf::spec::DEFAULT_DWARF_SPEC
+											).create<DW_TAG_formal_parameter>(
+												encap_subprogram,
+												boost::optional<const std::string&>(*i_name));
+										std::cerr << "created fp of subprogram "
+											<< *subprogram->get_name()
+											<< " with name " <<  *i_name
+											<< " at offset " << *created->get_name()
+											<< std::endl;
+									}
+								}
+
+								for (auto i_pattern = patterns_seq.first;
+									i_pattern != patterns_seq.second;
+									i_pattern++)
+								{
+									// plough onwards: for each arg, 
+									// where is it used in the RHS?
+									// try to get a type expectation,
+									// and if we find one, 
+									// translate it to the source context
+									// HMM. The right way to solve this whole problem
+									// is to patch gcc.
+									// The next right way to solve this problem
+									// is to write a ld wrapper 
+									// (except we can't yet *produce* DWARF).
+									// This is the third-best way. 
+									// So don't spend too much time on it.
+									for (auto i_arg = i_pattern->second.call_argnames.begin();
+										i_arg != i_pattern->second.call_argnames.end();
+										i_arg++)
+									{
+										std::vector<antlr::tree::Tree *> contexts;
+										find_usage_contexts(*i_arg,
+											i_pattern->second.corresp->sink_expr,
+											contexts);
+										if (contexts.size() > 0)
+										{
+											std::cerr << "Considering type expectations "
+												<< "for stub uses of identifier " 
+												<< *i_arg << std::endl;
+											for (auto i_ctxt = contexts.begin(); 
+												i_ctxt != contexts.end();
+												i_ctxt++)
+											{
+												auto node = *i_ctxt;
+												antlr::tree::Tree *prev_node = 0;
+												assert(GET_TYPE(node) == CAKE_TOKEN(IDENT));
+												while (node && ((node = /*GET_PARENT(node)*/ NULL /* HACK: getParent is broken!  2011-4-22 */) != NULL))
+												{
+													std::cerr << "Considering subtree " << CCP(TO_STRING_TREE(node))
+														<< std::endl;
+													switch (GET_TYPE(node))
+													{
+														case CAKE_TOKEN(INVOKE_WITH_ARGS):
+															// this is the interesting case
+															std::cerr << "FIXME: found a stub function call using ident " 
+																<< *i_arg << std::endl;
+
+														case CAKE_TOKEN(IDENT):
+														case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+														case CAKE_TOKEN(MULTIVALUE):
+															continue;
+
+														default: node = NULL; break; // signal exit
+													}
+												}
+												// when we get here, we may have identified some
+												// type expectations, or we may not.
+												// FIXME: finish this code by
+												// - checking all the type expectations are
+												// the same
+												// - invoking unique_correpsonding_type
+												// - filling in the output of this in the fp die
+
+											}
+										} // end if contexts.size() > 0
+									}
+								} // end for i_pattern
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	void 
+	link_derivation::find_usage_contexts(const std::string& ident,
+		antlr::tree::Tree *t, std::vector<antlr::tree::Tree *>& out)
+	{
+		INIT;
+		// first check ourselves
+		if (GET_TYPE(t) == CAKE_TOKEN(IDENT))
+		{
+			out.push_back(t);
+		}
+		// now check our children
+		FOR_ALL_CHILDREN(t)
+		{
+			find_usage_contexts(ident, n, out);
+		}
+	}
+
+	void 
+	link_derivation::find_type_expectations_in_stub(module_ptr module,
+		antlr::tree::Tree *stub, 
+		boost::shared_ptr<dwarf::spec::type_die> current_type_expectation,
+		std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& out)
+	{
+		/* We walk the stub AST structure, resolving names against the module.
+		 * Roughly, where there are static type annotations in the module,
+		 * e.g. type info for C function signatures,
+		 * we infer C++ static type requirements for any idents used.
+		 * This might include typedefs, i.e. we don't concretise. */
+		std::map<int, boost::shared_ptr<dwarf::spec::type_die> > child_type_expectations;
+		antlr::tree::Tree *parent_whose_children_to_walk = stub;
+		switch(GET_TYPE(stub))
+		{
+			case CAKE_TOKEN(INVOKE_WITH_ARGS):
+				{
+					INIT;
+					BIND3(stub, argsExpr, MULTIVALUE);
+					parent_whose_children_to_walk = argsExpr;
+					BIND2(stub, functionExpr);
+					boost::optional<definite_member_name> function_dmn;
+					switch(GET_TYPE(functionExpr))
+					{
+						case IDENT:
+							function_dmn = definite_member_name(1, CCP(GET_TEXT(functionExpr)));
+							break;
+						case DEFINITE_MEMBER_NAME:
+							{
+								definite_member_name dmn(functionExpr);
+								function_dmn = dmn;
+							}
+							break;
+						default:
+						{
+							std::cerr << "Warning: saw a functionExpr that wasn't of simple form: "
+								<< CCP(GET_TEXT(functionExpr)) << std::endl;
+							break;
+						}
+					}
+					if (function_dmn) 
+					{
+						/* Resolve the function name against the module. */
+						auto found = module->get_ds().toplevel()->visible_resolve(
+							function_dmn->begin(), function_dmn->end());
+						if (found)
+						{
+							auto subprogram_die = boost::dynamic_pointer_cast<
+								dwarf::spec::subprogram_die>(found);
+							if (found)
+							{
+								auto i_arg = subprogram_die->formal_parameter_children_begin();
+								INIT;
+								FOR_ALL_CHILDREN(argsExpr)
+								{
+									if (i_arg == subprogram_die->formal_parameter_children_end())
+									{
+										RAISE(stub, "too many args for function");
+									}
+									if ((*i_arg)->get_type())
+									{
+										/* We found a type expectation */
+										child_type_expectations[i] = *(*i_arg)->get_type();
+									}
+									
+									++i_arg;
+								}
+							}
+							else
+							{
+								RAISE(stub, "invokes nonexistent function");
+								// FIXME: this will need to be tweaked to support function ptrs
+							}
+						}
+					}
+				}
+				goto walk_children;
+			case CAKE_TOKEN(IDENT):
+				if (current_type_expectation) out.insert(std::make_pair(
+					CCP(GET_TEXT(stub)), current_type_expectation));
+				break; /* idents have no children */
+			default:
+				/* In all other cases, we have no expectation, so we leave
+				 * the child_type_expectations at default values. */
+			walk_children:
+			{
+				INIT;
+				FOR_ALL_CHILDREN(parent_whose_children_to_walk)
+				{
+					/* recurse */
+					find_type_expectations_in_stub(
+						module,
+						n, /* child */
+						child_type_expectations[i],
+						out
+					);
+				}
+			}
+				
+		} // end switch
+	}	
 //     std::string link_derivation::namespace_name()
 //     {
 //     	std::ostringstream s;
@@ -372,6 +744,68 @@ namespace cake
 << std::endl << "        }	"
 << std::endl << "    }; // end component_pair specialization"
 << std::endl;
+			/* Now output the correspondence for unspecified_wordsize_type
+			 * (FIXME: make these emissions just invoke macros in the prelude) */
+			/* Given a pair of modules
+			 * with a pair of bidirectionally corresponding types, 
+			 * we need how many specializations? 
+			 * given second, in first, 1-->2
+			 * given second, in first, 1<--2
+			 * given first, in second, 1-->2
+			 * given first, in second, 1<--2 */
+				wrap_file << 
+				"    template <>"
+<< std::endl << "    struct corresponding_type_to_second<" 
+<< std::endl << "        component_pair<" 
+<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
+<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
+                      << " ::cake::unspecified_wordsize_type"
+                      << ", 0, " // RuleTag
+                      << "true" << ">" // DirectionIsFromSecondToFirst
+<< std::endl << "    {"
+<< std::endl << "         typedef ::cake::unspecified_wordsize_type in_first;"
+<< std::endl << "    };"
+<< std::endl;
+				wrap_file << 
+				"    template <>"
+<< std::endl << "    struct corresponding_type_to_first<" 
+<< std::endl << "        component_pair<" 
+<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
+<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
+                      << " ::cake::unspecified_wordsize_type"
+                      << ", 0, " // RuleTag
+                      << "false" << ">" // DirectionIsFromFirstToSecond
+<< std::endl << "    {"
+<< std::endl << "         typedef ::cake::unspecified_wordsize_type in_second;"
+<< std::endl << "    };"
+<< std::endl;
+				wrap_file <<
+				"    template <>"
+<< std::endl << "    struct corresponding_type_to_second<" 
+<< std::endl << "        component_pair<" 
+<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, " 
+<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, "
+                      << " ::cake::unspecified_wordsize_type"
+                      << ", 0, " // RuleTag
+                      << "false" << ">" // DirectionIsFromSecondToFirst
+<< std::endl << "    {"
+<< std::endl << "         typedef ::cake::unspecified_wordsize_type in_first;"
+<< std::endl << "    };"
+<< std::endl;
+				wrap_file << 
+				"    template <>"
+<< std::endl << "    struct corresponding_type_to_first<" 
+<< std::endl << "        component_pair<" 
+<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, " 
+<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, "
+                      << " ::cake::unspecified_wordsize_type"
+                      << ", 0, " // RuleTag
+                      << "true" << ">" // DirectionIsFromFirstToSecond
+<< std::endl << "    {"
+<< std::endl << "         typedef ::cake::unspecified_wordsize_type in_second;"
+<< std::endl << "    };"
+<< std::endl;
+			
 			auto all_value_corresps = val_corresps.equal_range(*i_pair);
 			for (auto i_corresp = all_value_corresps.first;
 				i_corresp != all_value_corresps.second;
@@ -697,6 +1131,8 @@ namespace cake
 		module_ptr right,
 		antlr::tree::Tree *corresps)
 	{
+		std::cerr << "Adding explicit corresps from block: " << CCP(TO_STRING_TREE(corresps))
+			<< std::endl;
 		assert(GET_TYPE(corresps) == CAKE_TOKEN(CORRESP));
 		INIT;
 		FOR_ALL_CHILDREN(corresps)
@@ -872,6 +1308,22 @@ namespace cake
 							return_leg,
 							/*.source_pattern_to_free = */ (free_source) ? source_pattern : 0,
 							/*.sink_pattern_to_free = */ (free_sink) ? sink_expr : 0 }));
+		/* print debugging info: what type expectations did we find in the stubs? */
+		if (sink_expr)
+		{
+			std::cerr << "stub: " << CCP(TO_STRING_TREE(sink_expr))
+				<< " implies type expectations as follows: " << std::endl;
+			std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> > out;
+			find_type_expectations_in_stub(sink,
+				sink_expr, boost::shared_ptr<dwarf::spec::type_die>(), // FIXME: use return type
+				out);
+			if (out.size() == 0) std::cerr << "(no type expectations inferred)" << std::endl;
+			else for (auto i_exp = out.begin(); i_exp != out.end(); i_exp++)
+			{
+				std::cerr << i_exp->first << " as " << *i_exp->second << std::endl;
+			}
+			
+		}
 	}
 
 	/* This version is called from processing the pairwise block AST.

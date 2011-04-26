@@ -3,7 +3,7 @@ CFLAGS += -I${HOME}/opt/include
 CXXFLAGS += $(CFLAGS) -std=c++0x
 
 CAKE ?= ../../src/cake
-CXXFLAGS += -I$(shell dirname $(CAKE))/../include
+CXXFLAGS += -I$(shell dirname $(CAKE))/../include -I$(shell dirname $(CAKE))/../libcake/include
 
 SRC := $(wildcard *.c)
 OBJS := $(patsubst %.c,%.o,$(SRC))

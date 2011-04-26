@@ -43,6 +43,7 @@ namespace tree {
 #define GET_TEXT(node) (node)->getText((node))
 #define TO_STRING(node) (node)->toString((node))
 #define GET_TYPE(node) (node)->getType((node))
+#define GET_PARENT(node) (node)->getParent((node))
 #define GET_CHILD_COUNT(node) (node)->getChildCount((node))
 #define TO_STRING_TREE(node) (node)->toStringTree((node))
 #define GET_CHILD(node, i) (reinterpret_cast<antlr::tree::Tree*>((node)->getChild((node), i)))

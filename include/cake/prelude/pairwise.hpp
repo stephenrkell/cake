@@ -21,7 +21,7 @@ namespace cake
         unspecified_wordsize_type operator ()(FromPtr* from) const // NOT a reference 
         { 
         	unspecified_wordsize_type ret;
-            ret = reinterpret_cast<unspecified_wordsize_type>(from);  
+            ret = *reinterpret_cast<unspecified_wordsize_type*>(&from);  
             return ret;
         } 
 	}; 
@@ -30,7 +30,7 @@ namespace cake
     { 
         ToPtr* operator ()(const unspecified_wordsize_type& from) const 
         { 
-    	    return reinterpret_cast<ToPtr*>(from/*.data*/);
+    	    return *reinterpret_cast<ToPtr**>(&from);
         } 
 	}; 
     template <> 
@@ -40,7 +40,7 @@ namespace cake
         { 
 			assert(sizeof (wordsize_integer_type) == sizeof (unspecified_wordsize_type));
         	unspecified_wordsize_type ret 
-             = reinterpret_cast<unspecified_wordsize_type>(from);  
+             = *reinterpret_cast<const unspecified_wordsize_type*>(&from);  
             return ret;
         } 
 	}; 
@@ -50,8 +50,9 @@ namespace cake
     { 
         unspecified_wordsize_type operator ()(const int& from) const 
         { 
+			auto tmp_long = static_cast<long>(from);
         	unspecified_wordsize_type ret 
-             = reinterpret_cast<unspecified_wordsize_type>(static_cast<long>(from));  
+             = *reinterpret_cast<unspecified_wordsize_type*>(&tmp_long);  
             return ret;
         } 
 	}; 
@@ -62,7 +63,7 @@ namespace cake
         wordsize_integer_type operator ()(const unspecified_wordsize_type& from) const 
         {
 			assert(sizeof (wordsize_integer_type) == sizeof (unspecified_wordsize_type));
-    	    return reinterpret_cast<wordsize_integer_type>(from);
+    	    return *reinterpret_cast<const wordsize_integer_type*>(&from);
         } 
 	}; 
 #if defined (X86_64) || (defined (__x86_64__))
@@ -71,7 +72,7 @@ namespace cake
     { 
         int operator ()(const unspecified_wordsize_type& from) const 
         {
-    	    return static_cast<int>(reinterpret_cast<long>(from));
+    	    return static_cast<int>(*reinterpret_cast<const long*>(&from));
         } 
 	}; 
 #endif
