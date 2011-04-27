@@ -5,7 +5,7 @@ int crazy = 42;
 
 int foo(int a)
 {
-	if (a <= 0)
+	if (a > 0)
 	{
 		return bar(a-1);
 	}
@@ -15,4 +15,9 @@ int foo(int a)
 static const char *not_external(void)
 {
 	return "Thou shalt not see this!";
+}
+
+int main(int argc, char **argv)
+{
+	return foo(argc);
 }

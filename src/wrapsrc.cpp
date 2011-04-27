@@ -199,7 +199,7 @@ namespace cake
                                     	read_definite_member_name(valuePattern);
                                     if (mn.size() > 1) RAISE(valuePattern, "may not be compound");
                             	    // output the variable type, or unspecified_wordsize_type
-                                    if (emit_types) m_out << (ignore_dwarf_args ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
+                                    if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
                                 	    *(*i_arg)->get_type()));
                                     // output the variable name, prefixed 
                                     m_out << ' ' << arg_name_prefix << argnum /*<< '_' << mn.at(0)*/;
@@ -208,7 +208,7 @@ namespace cake
                     	    case CAKE_TOKEN(METAVAR):
                             case CAKE_TOKEN(KEYWORD_CONST):
                             	// output the argument type and a dummy name
-                                if (emit_types) m_out << (ignore_dwarf_args ? "::cake::unspecified_wordsize_type" : compiler.name_for(
+                                if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
                                 	*(*i_arg)->get_type()));
                                 m_out << ' ' << arg_name_prefix << argnum /*<< "_dummy"/* << argnum*/;
                                 break;
@@ -934,7 +934,7 @@ namespace cake
 			//int dummycount = 0;
 			FOR_REMAINING_CHILDREN(eventPattern)
 			{
-				boost::shared_ptr<dwarf::spec::type_die> p_arg_type = boost::shared_ptr<dwarf::spec::type_die>();
+				//boost::shared_ptr<dwarf::spec::type_die> p_arg_type = boost::shared_ptr<dwarf::spec::type_die>();
 				boost::shared_ptr<dwarf::spec::program_element_die> p_arg_origin;
 				
 				if (i_caller_arg == caller_subprogram->formal_parameter_children_end())
@@ -948,7 +948,7 @@ namespace cake
 				}
 				else
 				{
-					p_arg_type = *(*i_caller_arg)->get_type();
+					//p_arg_type = *(*i_caller_arg)->get_type();
 					p_arg_origin = boost::dynamic_pointer_cast<dwarf::spec::program_element_die>(
 						(*i_caller_arg)->get_this());
 				}

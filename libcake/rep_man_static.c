@@ -7,6 +7,7 @@
 /* extern const struct co_object_group *const STATIC_HEAD; */
 extern const struct co_object_group __libcake_first_co_object_group __attribute__((weak));
 struct co_object_group *head = &__libcake_first_co_object_group; /* hard-wire the static entries */
+int next_rep_id;
 
 int invalidate_co_object(void *object, int rep)
 {

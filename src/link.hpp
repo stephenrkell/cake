@@ -149,6 +149,13 @@ namespace cake {
     	// correspondences
     	ev_corresp_map_t ev_corresps;
         val_corresp_map_t val_corresps;
+		
+		// maps remembering which functions have been handled by explicit correspondences,
+		// to avoid generating implicit correspondences
+		std::map<module_ptr, std::set<definite_member_name> > touched_events; // *source* events only
+		std::map<module_ptr, std::set<definite_member_name> > touched_data_types;
+		// HACK: ^^ we currently don't use this, because 
+		// name_match_types already checks for pre-existing corresps (for synonymy reasons)
         
         // wrappers are stored in a map from symname to corresp-list
         // a corresp is in the list iff it activates the wrapper

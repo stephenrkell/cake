@@ -1150,6 +1150,13 @@ namespace cake
 								{
 									INIT;
 									BIND3(correspHead, sourcePattern, EVENT_PATTERN);
+									{
+										INIT;
+										BIND2(sourcePattern, eventContext);
+										BIND2(sourcePattern, memberNameExpr);
+										touched_events[left].insert(
+											read_definite_member_name(memberNameExpr));
+									}
 									BIND3(correspHead, sourceInfixStub, INFIX_STUB_EXPR);
 									BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
 									BIND2(correspHead, sinkExpr);
@@ -1166,6 +1173,13 @@ namespace cake
 									BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
 									BIND3(correspHead, sourceInfixStub, INFIX_STUB_EXPR);
 									BIND3(correspHead, sourcePattern, EVENT_PATTERN);
+									{
+										INIT;
+										BIND2(sourcePattern, eventContext);
+										BIND2(sourcePattern, memberNameExpr);
+										touched_events[right].insert(
+											read_definite_member_name(memberNameExpr));
+									}
 									BIND3(correspHead, returnEvent, RETURN_EVENT);
 									add_event_corresp(right, sourcePattern, sourceInfixStub,
 										left, sinkExpr, sinkInfixStub, returnEvent);
@@ -1176,9 +1190,23 @@ namespace cake
 								{
 									INIT;
 									BIND3(correspHead, leftPattern, EVENT_PATTERN);
+									{
+										INIT;
+										BIND2(leftPattern, eventContext);
+										BIND2(leftPattern, memberNameExpr);
+										touched_events[left].insert(
+											read_definite_member_name(memberNameExpr));
+									}
 									BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
 									BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
 									BIND3(correspHead, rightPattern, EVENT_PATTERN);
+									{
+										INIT;
+										BIND2(rightPattern, eventContext);
+										BIND2(rightPattern, memberNameExpr);
+										touched_events[right].insert(
+											read_definite_member_name(memberNameExpr));
+									}
 									BIND3(correspHead, returnEvent, RETURN_EVENT);
 									add_event_corresp(left, leftPattern, leftInfixStub, 
 										right, rightPattern, rightInfixStub, returnEvent);
@@ -1264,12 +1292,18 @@ namespace cake
 										add_value_corresp(left, leftMember, leftInfixStub,
 											right, rightMember, rightInfixStub,
 											valueCorrespondenceRefinement, true, correspHead);
-										break;
+										goto record_touched;
 									case CAKE_TOKEN(RL_DOUBLE_ARROW):
 									case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
 										add_value_corresp(right, rightMember, rightInfixStub,
 											left, leftMember, leftInfixStub, 
 											valueCorrespondenceRefinement, false, correspHead);
+										goto record_touched;
+									record_touched:
+										touched_data_types[left].insert(
+											read_definite_member_name(leftMember));
+										touched_data_types[right].insert(
+											read_definite_member_name(rightMember));
 										break;
 									default: assert(false);
 								}
@@ -1625,9 +1659,6 @@ namespace cake
 		dwarf::encap::Die_encap_all_compile_units& providing_info
 			= providing_iface->all_compile_units();
 			
-		//auto r_test = requiring_info.subprograms_begin();
-		//required_funcs_iter r_iter(
-		//	requiring_info.subprograms_begin(), requiring_info.subprograms_end());
 		required_funcs_iter r_end(
 			requiring_info.subprograms_begin(), requiring_info.subprograms_end(),
 			requiring_info.subprograms_end());
@@ -1650,11 +1681,27 @@ namespace cake
 			{
 				if ((*r_iter)->get_name() == (*p_iter)->get_name())
 				{
+					/* Only add a correspondence if we haven't already got 
+					 * *either* a correspondence for the source event,
+					 * *or* a correspondence for sink event. 
+					 * We haven't computed wrappers yet, so we can't use
+					 * that. */
+					 
 					// add a correspondence
 					std::cerr << "Matched name " << *((*r_iter)->get_name())
 						<< " in modules " << *((*r_iter)->parent().get_name())
 						<< " and " << *((*p_iter)->parent().get_name())
 						<< std::endl;
+					// don't add if explicit rules have touched this event
+					if (touched_events[requiring_iface].find(
+							definite_member_name(std::vector<std::string>(1, *(*r_iter)->get_name())))
+						!= touched_events[requiring_iface].end())
+					{
+						std::cerr << "Matched name " << *((*r_iter)->get_name())
+							<< " already touched by an explicit correspondence, so skipping."
+							<< std::endl;
+						continue;
+					}
 
 					antlr::tree::Tree *tmp_source_pattern = 
 						make_simple_event_pattern_for_call_site(
