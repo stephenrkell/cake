@@ -1,9 +1,9 @@
-extern int bum;
-extern int bar(int);
-extern int crazy;
-int crazy = 42;
+extern long int bum;
+extern long int bar(long int);
+extern long int crazy;
+long int crazy = 42;
 
-int foo(int a)
+long int foo(long int a)
 {
 	if (a > 0)
 	{

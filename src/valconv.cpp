@@ -28,8 +28,8 @@ namespace cake
 	 : basic_value_conversion(basic), w(w), m_out(out),
 	 	source_concrete_type(source_data_type->get_concrete_type()),
 		sink_concrete_type(sink_data_type->get_concrete_type()),
-		from_typename(w.get_type_name(source_concrete_type)),
-		to_typename(w.get_type_name(sink_concrete_type))
+		from_typename(source_concrete_type ? w.get_type_name(source_concrete_type) : "(no concrete type)"),
+		to_typename(sink_concrete_type ? w.get_type_name(sink_concrete_type) : "(no concrete type)")
 	{
 		assert(&w.m_out == &out);
 	}

@@ -1,5 +1,5 @@
 C_SRC := $(wildcard *.c) 
-CXX_SRC := $(wildcard *.cpp)
+CXX_SRC := $(wildcard *.cpp) $(wildcard *.cc)
 C_OBJS := $(patsubst %.c,%.o,$(C_SRC))
 CXX_OBJS := $(patsubst %.cpp,%.o,$(CXX_SRC))
 OBJS := $(C_OBJS) $(CXX_OBJS)
@@ -13,8 +13,7 @@ CXXFLAGS += -I${HOME}/scratch/opt/include
 CXXFLAGS += -I${HOME}/opt/include
 
 C_DEPS := $(patsubst %.c,.%.c.d,$(C_SRC)) 
-CXX_DEPS := $(patsubst %.cpp,.%.cpp.d,$(CXX_SRC))
-
+CXX_DEPS := $(patsubset %.cc,%,cc.d,$(patsubst %.cpp,.%.cpp.d,$(CXX_SRC)))
 
 .PHONY: default
 default: libcake.so
@@ -24,9 +23,11 @@ clean:
 	rm -f *.o *.so
 
 libcake.so: $(OBJS)
-	$(CXX) -shared -o "$@"  $(OBJS) -ldl
+	$(CXX) $(CXXFLAGS) -shared -o "$@"  $(OBJS) -ldl
 
 $(CXX_DEPS): .%.cpp.d : %.cpp
+	g++ -MM $(CXXFLAGS) "$<"  > "$@"
+$(CXX_DEPS): .%.cc.d : %.cc
 	g++ -MM $(CXXFLAGS) "$<"  > "$@"
 $(C_DEPS): .%.c.d : %.c
 	gcc -MM $(CFLAGS) "$<"  > "$@"
@@ -34,4 +35,6 @@ $(C_DEPS): .%.c.d : %.c
 include $(DEPS)
 
 %.o: %.cpp #$(HDRS)
+	g++ $(CXXFLAGS) -c -o "$@" "$<"
+%.o: %.cc #$(HDRS)
 	g++ $(CXXFLAGS) -c -o "$@" "$<"

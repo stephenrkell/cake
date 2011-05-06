@@ -289,7 +289,7 @@ namespace cake
 							// we're on! search for event patterns
 							struct pattern_info
 							{
-								std::vector<std::string> call_argnames;
+								std::vector<boost::optional<std::string> > call_argnames;
 								antlr::tree::Tree *pattern;
 								ev_corresp *corresp;
 							};
@@ -332,39 +332,54 @@ namespace cake
 										{
 											INIT;
 											BIND3(p, eventContext, EVENT_CONTEXT);
-											BIND2(p, memberNameExpr); // name of call being matched -- can ignore this here
+											BIND3(p, memberNameExpr, DEFINITE_MEMBER_NAME); // name of call being matched -- can ignore this here
 											BIND3(p, eventCountPredicate, EVENT_COUNT_PREDICATE);
 											BIND3(p, eventParameterNamesAnnotation, KEYWORD_NAMES);
-											std::vector<std::string> argnames;
-											FOR_REMAINING_CHILDREN(p)
+											std::vector<boost::optional<std::string> > argnames;
+											auto dmn = read_definite_member_name(memberNameExpr);
+											if (subprogram->get_name() && dmn.size() == 1 
+												&& dmn.at(0) == *subprogram->get_name())
 											{
-												ALIAS3(n, annotatedValueBindingPatternHead, 
-													ANNOTATED_VALUE_PATTERN);
+												FOR_REMAINING_CHILDREN(p)
 												{
 													INIT;
-													BIND2(annotatedValueBindingPatternHead, arg);
-													assert(arg);
-													switch(GET_TYPE(arg))
+													ALIAS3(n, annotatedValueBindingPatternHead, 
+														ANNOTATED_VALUE_PATTERN);
 													{
-														case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
-															argnames.push_back(
-																CCP(GET_TEXT(arg)));
-															break;
-														default: assert(false);
+														INIT;
+														BIND2(annotatedValueBindingPatternHead, arg);
+														assert(arg);
+														switch(GET_TYPE(arg))
+														{
+															case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+															{
+																std::ostringstream s;
+																s << read_definite_member_name(arg);
+																argnames.push_back(s.str());
+																break;
+															}
+															case CAKE_TOKEN(KEYWORD_CONST):
+																// no information about arg name here
 
+																argnames.push_back(
+																	boost::optional<std::string>());
+																break;
+															default: assert(false);
+
+														}
 													}
 												}
-											}
-											// add this pattern
-											patterns.insert(std::make_pair(
-												definite_member_name(memberNameExpr),
-												(pattern_info) {
-												argnames,
-												p,
-												&i_corresp->second
-												}
-											));
-											callnames.push_back(definite_member_name(memberNameExpr));
+												// add this pattern
+												patterns.insert(std::make_pair(
+													dmn,
+													(pattern_info) {
+													argnames,
+													p,
+													&i_corresp->second
+													}
+												));
+												callnames.push_back(dmn);
+											} // end if name matches
 										} // end case EVENT_PATTERN
 										break;
 										default: RAISE(p, "didn't understand event pattern");
@@ -378,7 +393,8 @@ namespace cake
 								i_callname++)
 							{
 								auto patterns_seq = patterns.equal_range(*i_callname);
-								boost::optional<std::vector<std::string> > seen_argnames;
+								boost::optional<std::vector<boost::optional< std::string> > >
+									seen_argnames;
 								bool argnames_identical = true;
 								for (auto i_pattern = patterns_seq.first;
 									i_pattern != patterns_seq.second;
@@ -392,7 +408,7 @@ namespace cake
 										std::cerr << "Warning: different patterns use non-identical argnames "
 											<< "for subprogram " 
 											<< *subprogram->get_name() << std::endl;
-										seen_argnames = boost::optional<std::vector<std::string> >();
+										seen_argnames = boost::optional<std::vector<boost::optional<std::string> > >();
 									}
 								}
 								if (argnames_identical)
@@ -411,11 +427,13 @@ namespace cake
 												dwarf::spec::DEFAULT_DWARF_SPEC
 											).create<DW_TAG_formal_parameter>(
 												encap_subprogram,
-												boost::optional<const std::string&>(*i_name));
+												*i_name ? 
+												boost::optional<const std::string&>(**i_name)
+												: boost::optional<const std::string&>());
 										std::cerr << "created fp of subprogram "
 											<< *subprogram->get_name()
-											<< " with name " <<  *i_name
-											<< " at offset " << *created->get_name()
+											<< " with name " <<  (*i_name ? **i_name : "(no name)")
+											<< " at offset " << created->get_offset()
 											<< std::endl;
 									}
 								}
@@ -441,14 +459,15 @@ namespace cake
 										i_arg++)
 									{
 										std::vector<antlr::tree::Tree *> contexts;
-										find_usage_contexts(*i_arg,
+										if (!*i_arg) continue;
+										find_usage_contexts(**i_arg,
 											i_pattern->second.corresp->sink_expr,
 											contexts);
 										if (contexts.size() > 0)
 										{
 											std::cerr << "Considering type expectations "
 												<< "for stub uses of identifier " 
-												<< *i_arg << std::endl;
+												<< **i_arg << std::endl;
 											for (auto i_ctxt = contexts.begin(); 
 												i_ctxt != contexts.end();
 												i_ctxt++)
@@ -465,7 +484,7 @@ namespace cake
 														case CAKE_TOKEN(INVOKE_WITH_ARGS):
 															// this is the interesting case
 															std::cerr << "FIXME: found a stub function call using ident " 
-																<< *i_arg << std::endl;
+																<< **i_arg << std::endl;
 
 														case CAKE_TOKEN(IDENT):
 														case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
@@ -753,7 +772,7 @@ namespace cake
 			 * given second, in first, 1<--2
 			 * given first, in second, 1-->2
 			 * given first, in second, 1<--2 */
-				wrap_file << 
+				wrap_file << "// unspecified_wordsize_type correspondences -- defined for each module" << std::endl <<
 				"    template <>"
 << std::endl << "    struct corresponding_type_to_second<" 
 << std::endl << "        component_pair<" 
@@ -813,6 +832,16 @@ namespace cake
 			{
 				// first output the correpsonding_type specializations:
 				// there is a sink-to-source and source-to-sink relationship
+				wrap_file << "// " << wrap_code.get_type_name(
+                             i_corresp->second->source == i_pair->first 
+                                ? i_corresp->second->source_data_type
+                                : i_corresp->second->sink_data_type)
+					<< ( (i_corresp->second->source == i_pair->first) ? " --> " : " <-- " )
+					<< wrap_code.get_type_name(
+                             i_corresp->second->sink == i_pair->second
+                                ? i_corresp->second->sink_data_type
+                                : i_corresp->second->source_data_type)
+					<< std::endl;
 				wrap_file << 
 				"    template <>"
 << std::endl << "    struct corresponding_type_to_second<" 
@@ -899,7 +928,9 @@ namespace cake
 		}
 
 		bool wrapped_some = false;
-		std::ostringstream linker_args;
+		/*std::ostringstream*/
+		std::vector<std::string> linker_args;
+		std::vector<std::string> symbols_to_protect;
 		// output wrapped symbol names (and the wrappers, to a separate file)
 		for (wrappers_map_t::iterator i_wrap = wrappers.begin(); i_wrap != wrappers.end();
 				i_wrap++)
@@ -1022,7 +1053,9 @@ namespace cake
 				wrapped_some = true;
 
 				// tell the linker that we're wrapping this symbol
-				linker_args << "--wrap " << i_wrap->first << ' ';
+				linker_args.push_back("--wrap ");
+				symbols_to_protect.push_back(i_wrap->first);
+				linker_args.push_back(i_wrap->first);
 				
 				// also tell the linker that unprefixed references to the symbol
 				// should go to __real_<sym>
@@ -1040,13 +1073,13 @@ namespace cake
 				// don't emit wrapper, just use --defsym 
 				if (!symname_bound_to || i_wrap->first != *symname_bound_to)
 				{
-					linker_args << "--defsym " << i_wrap->first 
-						<< '='
+					linker_args.push_back("--defsym ");
+					linker_args.push_back(i_wrap->first  + "=" 
 						// FIXME: if the callee symname is the same as the wrapped symbol,
 						// we should use __real_; otherwise we should use
 						// the plain old callee symbol name. 
-						/*<< "__real_"*/ << *symname_bound_to //i_wrap->first
-						<< ' ';
+						/*<< "__real_"*/ 
+						+ *symname_bound_to); //i_wrap->first
 				}
 				else { /* do nothing! */ }
 				
@@ -1059,19 +1092,58 @@ namespace cake
 		if (wrapped_some)
 		{
 			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< std::endl*/;
-			out << std::endl << '\t' << "ld -r -o " << output_module->get_filename() << ' ';
-			out << linker_args.str() << ' ';
+			// output the first objcopy
+			out << std::endl << '\t' << "objcopy ";
+			for (auto i_sym = symbols_to_protect.begin();
+				i_sym != symbols_to_protect.end();
+				i_sym++)
+			{
+				out << "--redefine-sym " << *i_sym << "=__cake_protect_" << *i_sym << " ";
+			}
 			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< std::endl*/;
+			out << std::endl << '\t' << "ld -r -o " << output_module->get_filename() << ' ';
+			for (auto i_linker_arg = linker_args.begin(); 
+				i_linker_arg != linker_args.end();
+				i_linker_arg++)
+			{
+				out << *i_linker_arg << ' ';
+			}
+			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< std::endl*/;
+			// add the other object files to the input file list
+			for (std::vector<module_ptr>::iterator i = input_modules.begin();
+				i != input_modules.end(); i++)
+			{
+				out << (*i)->get_filename() << ' ';
+			}
+			// output the second objcopy
+			out << std::endl << '\t' << "objcopy ";
+			for (auto i_sym = symbols_to_protect.begin();
+				i_sym != symbols_to_protect.end();
+				i_sym++)
+			{
+				out << "--redefine-sym __cake_protect_" << *i_sym << "=" << *i_sym << " ";
+			}
+			out << output_module->get_filename() << std::endl;
 		}  // Else just output the args
-		else out << std::endl << '\t' << "ld -r -o " << output_module->get_filename() << linker_args.str() << ' ';
-		
-		// add the other object files to the input file list
-		for (std::vector<module_ptr>::iterator i = input_modules.begin();
-			i != input_modules.end(); i++)
+		else 
 		{
-			out << (*i)->get_filename() << ' ';
+			out << std::endl << '\t' << "ld -r -o " << output_module->get_filename();
+			for (auto i_linker_arg = linker_args.begin(); 
+				i_linker_arg != linker_args.end();
+				i_linker_arg++)
+			{
+				out << *i_linker_arg << ' ';
+			}
+			out << ' ';
+			// add the other object files to the input file list
+			for (std::vector<module_ptr>::iterator i = input_modules.begin();
+				i != input_modules.end(); i++)
+			{
+				out << (*i)->get_filename() << ' ';
+			}
+			out << std::endl;
 		}
-		out << std::endl;
+		
 		
 
 // 		// if it's a link:
@@ -1501,15 +1573,12 @@ namespace cake
 		auto source_concrete_type = source_data_type->get_concrete_type();
 		auto sink_concrete_type = sink_data_type->get_concrete_type();
 	
-		auto from_typename = wrap_code.get_type_name(source_concrete_type);
-		auto to_typename = wrap_code.get_type_name(sink_concrete_type);
-
 		// skip incomplete (void) typedefs and other incompletes
-		if (!compiler.cxx_is_complete_type(source_concrete_type)
-		|| !compiler.cxx_is_complete_type(sink_concrete_type))
+		if (!(source_concrete_type && compiler.cxx_is_complete_type(source_concrete_type))
+		|| !(sink_concrete_type && compiler.cxx_is_complete_type(sink_concrete_type)))
 		{
-			std::cerr << "Warning: skipping value conversion from " << from_typename
-				<< " to " << to_typename
+			std::cerr << "Warning: skipping value conversion from " << wrap_code.get_type_name(source_data_type)
+				<< " to " << wrap_code.get_type_name(sink_data_type)
 				<< " because one or other is an incomplete type." << std::endl;
 			//m_out << "// (skipped because of incomplete type)" << std::endl << std::endl;
 			val_corresps.insert(std::make_pair(key, 
@@ -1518,6 +1587,11 @@ namespace cake
 					basic, std::string("incomplete type")))));
 			return;
 		}
+		
+		// now we can compute the concrete type names 
+		auto from_typename = wrap_code.get_type_name(source_concrete_type);
+		auto to_typename = wrap_code.get_type_name(sink_concrete_type);
+
 		// skip pointers and references
 		if (source_concrete_type->get_tag() == DW_TAG_pointer_type
 		|| sink_concrete_type->get_tag() == DW_TAG_pointer_type
@@ -1738,13 +1812,24 @@ namespace cake
 			auto p_typedef = boost::dynamic_pointer_cast<dwarf::spec::typedef_die>(*i_die);
 			if (!p_typedef) continue;
 			if (p_typedef == p_typedef->get_concrete_type()) continue;
-
-			synonymy.insert(std::make_pair(
-				*p_typedef->ident_path_from_cu(), 
-				p_typedef->get_concrete_type()));
-			std::cerr << "synonymy within " << module->filename << ": "
-				<< definite_member_name(*p_typedef->ident_path_from_cu())
-				<< " ----> " << *p_typedef->get_concrete_type() << std::endl;
+			
+			if (!p_typedef->get_concrete_type())
+			{
+				std::cerr << "FIXME: typedef "
+					<< *p_typedef
+					<< " has no concrete type -- we should add it to synonymy map,"
+					<< " but skipping for now." 
+					<< std::endl;
+			}
+			else
+			{
+				synonymy.insert(std::make_pair(
+					*p_typedef->ident_path_from_cu(), 
+					p_typedef->get_concrete_type()));
+				std::cerr << "synonymy within " << module->filename << ": "
+					<< definite_member_name(*p_typedef->ident_path_from_cu())
+					<< " ----> " << *p_typedef->get_concrete_type() << std::endl;
+			}
 		}
 	}
 	
@@ -1766,14 +1851,36 @@ namespace cake
 		return false;
 	}
 
-	struct found_type 
-	{ 
-		module_ptr module;
-		boost::shared_ptr<dwarf::spec::type_die> t;
-	};
 	void link_derivation::name_match_types(
 		iface_pair ifaces)
 	{
+		/* This name-matching is complicated by typedefs and other synonymy features. 
+		 * 
+		 * We can group named types by their concrete type. 
+		 * Opaque types, that have no concrete types, degenerate into
+		 * equivalence classes of *names*. 
+		 *
+		 * Complication: type names are also used for value correspondence selection,
+		 * where a particular synonym (typedef) may be given distinguished treatment.
+		 * So when we do this name-matching, we should be careful to avoid establishing
+		 * correspondences between concrete types for which a matching synonym pair
+		 * has been found but where there is an incompatible distinguished treatment 
+		 * for some synonym of the same concrete type. FIXME: I don't know what counts
+		 * as incompatible yet, so just avoid *any* name-matching if a member of the
+		 * synonym set is used in an "as" annotation.
+		 * 
+		 * A hopefully-final complication: opaque types should be distinguished.
+		 * By mapping everything to a concrete type, the null concrete type will
+		 * collect all synonyms of all opaque data types. This isn't what we want.
+		 * Instead, we want each root (e.g. "struct") opaque type to be distinguished,
+		 * i.e. to collect only the synonyms that map to it. FIXME: I need to change
+		 * the synonymy map structure to do this. */
+	
+		struct found_type 
+		{ 
+			module_ptr module;
+			boost::shared_ptr<dwarf::spec::type_die> t;
+		};
 		std::multimap<std::vector<std::string>, found_type> found_types;
 		std::set<std::vector<std::string> > keys;
 		
@@ -1803,17 +1910,120 @@ namespace cake
 				keys.insert(*opt_path);
 			}
 		}
-		// now look for names that have exactly two entries in the multimap,
-		// and where the module of each is different
+		
+		std::set< boost::shared_ptr<dwarf::spec::type_die> > seen_concrete_types;
+
+		std::set< std::pair< // this is any pair which is  a base type -- needn't both be base
+			              dwarf::tool::cxx_compiler::base_type,
+			              boost::shared_ptr<dwarf::spec::type_die> 
+			              >
+			    > seen_first_base_type_pairs;
+		std::set< std::pair< // this is any pair *involving* a base type -- needn't both be base
+			               boost::shared_ptr<dwarf::spec::type_die> ,
+			               dwarf::tool::cxx_compiler::base_type
+			               >
+			    > seen_second_base_type_pairs;
+		std::set< std::pair< dwarf::tool::cxx_compiler::base_type,
+			                 dwarf::tool::cxx_compiler::base_type 
+			               >
+			    > seen_base_base_pairs;
+		// Now look for names that have exactly two entries in the multimap,
+		// (i.e. exactly two <vector, found_type> pairs for a given vector,
+		//  i.e. exactly two types were found having a given name-vector)
+		// and where the module of each is different.
 		for (auto i_k = keys.begin(); i_k != keys.end(); i_k++)
 		{
 			auto iter_pair = found_types.equal_range(*i_k);
-			if (srk31::count(iter_pair.first, iter_pair.second) == 2
-			&& (iter_pair.second--, 
-	 		iter_pair.first->second.module != iter_pair.second->second.module))
+			if (
+				srk31::count(iter_pair.first, iter_pair.second) == 2 // exactly two
+			&&  // different modules
+			(iter_pair.second--, iter_pair.first->second.module != iter_pair.second->second.module)
+			&& // must be concrete, non-array, non-subroutine types!
+			iter_pair.first->second.t->get_concrete_type() && 
+				iter_pair.second->second.t->get_concrete_type() &&
+				iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_array_type &&
+				iter_pair.second->second.t->get_concrete_type()->get_tag() != DW_TAG_array_type &&
+				iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_subroutine_type &&
+				iter_pair.second->second.t->get_concrete_type()->get_tag() != DW_TAG_subroutine_type
+			&& // must not have been matched before!
+				seen_concrete_types.find(iter_pair.first->second.t->get_concrete_type())
+					== seen_concrete_types.end()
+			&& seen_concrete_types.find(iter_pair.second->second.t->get_concrete_type()) 
+					== seen_concrete_types.end()
+			&& // if base types, pair must not be equivalent to any seen before! 
+			   // (else template specializations will collide)
+			   // NOTE: this is because DWARF info often includes "char" and "signed char"
+			   // and these are distinct in DWARF-land but not in C++-land
+				(
+					iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_base_type
+					|| seen_first_base_type_pairs.find(std::make_pair(
+						dwarf::tool::cxx_compiler::base_type(
+							boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+								iter_pair.first->second.t->get_concrete_type())),
+							iter_pair.second->second.t->get_concrete_type())) ==
+							seen_first_base_type_pairs.end()
+				)
+			&&
+				(
+					iter_pair.second->second.t->get_concrete_type()->get_tag() != DW_TAG_base_type
+					|| seen_second_base_type_pairs.find(std::make_pair(
+						iter_pair.first->second.t->get_concrete_type(),
+						dwarf::tool::cxx_compiler::base_type(
+							boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+								iter_pair.second->second.t->get_concrete_type()))))
+						== seen_second_base_type_pairs.end()
+				)
+			&& (!(iter_pair.first->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type &&
+				  iter_pair.second->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type)
+				 || seen_base_base_pairs.find(
+				 	std::make_pair(
+						dwarf::tool::cxx_compiler::base_type(
+							boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+								iter_pair.first->second.t->get_concrete_type())),
+						dwarf::tool::cxx_compiler::base_type(
+							boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+								iter_pair.second->second.t->get_concrete_type()))
+					))
+					== seen_base_base_pairs.end()
+				)
+			)
 			{
 				std::cerr << "data type " << definite_member_name(*i_k)
 					<< " exists in both modules" << std::endl;
+				seen_concrete_types.insert(iter_pair.first->second.t->get_concrete_type());
+				seen_concrete_types.insert(iter_pair.second->second.t->get_concrete_type());
+				if (iter_pair.first->second.t->get_tag() == DW_TAG_base_type)
+					seen_first_base_type_pairs.insert(
+						std::make_pair(
+							dwarf::tool::cxx_compiler::base_type(
+								boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+									iter_pair.first->second.t->get_concrete_type())),
+								iter_pair.second->second.t->get_concrete_type())
+							);
+				if (iter_pair.second->second.t->get_tag() == DW_TAG_base_type)
+					seen_second_base_type_pairs.insert(
+						std::make_pair(
+							iter_pair.first->second.t->get_concrete_type(),
+							dwarf::tool::cxx_compiler::base_type(
+								boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+									iter_pair.second->second.t->get_concrete_type()))));
+				if (iter_pair.first->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type &&
+				  iter_pair.second->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type)
+				{
+					std::cerr << "remembering a base-base pair " 
+						<< definite_member_name(*i_k) << "; size was " 
+						<< seen_base_base_pairs.size();
+				 	seen_base_base_pairs.insert(std::make_pair(
+						dwarf::tool::cxx_compiler::base_type(
+							boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+								iter_pair.first->second.t->get_concrete_type())),
+						dwarf::tool::cxx_compiler::base_type(
+							boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+								iter_pair.second->second.t->get_concrete_type()))
+					));
+					std::cerr << "; now " << seen_base_base_pairs.size() << std::endl;
+				}
+					
 				// iter_pair points to a pair of like-named types in differing modules
 				// add value correspondences in *both* directions
 				// *** FIXME: ONLY IF not already present already...
@@ -1824,7 +2034,7 @@ namespace cake
 				// introduce conflicts/ambiguities, so need to refine this later.
 				// ALSO, concrete types don't always have 
 				// ident paths from CU! i.e. can be anonymous. So
-				// instead of using ident_path_from_cu
+				// instead of using ident_path_from_cu -- FIXME: what?
 				
 				// two-iteration for loop
 				for (std::pair<module_ptr, module_ptr> source_sink_pair = 
@@ -1834,7 +2044,7 @@ namespace cake
 							(source_sink_pair == orig_source_sink_pair) 
 								? std::make_pair(ifaces.second, ifaces.first) : std::make_pair(module_ptr(), module_ptr()))
 				{
-				
+					// each of these maps a set of synonyms mapping to their concrete type
 					std::map<std::vector<std::string>, boost::shared_ptr<dwarf::spec::type_die> > &
 						source_synonymy = (source_sink_pair.first == ifaces.first) ? first_synonymy : second_synonymy;
 					std::map<std::vector<std::string>, boost::shared_ptr<dwarf::spec::type_die> > &
@@ -1845,6 +2055,9 @@ namespace cake
 					boost::shared_ptr<dwarf::spec::basic_die> source_found;
 					bool sink_is_synonym = false;
 					boost::shared_ptr<dwarf::spec::basic_die> sink_found;
+					/* If the s... data type is a synonym, we will set s..._type
+					 * to the *concrete* type and set the flag. 
+					 * Otherwise we will try to get the data type DIE by name lookup. */
 					auto source_type = (source_synonymy.find(*i_k) != source_synonymy.end()) ?
 							(source_is_synonym = true, source_synonymy[*i_k]) : /*, // *i_k, // */ 
 							boost::dynamic_pointer_cast<dwarf::spec::type_die>(
@@ -1862,6 +2075,9 @@ namespace cake
 // 					std::cerr << "Two-cycle for loop: source synonymy @" << &source_synonymy << std::endl;
 // 					std::cerr << "Two-cycle for loop: sink synonymy @" << &sink_synonymy << std::endl;
 					
+					// this happens if name lookup fails 
+					// (e.g. not visible (?))
+					// or doesn't yield a type
 					if (!source_type || !sink_type)
 					{
 						boost::shared_ptr<dwarf::spec::basic_die> source_synonym;
@@ -1894,10 +2110,10 @@ namespace cake
 							source_sink_pair.second, 
 							sink_type))
 					{
-// 		std::cerr << "Adding value corresp from source module @" << &*source_sink_pair.first
-// 			<< " source data type @" << &*source_type << " " << *source_type
-// 			<< " to sink module @" << &*source_sink_pair.second
-// 			<< " sink data type @" << &*sink_type << " " << *sink_type << std::endl;
+		std::cerr << "Adding value corresp from source module @" << source_sink_pair.first.get()
+			<< " source data type " << *source_type << " " 
+			<< " to sink module @" << source_sink_pair.second.get()
+			<< " sink data type " << *sink_type << std::endl;
 	
 						add_value_corresp(
 							source_sink_pair.first,

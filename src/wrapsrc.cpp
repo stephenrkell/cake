@@ -112,68 +112,68 @@ namespace cake
 				}
 				else if (ignore_dwarf_args && unique_called_subprogram)
 				{ 
-						/* We will use the DWARF info on the *callee* subprogram. */
-						//goto use_unique_called_subprogram_args;
-					// get argument at position argnum from the subprogram;
-					/*auto*/ i_fp = unique_called_subprogram->formal_parameter_children_begin();
-					//i_arg = unique_called_subprogram->formal_parameter_children_begin();
-					for (int i = 0; i < argnum; i++) i_fp++;
-	//xxxxxxxxxxxxxxxxxxxxxxx
-					if (emit_types)
-					{
-						if ((*i_fp)->get_type())
-						{
-							// look for a _unique_ _corresponding_ type and use that
-							auto found_vec = m_d.corresponding_dwarf_types(
-								*(*i_fp)->get_type(),
-								calling_module,
-								false /* flow_from_type_module_to_corresp_module */);
-							if (found_vec.size() == 1)
-							{
-								std::cerr << "Found unique corresponding type" << std::endl;
-								// we're in luck
-								m_out << get_type_name(found_vec.at(0));
-							}
-							else 
-							{
-								std::cerr << "Didn't find unique corresponding type" << std::endl;
-								if (treat_subprogram_as_untyped(unique_called_subprogram))
-								{ m_out << " ::cake::unspecified_wordsize_type"; }
-								else m_out << get_type_name(*(*i_fp)->get_type());
-							}
-						}
-						else  // FIXME: remove duplication here ^^^ vvv
-						{
-							if (treat_subprogram_as_untyped(unique_called_subprogram))
-							{ m_out << " ::cake::unspecified_wordsize_type"; }
-							else m_out << get_type_name(*(*i_fp)->get_type());
-						}
-					}
-	//				else
-	//				{
-	//				
-	//xxxxxxxxxxxxxxxxxxxxxxxx				
-	//                     m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
-	//                        *(*i_fp)->get_type()));
-	//					}
-					if ((*i_fp)->get_name())
-					{
-                    	// output the variable name, prefixed 
-                    	m_out << ' ' << arg_name_prefix << argnum /*<< '_' << *(*i_fp)->get_name()*/;
-					}
-					else
-					{
-                    	// output the argument type and a dummy name
-                    	//if (emit_types) m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
-                    	//    *(*i_fp)->get_type()));
-                    	m_out << ' ' << arg_name_prefix << argnum /*<< "_dummy"/* << argnum*/;
-					}
-					goto next;
+// 						/* We will use the DWARF info on the *callee* subprogram. */
+// 						//goto use_unique_called_subprogram_args;
+// 					// get argument at position argnum from the subprogram;
+// 					/*auto*/ i_fp = unique_called_subprogram->formal_parameter_children_begin();
+// 					//i_arg = unique_called_subprogram->formal_parameter_children_begin();
+// 					for (int i = 0; i < argnum; i++) i_fp++;
+// 	//xxxxxxxxxxxxxxxxxxxxxxx
+// 					if (emit_types)
+// 					{
+// 						if ((*i_fp)->get_type())
+// 						{
+// 							// look for a _unique_ _corresponding_ type and use that
+// 							auto found_vec = m_d.corresponding_dwarf_types(
+// 								*(*i_fp)->get_type(),
+// 								calling_module,
+// 								false /* flow_from_type_module_to_corresp_module */);
+// 							if (found_vec.size() == 1)
+// 							{
+// 								std::cerr << "Found unique corresponding type" << std::endl;
+// 								// we're in luck
+// 								m_out << get_type_name(found_vec.at(0));
+// 							}
+// 							else 
+// 							{
+// 								std::cerr << "Didn't find unique corresponding type" << std::endl;
+// 								if (treat_subprogram_as_untyped(unique_called_subprogram))
+// 								{ m_out << " ::cake::unspecified_wordsize_type"; }
+// 								else m_out << get_type_name(*(*i_fp)->get_type());
+// 							}
+// 						}
+// 						else  // FIXME: remove duplication here ^^^ vvv
+// 						{
+// 							if (treat_subprogram_as_untyped(unique_called_subprogram))
+// 							{ m_out << " ::cake::unspecified_wordsize_type"; }
+// 							else m_out << get_type_name(*(*i_fp)->get_type());
+// 						}
+// 					}
+// 	//				else
+// 	//				{
+// 	//				
+// 	//xxxxxxxxxxxxxxxxxxxxxxxx				
+// 	//                     m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
+// 	//                        *(*i_fp)->get_type()));
+// 	//					}
+// 					if ((*i_fp)->get_name())
+// 					{
+//                     	// output the variable name, prefixed 
+//                     	m_out << ' ' << arg_name_prefix << argnum /*<< '_' << *(*i_fp)->get_name()*/;
+// 					}
+// 					else
+// 					{
+//                     	// output the argument type and a dummy name
+//                     	//if (emit_types) m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
+//                     	//    *(*i_fp)->get_type()));
+//                     	m_out << ' ' << arg_name_prefix << argnum /*<< "_dummy"/* << argnum*/;
+// 					}
+// 					goto next;
+assert(false);
 				}
 				else if (!ignore_dwarf_args && unique_called_subprogram)
 				{ /* FIXME: Check that they're consistent! */ }
                 break;
-			use_event_pattern_args:
             default: { // must be >=5
                 pattern_args = GET_CHILD_COUNT(event_pattern) - 4; /* ^ number of bindings above! */
             	assert(pattern_args >= 1);
@@ -215,92 +215,139 @@ namespace cake
                             default: RAISE_INTERNAL(valuePattern, "not a value pattern");
                         } // end switch
 					} // end ALIAS3 
+					// advance to the next
+            	next:
+                	// work out whether we need a comma
+                	if (!ignore_dwarf_args) 
+					{	
+						//std::cerr << "advance DWARF caller arg cursor from " << **i_arg;
+						i_arg++; // advance DWARF caller arg cursor
+						//std::cerr << " to ";
+						//if (i_arg != args_end) std::cerr << **i_arg; else std::cerr << "(sentinel)";
+						//std::cerr << std::endl;
+					}
+                	argnum++; // advance our arg count
+					if (ignore_dwarf_args && unique_called_subprogram)
+					{
+						i_fp++;
+						// use DWARF callee arg cursor
+						if (i_fp != unique_called_subprogram->formal_parameter_children_end())
+						{
+							m_out << ", ";
+						}
+					}
+					else if (ignore_dwarf_args) // && !unique_called_subprogram
+					{
+						if (argnum != pattern_args) m_out << ", ";
+					}
+					else 
+					{
+                		if (i_arg != args_end) m_out << ", ";
+					}
+					
 				} // end FOR_REMAINING_CHILDREN
 			}	// end default; fall through!
-            next:
-                // work out whether we need a comma
-                if (!ignore_dwarf_args) i_arg++; // advance DWARF caller arg cursor
-                argnum++; // advance our arg count
-				if (ignore_dwarf_args && unique_called_subprogram)
-				{
-					i_fp++;
-					// use DWARF callee arg cursor
-					if (i_fp != unique_called_subprogram->formal_parameter_children_end())
-					{
-						m_out << ", ";
-					}
-				}
-				else if (ignore_dwarf_args) // && !unique_called_subprogram
-				{
-					if (argnum != pattern_args) m_out << ", ";
-				}
-				else 
-				{
-                	if (i_arg != args_end) m_out << ", ";
-				}
-			break;
-			use_unique_called_subprogram_args:
-				// get argument at position argnum from the subprogram;
-				/*auto*/ i_fp = unique_called_subprogram->formal_parameter_children_begin();
-				//i_arg = unique_called_subprogram->formal_parameter_children_begin();
-				for (int i = 0; i < argnum; i++) i_fp++;
-//xxxxxxxxxxxxxxxxxxxxxxx
-				if (emit_types)
-				{
-					if ((*i_fp)->get_type())
-					{
-						// look for a _unique_ _corresponding_ type and use that
-						auto found_vec = m_d.corresponding_dwarf_types(
-							*(*i_fp)->get_type(),
-							calling_module,
-							false /* flow_from_type_module_to_corresp_module */);
-						if (found_vec.size() == 1)
-						{
-							std::cerr << "Found unique corresponding type" << std::endl;
-							// we're in luck
-							m_out << get_type_name(found_vec.at(0));
-						}
-						else 
-						{
-							std::cerr << "Didn't find unique corresponding type" << std::endl;
-							m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
-                        		*(*i_fp)->get_type()));
-						}
-					}
-					else  // FIXME: remove duplication here ^^^ vvv
-					{
-						m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
-                        	*(*i_fp)->get_type()));
-					}
-				}
-//				else
-//				{
-//				
-//xxxxxxxxxxxxxxxxxxxxxxxx				
-//                     m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
-//                        *(*i_fp)->get_type()));
-//					}
-				if ((*i_fp)->get_name())
-				{
-                    // output the variable name, prefixed 
-                    m_out << ' ' << arg_name_prefix << argnum /*<< '_' << *(*i_fp)->get_name()*/;
-				}
-				else
-				{
-                    // output the argument type and a dummy name
-                    //if (emit_types) m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
-                    //    *(*i_fp)->get_type()));
-                    m_out << ' ' << arg_name_prefix << argnum/* << "_dummy"/* << argnum*/;
-				}
-				goto next;
-        } // end switch
+			
+// 			break; // no, break!
+// 			// FIXME: this code isn't used!
+// 			use_unique_called_subprogram_args:
+// 				// get argument at position argnum from the subprogram;
+// 				/*auto*/ i_fp = unique_called_subprogram->formal_parameter_children_begin();
+// 				//i_arg = unique_called_subprogram->formal_parameter_children_begin();
+// 				for (int i = 0; i < argnum; i++) i_fp++;
+// //xxxxxxxxxxxxxxxxxxxxxxx
+// 				if (emit_types)
+// 				{
+// 					if ((*i_fp)->get_type())
+// 					{
+// 						// look for a _unique_ _corresponding_ type and use that
+// 						auto found_vec = m_d.corresponding_dwarf_types(
+// 							*(*i_fp)->get_type(),
+// 							calling_module,
+// 							false /* flow_from_type_module_to_corresp_module */);
+// 						if (found_vec.size() == 1)
+// 						{
+// 							std::cerr << "Found unique corresponding type" << std::endl;
+// 							// we're in luck
+// 							m_out << get_type_name(found_vec.at(0));
+// 						}
+// 						else 
+// 						{
+// 							std::cerr << "Didn't find unique corresponding type" << std::endl;
+// 							m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
+//                         		*(*i_fp)->get_type()));
+// 						}
+// 					}
+// 					else  // FIXME: remove duplication here ^^^ vvv
+// 					{
+// 						m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
+//                         	*(*i_fp)->get_type()));
+// 					}
+// 				}
+// //				else
+// //				{
+// //				
+// //xxxxxxxxxxxxxxxxxxxxxxxx				
+// //                     m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
+// //                        *(*i_fp)->get_type()));
+// //					}
+// 				if ((*i_fp)->get_name())
+// 				{
+//                     // output the variable name, prefixed 
+//                     m_out << ' ' << arg_name_prefix << argnum /*<< '_' << *(*i_fp)->get_name()*/;
+// 				}
+// 				else
+// 				{
+//                     // output the argument type and a dummy name
+//                     //if (emit_types) m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
+//                     //    *(*i_fp)->get_type()));
+//                     m_out << ' ' << arg_name_prefix << argnum/* << "_dummy"/* << argnum*/;
+// 				}
+// 				goto next;
+//             next:
+//                 // work out whether we need a comma
+//                 if (!ignore_dwarf_args) 
+// 				{	
+// 					std::cerr << "advance DWARF caller arg cursor from " << **i_arg;
+// 					i_arg++; // advance DWARF caller arg cursor
+// 					std::cerr << " to ";
+// 					if (i_arg != args_end) std::cerr << **i_arg; else std::cerr << "(sentinel)";
+// 					std::cerr << std::endl;
+// 				}
+//                 argnum++; // advance our arg count
+// 				if (ignore_dwarf_args && unique_called_subprogram)
+// 				{
+// 					i_fp++;
+// 					// use DWARF callee arg cursor
+// 					if (i_fp != unique_called_subprogram->formal_parameter_children_end())
+// 					{
+// 						m_out << ", ";
+// 					}
+// 				}
+// 				else if (ignore_dwarf_args) // && !unique_called_subprogram
+// 				{
+// 					if (argnum != pattern_args) m_out << ", ";
+// 				}
+// 				else 
+// 				{
+//                 	if (i_arg != args_end) m_out << ", ";
+// 				}
+// 			break;
+        } // end switch GET_CHILD_COUNT
 			
 		// if we have spare arguments at the end, something's wrong
         if (!ignore_dwarf_args && i_arg != args_end)
         {
             std::ostringstream msg;
             msg << "argument pattern has too few arguments for subprogram: "
-                << subprogram;
+                << *subprogram
+				<< ": processed " << (argnum + 1) << " arguments, and ";
+			int count = 0;
+			for (auto i_arg_ctr = subprogram->formal_parameter_children_begin();
+				i_arg_ctr != subprogram->formal_parameter_children_end();
+				i_arg_ctr++) { count++; }
+			msg << "subprogram has " << count << " arguments (first uncovered: "
+				<< **i_arg << ").";
             RAISE(event_pattern, msg.str());
         }
 

@@ -24,5 +24,5 @@ int get_derefed_form(int rep, int form, int index) __attribute__((weak));
 size_t get_derefed_offset(int rep, int form, int index) __attribute__((weak));
 /* get_derefed_offset(rep, start_subobject_form, i) != (size_t) -1; */
 
-const char *get_object_form(int form) __attribute__((weak));
+const char *get_form_name(int form) __attribute__((weak));
 /* get_object_form(start_subobject_form) */

@@ -145,9 +145,9 @@ void build_adjacency_list_recursive(
 		{
 			DEBUG_GUARD(fprintf(debug_out, "\t%s_rep%d_at_%p -> %s_rep%d_at_%p;\n", 
 				//object_forms[start_subobject_form], rep, obj_u, 
-                get_object_form(start_subobject_form), rep, obj_u,
+                get_form_name(start_subobject_form), rep, obj_u,
 //				object_forms[derefed_forms[rep][start_subobject_form][i]], rep, pointed_to_object))
-				get_object_form(get_derefed_form(rep, start_subobject_form, i)), rep, pointed_to_object))
+				get_form_name(get_derefed_form(rep, start_subobject_form, i)), rep, pointed_to_object))
 
 			adj_u.push_back(std::make_pair(
 				// the pointer value within structure u
