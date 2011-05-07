@@ -388,7 +388,7 @@ namespace cake
 		m_out << w.get_type_name(sink_data_type) << " __cake_tmp, *__cake_p_buf;" << std::endl
 			<< "if (__cake_p_to) __cake_p_buf = __cake_p_to; else __cake_p_buf = &__cake_tmp;" << std::endl;
 
-		/* Emit toplevel mappings right now */
+		/* Emit toplevel field mappings right now */
 		for (auto i_name_matched = name_matched_mappings.begin();
 				i_name_matched != name_matched_mappings.end();
 				i_name_matched++)
@@ -398,14 +398,34 @@ namespace cake
 			auto post_context_pair = std::make_pair(i_name_matched->second.post_context, 
 				w.m_d.name_of_module(i_name_matched->second.post_context));
 
+			/* emit a stub evaluating this sink field's source expr, where the stub's
+			 * environment contains all fields in the source object. */
 			std::string from_ident;
 			wrapper_file::environment env;
-			env.insert(std::make_pair(std::string("__cake_from"), 
+			env.insert(std::make_pair(std::string("__cake_from"), // cake name -- we will want "this" too, eventually
 				(wrapper_file::bound_var_info) {
-					"from",
-					/* source_data_type, */ std::string("__cake_from"),
+					"from", // cxx name
+					/* source_data_type, */ std::string("__cake_from"), // typeof
 					source_module
 					}));
+			for (auto i_field = boost::dynamic_pointer_cast<dwarf::spec::with_data_members_die>(
+						source_data_type)->member_children_begin();
+					i_field != boost::dynamic_pointer_cast<dwarf::spec::with_data_members_die>(
+						source_data_type)->member_children_end();
+					i_field++)
+			{
+				if ((*i_field)->get_name())
+				{
+					std::cerr << "adding name " << *(*i_field)->get_name() << std::endl;
+					env.insert(std::make_pair(*(*i_field)->get_name(),
+						(wrapper_file::bound_var_info) {
+							std::string("__cake_from.") + *(*i_field)->get_name(), // cxx name
+							std::string("__cake_from.") + *(*i_field)->get_name(), // typeof
+							source_module
+						}));
+				}
+			}
+			
 			wrapper_file::context ctxt(w, source_module, target_module, env);
 
 			auto result = w.emit_stub_expression_as_statement_list(ctxt,

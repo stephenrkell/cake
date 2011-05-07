@@ -702,18 +702,35 @@ namespace cake
 		wrap_file << "namespace cake {"
 << std::endl << "    template <"
 << std::endl << "        typename ComponentPair, "
-<< std::endl << "        typename InSecond, "
+<< std::endl << "        typename InFirst, "
 << std::endl << "        int RuleTag,"
 << std::endl << "        bool DirectionIsFromFirstToSecond"
 << std::endl << "    > struct corresponding_type_to_first"
 << std::endl << "    {}; /* we specialize this for various InSeconds */ "
 << std::endl << "    template <"
 << std::endl << "        typename ComponentPair, "
-<< std::endl << "        typename InFirst, "
+<< std::endl << "        typename InSecond, "
 << std::endl << "        int RuleTag,"
 << std::endl << "        bool DirectionIsFromSecondToFirst"
 << std::endl << "    > struct corresponding_type_to_second"
 << std::endl << "    {}; /* we specialize this for various InFirsts */ "
+<< std::endl << "} // end namespace cake" << std::endl;
+		// output the pointer specializations
+		wrap_file << "namespace cake {"
+<< std::endl << "    template <"
+<< std::endl << "        typename ComponentPair, "
+<< std::endl << "        typename InFirstIsAPtr, "
+<< std::endl << "        int RuleTag,"
+<< std::endl << "        bool DirectionIsFromFirstToSecond"
+<< std::endl << "    > struct corresponding_type_to_first <ComponentPair, InFirstIsAPtr*, RuleTag, DirectionIsFromFirstToSecond>"
+<< std::endl << "    { typedef void *in_second; }; /* we specialize this for various InSeconds */ "
+<< std::endl << "    template <"
+<< std::endl << "        typename ComponentPair, "
+<< std::endl << "        typename InSecondIsAPtr, "
+<< std::endl << "        int RuleTag,"
+<< std::endl << "        bool DirectionIsFromSecondToFirst"
+<< std::endl << "    > struct corresponding_type_to_second<ComponentPair, InSecondIsAPtr*, RuleTag, DirectionIsFromSecondToFirst> "
+<< std::endl << "    { typedef void *in_first; }; /* we specialize this for various InFirsts */ "
 << std::endl << "} // end namespace cake" << std::endl;
 
 		wrap_file << "// we have " << all_iface_pairs.size() << " iface pairs" << std::endl;
@@ -1986,6 +2003,9 @@ namespace cake
 					))
 					== seen_base_base_pairs.end()
 				)
+			&& // don't match built-in types, because they don't appear in our dwarfhpp headers
+				!compiler.is_builtin(iter_pair.first->second.t->get_concrete_type())
+				&& !compiler.is_builtin(iter_pair.second->second.t->get_concrete_type())
 			)
 			{
 				std::cerr << "data type " << definite_member_name(*i_k)

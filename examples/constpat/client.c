@@ -1,8 +1,8 @@
 #include <stdio.h>
 
-extern char *wide(int a, int b);
-       char *wider_still(int a, int b, int c_unused);
-extern char *sometimes(int a);
+extern char *wide(long int a, long int b);
+       char *wider_still(long int a, long int b, long int c_unused);
+extern char *sometimes(long int a);
 extern char *stringlit(char *s);
 int main(void)
 {
@@ -20,7 +20,7 @@ int main(void)
  * -matching in this compilation unit, we can defer the binding until 
  * link time. A better Cake compiler would emit make rules that undid the
  * binding, perhaps using my patched objcopy's --unbind-sym feature. */
-char *__real_wider_still(int a, int b, int c_unused)
+char *__real_wider_still(long int a, long int b, long int c_unused)
 {
 	return "fell through to the real wider_still!";   
 }

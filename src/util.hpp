@@ -24,7 +24,7 @@ namespace cake
 	std::string new_anon_ident();	
 	std::string new_tmp_filename(std::string& module_constructor_name);
 	extern std::ostringstream exception_msg_stream;
-	std::string unescape_ident(std::string& ident);
+	std::string unescape_ident(const std::string& ident);
 	std::string unescape_string_lit(std::string& lit);
 	std::pair<std::string, std::string> read_object_constructor(antlr::tree::Tree *t);
 	std::string lookup_solib(std::string const& basename);

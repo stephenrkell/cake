@@ -539,17 +539,6 @@ assert(false);
 				m_out << "// " << CCP(TO_STRING_TREE(stub)) << std::endl;
 
 				// the sink action is defined by a stub, so evaluate that 
-				
-				// -- the cxx_expected_type is FIXME for now, the unique
-				// corresponding type of the return value
-				// -- this is broken when the return leg might change the cxx type of "it"
-// 				boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type 
-// 					= treat_subprogram_as_untyped(ctxt.opt_source->signature) 
-// 						? boost::shared_ptr<dwarf::spec::type_die>()
-// 						: m_d.unique_corresponding_dwarf_type(
-// 							*ctxt.opt_source->signature->get_type(),
-// 							ctxt.modules.sink,
-// 							true /* flow_from_type_module_to_corresp_module */);
 				std::cerr << "Event sink stub is: " << CCP(TO_STRING_TREE(stub)) << std::endl;
 				assert(GET_TYPE(stub) == CAKE_TOKEN(INVOKE_WITH_ARGS));
 				status3 = emit_stub_expression_as_statement_list(
@@ -569,29 +558,57 @@ assert(false);
 			ctxt.modules.current = ctxt.modules.source;
 			// update environment
 			std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> > 
-			return_constraints;
-			if (return_leg) m_d.find_type_expectations_in_stub(
-				source, return_leg, boost::shared_ptr<dwarf::spec::type_die>(), return_constraints);
+				return_constraints;
+			if (return_leg && GET_CHILD_COUNT(return_leg) > 0)
+			{
+				/* Any functions called during the return leg
+				 * on things in the env 
+				 * may bring type expectations
+				 * that we should account for now, when converting. */
+				m_d.find_type_expectations_in_stub(
+					source, return_leg, boost::shared_ptr<dwarf::spec::type_die>(), 
+					return_constraints);
+			}
+			else
+			{	
+				/* If there's no return leg, we're generating the return value *now*. */
+				if (!subprogram_returns_void(ctxt.opt_source->signature))
+				{
+					m_out << "// generating return value here, constrained to type "
+						<< compiler.name_for(*ctxt.opt_source->signature->get_type())
+						<< std::endl;
+					return_constraints.insert(std::make_pair("__cake_it",
+						*ctxt.opt_source->signature->get_type()));
+				}
+				else
+				{
+					m_out << "// crossover logic thinks there's no return value" << std::endl;
+				}
+			}
 			ctxt.env = crossover_environment(new_env3, source, return_constraints);
+			
+			std::string final_success_fragment = status3.success_fragment;
 			
 			m_out << "// begin return leg of rule" << std::endl;
 			// emit the return leg, if there is one; otherwise, status is the old status
-			auto status4 = 
-				(return_leg && GET_CHILD_COUNT(return_leg) > 0) ?
-					emit_stub_expression_as_statement_list(
-					ctxt,
-					return_leg/*,
-					subprogram_returns_void(ctxt.opt_source->signature) ? 
-						shared_ptr<type_die>()
-					:	*ctxt.opt_source->signature->get_type()*/)
-					: status3;
-			// update environment -- just "it"
-			auto new_env4 = merge_environment(ctxt.env, status4.new_bindings);
-			if (status4.result_fragment != NO_VALUE) new_env4["__cake_it"] = (bound_var_info) {
-				status4.result_fragment,
-				status4.result_fragment, //shared_ptr<type_die>(),
-				ctxt.modules.source };
-			ctxt.env = new_env4;
+			if (return_leg && GET_CHILD_COUNT(return_leg) > 0)
+			{
+				auto status4 = 
+						emit_stub_expression_as_statement_list(
+						ctxt,
+						return_leg);
+				auto new_env4 = merge_environment(ctxt.env, status4.new_bindings);
+				// update environment -- just "it"
+				if (status4.result_fragment != NO_VALUE) 
+				{
+					new_env4["__cake_it"] = (bound_var_info) {
+						status4.result_fragment,
+						status4.result_fragment, //shared_ptr<type_die>(),
+						ctxt.modules.source };
+				}
+				ctxt.env = new_env4;
+				final_success_fragment = status4.success_fragment;
+			}
 			m_out << "// end return leg of rule" << std::endl;
 			
 			// emit the return statement
@@ -609,7 +626,7 @@ assert(false);
 				}
 
 				// now return from the wrapper as appropriate for the stub's exit status
-				m_out << "if (" << status4.success_fragment << ") return "
+				m_out << "if (" << final_success_fragment << ") return "
 					<< ctxt.env["__cake_it"].cxx_name;
 
 				m_out << ";" << std::endl;
@@ -810,7 +827,14 @@ assert(false);
 						assert(false);
 					}
 				}
-				else precise_to_type = i_type->second; // 
+				else 
+				{	
+					m_out << "// in crossover environment, " << i_binding->first 
+						<< " has been constrained to type " 
+						<< compiler.name_for(i_type->second)
+						<< std::endl;
+					precise_to_type = i_type->second;
+				}
 			}
 			
 			// output its initialization
@@ -866,6 +890,13 @@ assert(false);
 		// sanity check
 		assert(new_env.size() == env.size());
 		
+		m_out << "/* crossover: " << std::endl;
+		for (auto i_el = new_env.begin(); i_el != new_env.end(); i_el++)
+		{
+			m_out << "\t" << i_el->first << " is now " << i_el->second.cxx_name << std::endl;
+		}
+		m_out << "*/" << std::endl;
+		
 		return new_env;
 	}
 
@@ -891,6 +922,11 @@ assert(false);
 			}
 			else seen_module = i_new->second.valid_in_module;
 			
+			if (new_env.find(i_new->first) != new_env.end())
+			{
+				m_out << "// warning: merging environment hides old binding of " 
+					<< i_new->first << std::endl;
+			}
 			new_env.insert(*i_new);
 		}
 		
@@ -1067,11 +1103,12 @@ assert(false);
 			definite_member_name call_mn = read_definite_member_name(memberNameExpr);
 			std::string bound_name;
 			
-			int argnum = 0;
+			int argnum = -1;
 
 			//int dummycount = 0;
 			FOR_REMAINING_CHILDREN(eventPattern)
 			{
+				++argnum;
 				ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
 				{
 					INIT;
@@ -1245,9 +1282,9 @@ assert(false);
                 ///<< to_typestring //(" ::cake::unspecified_wordsize_type" )
                 //<< ", " << rule_tag << ">(";
 				m_out << "::cake::value_convert<" << std::endl
-					<< from_typestring << ", " << std::endl
-					<< to_typestring << ", " << std::endl
-					<< rule_tag << ">()(";
+					<< "\t/* from type: */ " << from_typestring << ", " << std::endl
+					<< "\t/* to type: */ " << to_typestring << ", " << std::endl
+					<< "\t/* rule tag: */ " << rule_tag << ">()(";
 //             }
 //             else 
 //             {
@@ -1333,7 +1370,7 @@ assert(false);
 			case CAKE_TOKEN(STRING_LIT):
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
-				m_out << "cake::style_traits<0>::string_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
+				m_out << "cake::style_traits<0>::string_lit(\"" << CCP(GET_TEXT(expr)) << "\");" << std::endl;
 				return (post_emit_status){ident, "true", environment()};
 			case CAKE_TOKEN(INT):
 				ident = new_ident("temp");
@@ -1387,7 +1424,19 @@ assert(false);
 // 						+ CCP(TO_STRING(expr)) // the ident itself
 // 						); 
 // 						// FIXME: should resolve in DWARF info
-					assert(ctxt.env.find(CCP(GET_TEXT(expr))) != ctxt.env.end());
+					if (ctxt.env.find(unescape_ident(CCP(GET_TEXT(expr)))) == ctxt.env.end())
+					{
+						std::cerr << "Used name " 
+							<< unescape_ident(CCP(GET_TEXT(expr)))
+							<< " not present in the environment. Environment is: "
+							<< std::endl;
+						for (auto i_el = ctxt.env.begin(); i_el != ctxt.env.end(); i_el++)
+						{
+							std::cerr << i_el->first << " : " 
+								<<  i_el->second.cxx_name << std::endl;
+						}
+						assert(false);
+					}
 					/* When do we get asked to emit an IDENT?
 					 * Suppose we're recursively evaluating a big expression.
 					 * Eventually we will get down to the idents.
@@ -1399,9 +1448,9 @@ assert(false);
 					//assert(false);
 					
 					//emit_bound_var_rvalue(ctxt, *ctxt.env.find(CCP(GET_TEXT(expr))));
-					assert(ctxt.env[CCP(GET_TEXT(expr))].valid_in_module
+					assert(ctxt.env[unescape_ident(CCP(GET_TEXT(expr)))].valid_in_module
 						== ctxt.modules.current);
-					return (post_emit_status){ ctxt.env[CCP(GET_TEXT(expr))].cxx_name,
+					return (post_emit_status){ ctxt.env[unescape_ident(CCP(GET_TEXT(expr)))].cxx_name,
 						"true", environment() };
 					//return std::make_pair(
 					//	reference_bound_variable(ctxt, *ctxt.env.find(CCP(GET_TEXT(expr)))),
@@ -1879,6 +1928,31 @@ assert(false);
 			} // end FOR_ALL_CHILDREN
 		} // end INIT argsMultiValue
 		m_out << "// end argument eval" << std::endl;
+		
+		// semantic check: did we output enough arguments for the callee?
+		int min_args = 0;
+		for (auto i_arg = callee_subprogram->formal_parameter_children_begin();
+			i_arg != callee_subprogram->formal_parameter_children_end(); min_args++, i_arg++);
+		int max_args =
+			(callee_subprogram->unspecified_parameters_children_begin() == 
+				callee_subprogram->unspecified_parameters_children_end())
+			? min_args : -1;
+		if (arg_results.size() < min_args || 
+			(max_args != -1 && arg_results.size() > max_args))
+		{
+			std::ostringstream msg;
+			msg << "invalid number of arguments (" << arg_results.size();
+			msg << ": ";
+			for (auto i_result = arg_results.begin(); i_result != arg_results.end(); i_result++)
+			{
+				if (i_result != arg_results.begin()) msg << ", ";
+				msg << i_result->result_fragment;
+			}
+			msg << ") for call";
+			RAISE(call_expr, msg.str().c_str());
+		}
+		
+		
 		m_out << "// begin function call" << std::endl;
 		//m_out << args_success_ident << " = true;" << std::endl;
 		

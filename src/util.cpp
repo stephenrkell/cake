@@ -30,12 +30,12 @@ namespace cake
 	
 	std::ostringstream exception_msg_stream("");
 	
-	std::string unescape_ident(std::string& ident)
+	std::string unescape_ident(const std::string& ident)
 	{
 		std::ostringstream o;
-		enum state { BEGIN, ESCAPE } state;
+		enum { BEGIN, ESCAPE } state = BEGIN;
 
-		for (std::string::iterator i = ident.begin(); i < ident.end(); i++)
+		for (auto i = ident.begin(); i != ident.end(); i++)
 		{
 			switch(state)
 			{
@@ -52,6 +52,7 @@ namespace cake
 					break;
 				case ESCAPE:
 					o << *i;
+					state = BEGIN;
 					break;
 				default: break; // illegal state
 			}
@@ -309,7 +310,7 @@ namespace cake
 			// insert an escape character
 			*p_c++ = '\\';
 			// insert the final input character again
-			*p_c++ = *i_c;
+			*p_c++ = *(i_c - 1);
 			// insert the null terminator again
 			*p_c++ = '\0';
 			// definitely not a keyword now

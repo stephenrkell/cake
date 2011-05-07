@@ -1,3 +1,7 @@
+extern "C" {
+#include "rep_man-shared.h"
+}
+#define REP_ID(ident) (ident::rep_id)
 namespace cake
 {
 	/* Q: When do we specialise these templates with RuleTag != 0?
@@ -14,7 +18,33 @@ namespace cake
 	    	return from; // rely on compiler's default conversions 
         } 
     }; 
+	template <typename FromIsAPtr, typename ToIsAPtr, int RuleTag>  
+    struct value_convert<FromIsAPtr*, ToIsAPtr*, RuleTag>
+    { 
+    	ToIsAPtr* operator()(const FromIsAPtr*& from) const 
+        { 
+			// ensure a co-object exists
+			struct found_co_object_group *co_object_group;
+			void *co_object = find_co_object(
+				from, REP_ID( from_module ), REP_ID( to_module ),
+				&found_co_object_rec, -1);
+			if (!co_object) 
+			{
+				alloc_co_object_idem()
+				// HMM: need to walk object graph here?
+				// yes? i.e. ensure that all objects reachable from the new object are allocated?
+				// Remind myself how the Gtk+ code does it.
+				// It does two walk_bfs passes.
+				// FIRST JOB: make walk_bfs work with DWARF / libprocessimage
+			}
+				
+        } 
+    }; 
     // HACK: allow conversion from "unspecified" to/from any pointer type
+	// FIXME: These should all compile to an instance of the pointer-pointer case.
+	// Currently they don't do the right thing if both args point to rep-incompatible objects. 
+	// We will probably have to parameterise on modules,
+	// so that we can select the "default" corresponding type. Hmm.
     template <typename FromPtr> 
     struct value_convert<FromPtr*, unspecified_wordsize_type, 0> 
     { 
@@ -30,9 +60,29 @@ namespace cake
     { 
         ToPtr* operator ()(const unspecified_wordsize_type& from) const 
         { 
+    	    return *reinterpret_cast<ToPtr* const*>(&from);
+        } 
+	}; 
+	// another HACK: same but for wordsize integers
+    template <typename FromPtr> 
+    struct value_convert<FromPtr*, wordsize_integer_type, 0> 
+    { 
+        wordsize_integer_type operator ()(FromPtr* from) const // NOT a reference 
+        { 
+        	wordsize_integer_type ret;
+            ret = *reinterpret_cast<wordsize_integer_type*>(&from);  
+            return ret;
+        } 
+	}; 
+    template <typename ToPtr> 
+    struct value_convert<wordsize_integer_type, ToPtr*, 0> 
+    { 
+        ToPtr* operator ()(const wordsize_integer_type& from) const 
+        { 
     	    return *reinterpret_cast<ToPtr**>(&from);
         } 
 	}; 
+	// conversions between wordsize integers and wordsize opaque data
     template <> 
     struct value_convert<wordsize_integer_type, unspecified_wordsize_type, 0> 
     { 

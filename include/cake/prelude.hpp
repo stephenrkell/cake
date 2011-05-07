@@ -13,7 +13,6 @@ namespace cake
 
 #include "prelude/pairwise.hpp"
 #include "prelude/style.hpp"
-#define REP_ID(ident) (ident::rep_id)
 
 //    template <class ArgComponentTag, class OtherComponentTag, class ArgType, int RuleTag = 0>
 //    struct corresponding_cxx_type //<ArgComponentTag, OtherComponentTag, ArgType, RuleTag>
