@@ -38,3 +38,26 @@ void init_co_object_from_object(int object_rep, void *object,
 		int co_object_rep, void *co_object, int form);
 void init_co_object(int do_not_use, void *object, int form, int from_rep, int to_rep);
 void sync_all_co_objects(int from_rep, int to_rep);
+
+/* from rep_man_tables.h */
+
+rep_sync_func_t get_rep_conv_func(int from_rep, int to_rep, int form) __attribute__((weak));
+/* get_rep_conv_func(from_rep, to_rep, form)(p->reps[from_rep], p->reps[to_rep]);  */
+               
+size_t get_object_rep_layout_size(int rep, int form) __attribute__((weak));
+/* object_rep_layout_sizes[co_object_rep][form]      */
+         
+int get_subobject_form(int rep, int form, int index) __attribute__((weak));
+/* get_subobject_form(rep, start_subobject_form, i) */
+                
+size_t get_subobject_offset(int rep, int form, int index) __attribute__((weak));
+/* get_subobject_offset(rep, start_subobject_form, i) != (size_t) -1; */
+                
+int get_derefed_form(int rep, int form, int index) __attribute__((weak));
+/* get_derefed_form(rep, start_subobject_form, i) */
+
+size_t get_derefed_offset(int rep, int form, int index) __attribute__((weak));
+/* get_derefed_offset(rep, start_subobject_form, i) != (size_t) -1; */
+
+const char *get_form_name(int form) __attribute__((weak));
+/* get_object_form(start_subobject_form) */

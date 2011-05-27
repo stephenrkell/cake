@@ -4,12 +4,6 @@ extern "C" {
 #define REP_ID(ident) (ident::rep_id)
 namespace cake
 {
-	/* Q: When do we specialise these templates with RuleTag != 0?
-     * A: (tentative) every value correspondence is defined by one? RuleTag is arbitrary?
-     * 
-     * Q: Do we ever invoke these templates directly, cf. using
-     * convert_from_{first,second}_to_{second,first}?
-     * A: (tentative) No. */
 	template <typename From, typename To, int RuleTag = 0>  
     struct value_convert 
     { 
@@ -30,12 +24,26 @@ namespace cake
 				&found_co_object_rec, -1);
 			if (!co_object) 
 			{
-				alloc_co_object_idem()
-				// HMM: need to walk object graph here?
-				// yes? i.e. ensure that all objects reachable from the new object are allocated?
-				// Remind myself how the Gtk+ code does it.
-				// It does two walk_bfs passes.
+				/* Need to walk object graph here,
+				 * firstly to ensure that all objects reachable from the new object
+				 * are allocated,
+				 * and secondly to ensure that they are
+				 * initialized/updated.
+				 * FIXME: how to ensure that we don't duplicate work from the 
+				 * sync_all step? Ideally we would allocate before the sync-all.
+				 * Is that feasible? YES. It all happens in the crossover 
+				 * environment generation.
+				 */
 				// FIRST JOB: make walk_bfs work with DWARF / libprocessimage
+				walk_bfs (
+					REP_GTK_12, /* object_rep */ // i.e. key for looking up conversions
+					arg1, /* object */ // ok
+					FORM_GDK_WINDOW, /* object_form */ // we don't need this now!
+					REP_GTK_20, /* co_object_rep */ // i.e. key for looking up conversions
+					allocate_co_object_idem, /* (*on_blacken)(int, void*, int, int, int) */
+					REP_GTK_12, /* arg_n_minus_1 */ // 
+					REP_GTK_20); /* arg_n */ // 
+				
 			}
 				
         } 
