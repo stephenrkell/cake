@@ -1,9 +1,17 @@
 extern "C" {
-#include "rep_man-shared.h"
+#include "repman.h"
 }
+#include "runtime.hpp"
 #define REP_ID(ident) (ident::rep_id)
 namespace cake
 {
+	/* FIXME: all value_convert operator()s MUST have the same ABI!
+	 * We are going to instantiate them all in a big table that will
+	 * be traversed at runtime, so they must be unifiable under a 
+	 * single function pointer type. This is problematic because
+	 * returning big stuff by value silently changes the ABI.
+	 * I suspect we'll have to make it an output parameter. */
+
 	template <typename From, typename To, int RuleTag = 0>  
     struct value_convert 
     { 
@@ -15,36 +23,118 @@ namespace cake
 	template <typename FromIsAPtr, typename ToIsAPtr, int RuleTag>  
     struct value_convert<FromIsAPtr*, ToIsAPtr*, RuleTag>
     { 
-    	ToIsAPtr* operator()(const FromIsAPtr*& from) const 
+    	ToIsAPtr* operator()(FromIsAPtr*& from) const 
         { 
-			// ensure a co-object exists
-			struct found_co_object_group *co_object_group;
-			void *co_object = find_co_object(
-				from, REP_ID( from_module ), REP_ID( to_module ),
-				&found_co_object_rec, -1);
-			if (!co_object) 
-			{
-				/* Need to walk object graph here,
-				 * firstly to ensure that all objects reachable from the new object
-				 * are allocated,
-				 * and secondly to ensure that they are
-				 * initialized/updated.
-				 * FIXME: how to ensure that we don't duplicate work from the 
-				 * sync_all step? Ideally we would allocate before the sync-all.
-				 * Is that feasible? YES. It all happens in the crossover 
-				 * environment generation.
-				 */
-				// FIRST JOB: make walk_bfs work with DWARF / libprocessimage
-				walk_bfs (
-					REP_GTK_12, /* object_rep */ // i.e. key for looking up conversions
-					arg1, /* object */ // ok
-					FORM_GDK_WINDOW, /* object_form */ // we don't need this now!
-					REP_GTK_20, /* co_object_rep */ // i.e. key for looking up conversions
-					allocate_co_object_idem, /* (*on_blacken)(int, void*, int, int, int) */
-					REP_GTK_12, /* arg_n_minus_1 */ // 
-					REP_GTK_20); /* arg_n */ // 
+			print_object(from);
+// 			// ensure a co-object exists
+// 			struct found_co_object_group *co_object_group;
+// 			void *co_object = find_co_object(
+// 				from, REP_ID( from_module ), REP_ID( to_module ),
+// 				&found_co_object_rec, -1);
+// 			if (!co_object) 
+// 			{
+// 				/* Need to walk object graph here,
+// 				 * firstly to ensure that all objects reachable from the new object
+// 				 * are allocated,
+// 				 * and secondly to ensure that they are
+// 				 * initialized/updated.
+// 				 * FIXME: how to ensure that we don't duplicate work from the 
+// 				 * sync_all step? Ideally we would allocate before the sync-all.
+// 				 * Is that feasible? YES. It all happens in the crossover 
+// 				 * environment generation.
+// 				 */
+// 				// FIRST JOB: make walk_bfs work with DWARF / libprocessimage
+// 				walk_bfs (
+// 					REP_GTK_12, /* object_rep */ // i.e. key for looking up conversions
+// 					arg1, /* object */ // ok
+// 					FORM_GDK_WINDOW, /* object_form */ // we don't need this now!
+// 					REP_GTK_20, /* co_object_rep */ // i.e. key for looking up conversions
+// 					allocate_co_object_idem, /* (*on_blacken)(int, void*, int, int, int) */
+// 					REP_GTK_12, /* arg_n_minus_1 */ // 
+// 					REP_GTK_20); /* arg_n */ // 
+// 				
+				/* How is the alloc_co_object going to look up correspondences?
+				 * Well,
+				 * It's going to use a run-time equivalent of our corresponding_type
+				 * template typedef tables. 
+				 * It's a table keyed on
+				 * <source-component, source-type-identifier, dest-component>
+				 * and yielding 
+				 * <dest-type-identifier, conversion-function> 
+				 * AND (FIXME) must make sure that all conversion functions are
+				 * - instantiated, and
+				 * - have same/unifiable signatures.
+				 *
+				 * Thesis says:
+				 * - generate a table mapping from pairs of data types...
+				 *   ... to the template function instances which perform the
+				 *       value conversion
+				 * - include in the table all conversions defined between all
+				 *   data types related in the Cake file
+				 * 
+				 * Q. How are we doing object schema discovery these days?
+				 * A. By explicit allocation_site annotations.
+				 * So object schema discovery is going to give us the DWARF type
+				 * as defined in the allocating compilation unit.
+				 * We need to canonicalise this to a unique type 
+				 * ... at the component (.o / .so) level.
+				 * Computing type equivalences can take many seconds.
+				 * So this means writing a simple tool that can compute
+				 * (and dump to disk) these equivalences.
+				 *
+				 * In turn, libprocessimage has to be able to find these.
+				 * How? 
+				 * Use a /usr/lib/debug-like filesystem,
+				 * whose prefix is given by an environment variable.
+				 * Each executable or shared object is a directory in this filesystem.
+				 * Within this, there is one directory per compiler "producer" string.
+				 * Under these directories,
+				 * the directory tree reproduces the *build* directory structure(s)
+				 * in the executable or shared object.
+				 * Each DWARF compilation unit 
+				 * in the executable / shared object
+				 * may have a symlink in this filesystem.
+				 * These symlinks point to equivalence databases,
+				 * which may reside anywhere under the executable / shared object's
+				 * directory. 
+				 * The set of symlinks defines the set of compilation units 
+				 * up to whose scope the equivalence is complete.
+				 * WAIT. We don't need any of this, because our kind of "equivalence"
+				 * is also *name*-equivalence.
+				 *
+				 * Cake compiler:
+				 * How do we identify source/sink data types
+				 * in the tables we output?
+				 * 
+				 * We have to account for
+				 * - 1. canonicalisation. We assume that within a Cake component,
+				 *      we have some canonical name for a data type. This is just
+				 *      a concatenation of strings (compile directory, compiler). EASY. 
+				 *      Except:
+				 *      the "compilation directory" idea doesn't quite canonicalise enough,
+				 *      because in the same component there will be multiple directories
+				 *      (usually with a common prefix). That's okay -- we can scan all
+				 *      compilation units in the component and use the common prefix.
+				 * - 2. runtime discoverability. The runtime has to do lookups
+				 *      in these tables, so that given a compilation-unit-level
+				 *      DWARF type (e.g. from heap object discovery) 
+				 *      it can index the table correctly.
+				 *      Again, this is easy. The runtime can discover 
+				 *      a name for the data type. Then it needs to compute the 
+				 *      two strings that we used earlier. Unfortunately, it doesn't
+				 *      know where component boundaries are. So we have to emit some
+				 *      metadata to tell it. In the wrapper file, we can emit
+				 *      a set of tuples
+				 *      <compilation-unit-name, full-compil-directory-name, compiler-ident>
+				 *      as a string with a name __cake_component_<component-name>.
+				 *      It can then do the longest-common-prefix calculation on the
+				 *      full-compil-directory-name
+				 * 
+				 * For the Cake runtime, we must be able to map from
+				 * a Cake component identifier to a set of these.
+				 *  */
 				
-			}
+//			}
 				
         } 
     }; 

@@ -4,8 +4,7 @@ extern "C" {
 void walk_bfs(int object_rep, void *object, int object_form, int co_object_rep,
 	void (*on_blacken)(int, void*, int, int, int), int arg_n_minus_1, int arg_n);
 }
-#include "rep_man-shared.h"
-#include "rep_man_tables.h"
+#include "repman.h"
 
 #include <map>
 #include <deque>

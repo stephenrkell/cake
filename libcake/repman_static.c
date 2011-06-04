@@ -1,13 +1,28 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-#include "rep_man-shared.h"
-#include "rep_man_tables.h"
+#include <malloc.h>
+#include "repman.h"
+#include <processimage/heap_index.h>
 
-/* extern const struct co_object_group *const STATIC_HEAD; */
+/* static co-object relation */
+
+// extern const struct co_object_group *const STATIC_HEAD; 
 extern const struct co_object_group __libcake_first_co_object_group __attribute__((weak));
 struct co_object_group *head = &__libcake_first_co_object_group; /* hard-wire the static entries */
+
+/* counter used to issue */
 int next_rep_id;
+
+void print_object(void *obj)
+{
+	assert(0); /* PROBLEM: this only work for heap objects! fold into libprocessimage. */
+	void *obj_start;
+	struct trailer *tr = lookup_object_info(obj, &obj_start);
+	assert(tr);
+	fprintf(stderr, "pointer %p into object starting at %p, size %z, allocated at %p\n",
+		obj, obj_start, malloc_usable_size(obj_start), tr->alloc_site);
+}
 
 int invalidate_co_object(void *object, int rep)
 {
@@ -65,7 +80,7 @@ void *find_co_object(void *object, int object_rep, int co_object_rep,
 				{
 					fprintf(stderr, "Warning: co-object at %p has only %d words stored (form %s, rep %d), less than %d expected by the caller!\n",
 							co_object, p->co_object_info[co_object_rep].length_words,
-							get_object_form(p->form), co_object_rep, expected_size_words);
+							get_form_name(p->form), co_object_rep, expected_size_words);
 				}
 				return co_object;
 			}
@@ -112,7 +127,7 @@ void allocate_co_object_idem(int do_not_use, void *object, int form, int object_
 	co_object = calloc(1, get_object_rep_layout_size(co_object_rep, form));
 	if (co_object == NULL) { fprintf(stderr, "Error: malloc failed\n"); exit(42); }
 	fprintf(stderr, "Allocating a co-object in rep %d for object at %p (rep %d, form %s)\n", 
-            co_object_rep, object, object_rep, get_object_form(form));
+            co_object_rep, object, object_rep, get_form_name(form));
 	/* also add it to the list! */
 	if (co_object_rec == NULL)
 	{

@@ -39,4 +39,4 @@ clean::
 	rm -f *_wrap.cpp* *_wrap.o *_wrap.d
 	rm -f cake-generated.mk
 
-include cake-generated.mk
+-include cake-generated.mk
