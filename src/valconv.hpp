@@ -44,7 +44,8 @@ namespace cake
 		
 	protected:
 		void emit_header(boost::optional<std::string> return_typename, 
-			bool emit_struct_keyword = true, bool emit_template_prefix = true);
+			bool emit_struct_keyword = true, bool emit_template_prefix = true,
+			bool emit_return_typename = true);
 		void emit_signature(bool emit_return_type = true, bool emit_default_argument = true);
 		
 	public:
@@ -57,6 +58,7 @@ namespace cake
 		virtual void emit() { emit_preamble(); emit_body(); emit_postamble(); }
 		virtual void emit_body() = 0;
 		virtual void emit_forward_declaration();
+		virtual void emit_function_name();
 		virtual std::vector< std::pair < boost::shared_ptr<dwarf::spec::type_die>,
 		                                 boost::shared_ptr<dwarf::spec::type_die>
 										>

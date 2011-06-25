@@ -506,7 +506,7 @@ assert(false);
 				sink, sink_infix_stub, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
 			m_d.find_type_expectations_in_stub(
 				sink, action, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
-			ctxt.env = crossover_environment(new_env1, sink, constraints);
+			ctxt.env = crossover_environment(source, new_env1, sink, constraints);
 			m_out << "sync_all_co_objects(REP_ID(" << m_d.name_of_module(source)
 				<< "), REP_ID(" << m_d.name_of_module(sink) << "));" << std::endl;
 			// -- we need to modify the environment:
@@ -585,7 +585,7 @@ assert(false);
 					m_out << "// crossover logic thinks there's no return value" << std::endl;
 				}
 			}
-			ctxt.env = crossover_environment(new_env3, source, return_constraints);
+			ctxt.env = crossover_environment(sink, new_env3, source, return_constraints);
 			
 			std::string final_success_fragment = status3.success_fragment;
 			
@@ -742,6 +742,7 @@ assert(false);
 
 	wrapper_file::environment 
 	wrapper_file::crossover_environment(
+		module_ptr old_module_context,
 		const environment& env,
 		module_ptr new_module_context,
 		const std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& constraints
@@ -792,8 +793,10 @@ assert(false);
 		
 		// SO -- do x86-64 "int" arguments get promoted to 64-bit width?
 		// NO -- they stay at 32-bit width! BUT pointers are 64-bit width. Argh.
-		
+
 		environment new_env;
+		// for deduplicating multiple aliases of the same cxxname...
+		std::map<std::string, bool> seen_cxxnames; /* bool is "was it a pointer?" */
 		for (auto i_binding = env.begin(); i_binding != env.end(); i_binding++)
 		{
 			// sanity check
@@ -834,6 +837,41 @@ assert(false);
 						<< compiler.name_for(i_type->second)
 						<< std::endl;
 					precise_to_type = i_type->second;
+				}
+			}
+			
+			/* Now insert code to ensure co-objects are allocated. We might pass
+			 * over the same cxxname multiple times. If we've seen it before,
+			 * we *might* still be interested -- if it wasn't a pointer then, but
+			 * is now. This is for unspecified_wordsize_type et al. */
+			auto found = seen_cxxnames.find(i_binding->second.cxx_name);
+			if (found == seen_cxxnames.end()
+			 || found->second == false)
+			{
+				bool was_a_pointer_last_time = 
+					found != seen_cxxnames.end() && found->second;
+				bool is_a_pointer_this_time = 
+					(precise_to_type &&
+					 precise_to_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type);
+				seen_cxxnames[i_binding->second.cxx_name] =
+					was_a_pointer_last_time || is_a_pointer_this_time;
+				
+				// if this is the first time we've seen this cxxname,
+				// or if it's now a pointer, 
+				// we make the co-objects alloc call
+				if (found == seen_cxxnames.end() || (
+					!was_a_pointer_last_time && is_a_pointer_this_time))
+				{
+					m_out << "ensure_co_objects_allocated(REP_ID("
+						<< m_d.name_of_module(old_module_context) << "), ";
+					// make sure we invoke the pointer specialization
+					if (is_a_pointer_this_time) m_out <<
+						"ensure_is_a_pointer(";
+					m_out << i_binding->second.cxx_name;
+					if (is_a_pointer_this_time) m_out << ")";
+					m_out << ", REP_ID("
+						<< m_d.name_of_module(new_module_context)
+						<<  "));" << std::endl;
 				}
 			}
 			
@@ -890,6 +928,7 @@ assert(false);
 		// sanity check
 		assert(new_env.size() == env.size());
 		
+		// output a summary comment
 		m_out << "/* crossover: " << std::endl;
 		for (auto i_el = new_env.begin(); i_el != new_env.end(); i_el++)
 		{

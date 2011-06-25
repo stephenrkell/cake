@@ -1,8 +1,9 @@
 CFLAGS += -g3 -fno-eliminate-unused-debug-types -fno-eliminate-unused-debug-symbols
 CFLAGS += -I${HOME}/opt/include
-CXXFLAGS += $(CFLAGS) -std=c++0x
+CXXFLAGS += $(CFLAGS) -std=gnu++0x
 
 CAKE ?= ../../src/cake
+CXX ?= g++-4.5
 CXXFLAGS += -I$(shell dirname $(CAKE))/../include -I$(shell dirname $(CAKE))/../libcake/include
 LDFLAGS += -L$(shell dirname $(CAKE))/../libcake -lcake -Wl,-R$(realpath $(shell dirname $(CAKE))/../libcake)
 
@@ -23,7 +24,7 @@ $(BASENAME): $(BASENAME).o
 # HACK: workaround missing symbol unbinding
 $(BASENAME): $(BASENAME).o
 	objdump -t $(BASENAME).o | grep __real_ | tr -s '[:blank:]' '\t' | cut -f6 | sed 's/__real_\(.*\)/-Wl,--defsym,\1=__real_\1/' | xargs \
-	g++ -o $(BASENAME) $(BASENAME).o $(LDFLAGS)
+	$(CXX) -o $(BASENAME) $(BASENAME).o $(LDFLAGS)
 
 ifeq ($(DEBUG),)
 cake-generated.mk $(BASENAME).o_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)

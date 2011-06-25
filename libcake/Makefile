@@ -1,3 +1,5 @@
+CXX ?= g++-4.5
+
 C_SRC := $(wildcard *.c) 
 CXX_SRC := $(wildcard *.cpp) $(wildcard *.cc)
 C_OBJS := $(patsubst %.c,%.o,$(C_SRC))
@@ -36,15 +38,15 @@ libcake.so: $(OBJS)
 	$(CXX) $(CXXFLAGS) -shared -o "$@"  $(OBJS) $(LDFLAGS) -lprocessimage -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldl
 
 $(CXX_DEPS): .%.cpp.d : %.cpp
-	g++ -MM $(CXXFLAGS) "$<"  > "$@"
+	$(CXX) -MM $(CXXFLAGS) "$<"  > "$@"
 $(CXX_DEPS): .%.cc.d : %.cc
-	g++ -MM $(CXXFLAGS) "$<"  > "$@"
+	$(CXX) -MM $(CXXFLAGS) "$<"  > "$@"
 $(C_DEPS): .%.c.d : %.c
 	gcc -MM $(CFLAGS) "$<"  > "$@"
 	
 include $(DEPS)
 
 %.o: %.cpp #$(HDRS)
-	g++ $(CXXFLAGS) -c -o "$@" "$<"
+	$(CXX) $(CXXFLAGS) -c -o "$@" "$<"
 %.o: %.cc #$(HDRS)
-	g++ $(CXXFLAGS) -c -o "$@" "$<"
+	$(CXX) $(CXXFLAGS) -c -o "$@" "$<"

@@ -5,25 +5,26 @@ extern "C" {
 #define REP_ID(ident) (ident::rep_id)
 namespace cake
 {
-	/* FIXME: all value_convert operator()s MUST have the same ABI!
-	 * We are going to instantiate them all in a big table that will
-	 * be traversed at runtime, so they must be unifiable under a 
-	 * single function pointer type. This is problematic because
-	 * returning big stuff by value silently changes the ABI.
-	 * I suspect we'll have to make it an output parameter. */
+	/* All value_convert operator()s MUST have the same ABI!
+	 * Pointer or reference "from", then pointer "to". 
+ 	 * Return values vary the ABI depending on the returned object size; 
+	 * we generally get around this by only using return values in the
+	 * class templates. The function template (at the bottom) ignores
+	 * the return value. */
 
 	template <typename From, typename To, int RuleTag = 0>  
     struct value_convert 
     { 
-    	To operator()(const From& from) const 
+    	To operator()(const From& from, To *p_to = 0) const 
         { 
-	    	return from; // rely on compiler's default conversions 
+			// rely on compiler's default conversions 
+			if (p_to) *p_to = from; return from; 
         } 
     }; 
 	template <typename FromIsAPtr, typename ToIsAPtr, int RuleTag>  
     struct value_convert<FromIsAPtr*, ToIsAPtr*, RuleTag>
     { 
-    	ToIsAPtr* operator()(FromIsAPtr*& from) const 
+    	ToIsAPtr* operator()(FromIsAPtr*& from, ToIsAPtr **p_to = 0) const 
         { 
 			print_object(from);
 // 			// ensure a co-object exists
@@ -146,49 +147,56 @@ namespace cake
     template <typename FromPtr> 
     struct value_convert<FromPtr*, unspecified_wordsize_type, 0> 
     { 
-        unspecified_wordsize_type operator ()(FromPtr* from) const // NOT a reference 
+        unspecified_wordsize_type operator ()(FromPtr* from, unspecified_wordsize_type *p_to = 0) const // NOT a reference 
         { 
         	unspecified_wordsize_type ret;
             ret = *reinterpret_cast<unspecified_wordsize_type*>(&from);  
+			if (p_to) *p_to = ret;
             return ret;
         } 
 	}; 
     template <typename ToPtr> 
     struct value_convert<unspecified_wordsize_type, ToPtr*, 0> 
     { 
-        ToPtr* operator ()(const unspecified_wordsize_type& from) const 
+        ToPtr* operator ()(const unspecified_wordsize_type& from, ToPtr **p_to = 0) const 
         { 
-    	    return *reinterpret_cast<ToPtr* const*>(&from);
+			auto ret = *reinterpret_cast<ToPtr* const*>(&from);
+			if (p_to) *p_to = ret;
+    	    return ret;
         } 
 	}; 
 	// another HACK: same but for wordsize integers
     template <typename FromPtr> 
     struct value_convert<FromPtr*, wordsize_integer_type, 0> 
     { 
-        wordsize_integer_type operator ()(FromPtr* from) const // NOT a reference 
+        wordsize_integer_type operator ()(FromPtr* from, wordsize_integer_type *p_to = 0) const // NOT a reference 
         { 
         	wordsize_integer_type ret;
             ret = *reinterpret_cast<wordsize_integer_type*>(&from);  
+			if (p_to) *p_to = ret;
             return ret;
         } 
 	}; 
     template <typename ToPtr> 
     struct value_convert<wordsize_integer_type, ToPtr*, 0> 
     { 
-        ToPtr* operator ()(const wordsize_integer_type& from) const 
+        ToPtr* operator ()(const wordsize_integer_type& from, ToPtr **p_to = 0) const 
         { 
-    	    return *reinterpret_cast<ToPtr**>(&from);
+    	    auto ret = *reinterpret_cast<ToPtr**>(&from);
+			if (p_to) *p_to = ret;
+			return ret;
         } 
 	}; 
 	// conversions between wordsize integers and wordsize opaque data
     template <> 
     struct value_convert<wordsize_integer_type, unspecified_wordsize_type, 0> 
     { 
-        unspecified_wordsize_type operator ()(const wordsize_integer_type& from) const 
+        unspecified_wordsize_type operator ()(const wordsize_integer_type& from, unspecified_wordsize_type *p_to = 0) const 
         { 
 			assert(sizeof (wordsize_integer_type) == sizeof (unspecified_wordsize_type));
         	unspecified_wordsize_type ret 
              = *reinterpret_cast<const unspecified_wordsize_type*>(&from);  
+			if (p_to) *p_to = ret;
             return ret;
         } 
 	}; 
@@ -196,11 +204,12 @@ namespace cake
     template <> 
     struct value_convert<int, unspecified_wordsize_type, 0> 
     { 
-        unspecified_wordsize_type operator ()(const int& from) const 
+        unspecified_wordsize_type operator ()(const int& from, unspecified_wordsize_type *p_to = 0) const 
         { 
 			auto tmp_long = static_cast<long>(from);
         	unspecified_wordsize_type ret 
-             = *reinterpret_cast<unspecified_wordsize_type*>(&tmp_long);  
+             = *reinterpret_cast<unspecified_wordsize_type*>(&tmp_long);
+			if (p_to) *p_to = ret;
             return ret;
         } 
 	}; 
@@ -208,19 +217,23 @@ namespace cake
     template <> 
     struct value_convert<unspecified_wordsize_type, wordsize_integer_type, 0> 
     { 
-        wordsize_integer_type operator ()(const unspecified_wordsize_type& from) const 
+        wordsize_integer_type operator ()(const unspecified_wordsize_type& from, wordsize_integer_type *p_to = 0) const 
         {
 			assert(sizeof (wordsize_integer_type) == sizeof (unspecified_wordsize_type));
-    	    return *reinterpret_cast<const wordsize_integer_type*>(&from);
+    	    auto ret = *reinterpret_cast<const wordsize_integer_type*>(&from);
+			if (p_to) *p_to = ret;
+			return ret;
         } 
 	}; 
 #if defined (X86_64) || (defined (__x86_64__))
     template <> 
     struct value_convert<unspecified_wordsize_type, int, 0> 
     { 
-        int operator ()(const unspecified_wordsize_type& from) const 
+        int operator ()(const unspecified_wordsize_type& from, int *p_to = 0) const 
         {
-    	    return static_cast<int>(*reinterpret_cast<const long*>(&from));
+    	    auto ret = static_cast<int>(*reinterpret_cast<const long*>(&from));
+			if (p_to) *p_to = ret;
+			return ret;
         } 
 	}; 
 #endif
@@ -228,19 +241,22 @@ namespace cake
     template <typename FromZeroArray, typename T> 
     struct value_convert<FromZeroArray[0], T, 0> 
     { 
-        T operator ()(FromZeroArray (&from)[0]) const // NOT a reference 
+        T operator ()(FromZeroArray (&from)[0], T *p_to = 0) const // NOT a reference 
         { 
         	T ret;
-            ret = *reinterpret_cast<T*>(&from);  
+            ret = *reinterpret_cast<T*>(&from);
+			if (p_to) *p_to = ret;
             return ret;
         } 
 	}; 
     template <typename T, typename ToZeroArray> 
     struct value_convert<T, ToZeroArray[0], 0> 
     { 
-        void operator ()(const T& from) const 
+		typedef ToZeroArray ToType[0];
+        void operator ()(const T& from, ToType *p_to = 0) const 
         { 
     	    //return *reinterpret_cast<ToZeroArray*>(&from/*.data*/);
+			assert(false); // FIXME: we should memcpy, but we don't know how much
         } 
 	}; 
 
@@ -286,6 +302,14 @@ namespace cake
         }	
     };
 
-
-
+	// now we can define a function template to wrap all these up
+	template <typename Source, typename Sink, int RuleTag>
+	void *
+	value_convert_function(
+		Source *from,
+		Sink *to)
+	{
+		value_convert<Source, Sink, RuleTag>().operator()(*from, to);
+		return to;
+	}
 }

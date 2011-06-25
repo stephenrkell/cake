@@ -14,6 +14,7 @@ extern "C"
 /* process image */
 #include <map>
 #include <string>
+#include <sstream>
 #include <processimage/process.hpp>
 #include <dwarfpp/spec_adt.hpp>
 
@@ -113,7 +114,47 @@ void init_components_table(void)
 
 void init_component_pairs_table(void)
 {
-
+	/* We're building a table of component pairs, pointing to their conversion table. */
+	for (auto i_file = image.files.begin(); i_file != image.files.end(); i_file++)
+	{
+		auto symbols = image.symbols(i_file);
+		for (auto i_sym = symbols.first; i_sym != symbols.second; i_sym++)
+		{
+			std::string name = elf_strptr(i_sym.origin->elf,
+				i_sym.origin->shdr.sh_link, 
+				(size_t)i_sym->st_name);
+			
+			std::string::size_type off;
+			if ((off = name.find("__cake_component_pair_")) == 0)
+			{
+				/* Found it! Grab the component names. */
+				std::string component_names_string = name.substr(off);
+				
+				// HMM: how to split apart the pair? use a length-prefixing thing
+				std::istringstream s(component_names_string);
+				int len1;
+				s >> len1;
+				std::string c1;
+				while (len1 > 0)
+				{
+					char c;
+					s >> c;
+					c1 += c;
+				}
+				int len2;
+				s >> len2;
+				std::string c2;
+				while (len2 > 0)
+				{
+					char c;
+					s >> c;
+					c2 += c;
+				}
+				
+				// FIXME: more here
+			}
+		}
+	}
 }
 
 } // end namespace cake

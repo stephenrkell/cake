@@ -147,6 +147,7 @@ namespace cake
 			const environment& new_bindings
 			);
 		environment crossover_environment(
+			module_ptr old_module_context,
 			const environment& env,
 			module_ptr new_module_context,
 			const std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& constraints

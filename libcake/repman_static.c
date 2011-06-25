@@ -1,3 +1,4 @@
+#define _GNU_SOURCE /* so that we get MAP_ANONYMOUS when including malloc.h */
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -14,21 +15,11 @@ struct co_object_group *head = &__libcake_first_co_object_group; /* hard-wire th
 /* counter used to issue */
 int next_rep_id;
 
-void print_object(void *obj)
-{
-	assert(0); /* PROBLEM: this only work for heap objects! fold into libprocessimage. */
-	void *obj_start;
-	struct trailer *tr = lookup_object_info(obj, &obj_start);
-	assert(tr);
-	fprintf(stderr, "pointer %p into object starting at %p, size %z, allocated at %p\n",
-		obj, obj_start, malloc_usable_size(obj_start), tr->alloc_site);
-}
-
 int invalidate_co_object(void *object, int rep)
 {
 	struct co_object_group *recp;
 	struct co_object_group *prevp;
-	void *retval = find_co_object(object, rep, rep, &recp, 0);
+	void *retval = find_co_object(object, rep, rep, &recp /*, 0*/);
 	if (retval == NULL) return -1; /* co-object not found */
 	prevp = head;
 	while (prevp != NULL && prevp->next != NULL && prevp->next != recp) prevp = prevp->next;
@@ -53,7 +44,7 @@ int invalidate_co_object(void *object, int rep)
 }
 
 void *find_co_object(void *object, int object_rep, int co_object_rep, 
-		struct co_object_group **co_object_rec_out, int expected_size_words)
+		struct co_object_group **co_object_rec_out/*, int expected_size_words*/)
 {
 	if (object == NULL)
 	{
@@ -76,12 +67,12 @@ void *find_co_object(void *object, int object_rep, int co_object_rep,
 				/* fprintf(stderr, "Found co-object at %p in rep %d of object at %p (rep %d, form %s)\n",
 					co_object, co_object_rep, object, object_rep, object_forms[p->form]); */
 				/* length check */
-				if (p->co_object_info[co_object_rep].length_words < expected_size_words)
-				{
-					fprintf(stderr, "Warning: co-object at %p has only %d words stored (form %s, rep %d), less than %d expected by the caller!\n",
-							co_object, p->co_object_info[co_object_rep].length_words,
-							get_form_name(p->form), co_object_rep, expected_size_words);
-				}
+				//if (p->co_object_info[co_object_rep].length_words < expected_size_words)
+				//{
+				//	fprintf(stderr, "Warning: co-object at %p has only %d words stored (rep %d), less than %d expected by the caller!\n",
+				//			co_object, p->co_object_info[co_object_rep].length_words,
+				//			co_object_rep, expected_size_words);
+				//}
 				return co_object;
 			}
 			else
@@ -107,27 +98,27 @@ void sync_all_co_objects(int from_rep, int to_rep)
 		if (p->reps[from_rep] != NULL && p->reps[to_rep] != NULL)
 		{
 			/*rep_conv_funcs[from_rep][to_rep][p->form](p->reps[from_rep], p->reps[to_rep]);*/
-            get_rep_conv_func(from_rep, to_rep, p->form)(p->reps[from_rep], p->reps[to_rep]);
+            get_rep_conv_func(from_rep, to_rep, p->reps[from_rep])(p->reps[from_rep], p->reps[to_rep]);
 		}
 		prev = p;
 	}
 }
 
-void allocate_co_object_idem(int do_not_use, void *object, int form, int object_rep, int co_object_rep)
+void allocate_co_object_idem(void *object, int object_rep, int co_object_rep)
 {
 	if (object == NULL) return; /* nothing to do */
 	
 	void *co_object;
 	struct co_object_group *co_object_rec = NULL;
-	co_object = find_co_object(object, object_rep, co_object_rep, &co_object_rec,
-			FORM_STORED_SIZE(co_object_rep, form));
+	co_object = find_co_object(object, object_rep, co_object_rep, &co_object_rec/*,
+			FORM_STORED_SIZE(co_object_rep, form)*/);
 	if (co_object != NULL) return; /* the co-object already exists */	
 	
 	/* the co-object doesn't exist, so allocate it -- use calloc for harmless defaults */
-	co_object = calloc(1, get_object_rep_layout_size(co_object_rep, form));
+	co_object = calloc(1, get_co_object_size(object, object_rep, co_object_rep));
 	if (co_object == NULL) { fprintf(stderr, "Error: malloc failed\n"); exit(42); }
-	fprintf(stderr, "Allocating a co-object in rep %d for object at %p (rep %d, form %s)\n", 
-            co_object_rep, object, object_rep, get_form_name(form));
+	fprintf(stderr, "Allocating a co-object in rep %d for object at %p (rep %d)\n", 
+            co_object_rep, object, object_rep);
 	/* also add it to the list! */
 	if (co_object_rec == NULL)
 	{
@@ -135,25 +126,23 @@ void allocate_co_object_idem(int do_not_use, void *object, int form, int object_
 		if (co_object_rec == NULL) { fprintf(stderr, "Error: malloc failed\n"); exit(42); }
 		/* add info about the existing object */
 		co_object_rec->reps[object_rep] = object;
-		co_object_rec->co_object_info[object_rep].length_words = FORM_STORED_SIZE(object_rep, form);
 		co_object_rec->co_object_info[object_rep].allocated_by = ALLOC_BY_USER; /* not by us */
-		co_object_rec->form = form;
+		/* co_object_rec->form = form; */
 		co_object_rec->next = head;
 		head = co_object_rec;
 	}
 	/* add info about the newly allocated co-object */
 	co_object_rec->reps[co_object_rep] = co_object;
-	co_object_rec->co_object_info[co_object_rep].length_words = FORM_STORED_SIZE(co_object_rep,form);
 	co_object_rec->co_object_info[co_object_rep].allocated_by = ALLOC_BY_REP_MAN; /* by us */
 }
 
-void do_nothing(int do_not_use, void *object, int form, int object_rep, int co_object_rep)
+void do_nothing(void *object, int object_rep, int co_object_rep)
 {
 	/* Used for testing walk_bfs */
 }
 
 void init_co_object_from_object(int object_rep, void *object,
-		int co_object_rep, void *co_object, int form)
+		int co_object_rep, void *co_object)
 {
 	/* Initialising an object: we must initialise all cared-about fields. It doesn't matter
 	 * what order we do the contents and the pointers, as long as the pointed-to objects
@@ -162,13 +151,14 @@ void init_co_object_from_object(int object_rep, void *object,
 	 * deep-copying by assuming that a co-object has already been allocated, that it may
 	 * or may not have been initialised (but eventually will be); they simply look it up. */
 	
-	get_rep_conv_func(object_rep, co_object_rep, form)(object, co_object);
+	get_rep_conv_func(object_rep, co_object_rep, object)(object, co_object);
 }
 
-void init_co_object(int do_not_use, void *object, int form, int from_rep, int to_rep)
+void init_co_object(void *object, int from_rep, int to_rep)
 {
-	init_co_object_from_object(from_rep, object, to_rep, 
-			find_co_object(object, from_rep, to_rep, NULL, FORM_STORED_SIZE(to_rep, form)), form);
+	init_co_object_from_object(
+			from_rep, object, to_rep, 
+			find_co_object(object, from_rep, to_rep, NULL));
 }
 
 int object_is_live(struct co_object_group *rec)

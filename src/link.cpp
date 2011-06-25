@@ -646,7 +646,7 @@ namespace cake
 			<< '\t' << "dwarfhpp \"$<\" > \"$@\"" << std::endl;
 		// dependencies for generated cpp file
 		out << wrap_file_makefile_name << ".d: " << wrap_file_makefile_name << std::endl
-			<< '\t' << "g++ -MM -MG -I. -c \"$<\" > \"$@\"" << std::endl;
+			<< '\t' << "$(CXX) -MM -MG -I. -c \"$<\" > \"$@\"" << std::endl;
 		out << "-include " << wrap_file_makefile_name << ".d" << std::endl;
 
 		out << output_module->get_filename() << ":: ";
@@ -800,14 +800,22 @@ namespace cake
 << std::endl << "                RuleTag"
 << std::endl << "                >().operator()(arg);"
 << std::endl << "        }	"
-<< std::endl << "        static conv_table_t conv_table;"
+<< std::endl << "        static conv_table_t conv_table_first_to_second;"
+<< std::endl << "        static conv_table_t conv_table_second_to_first;"
+<< std::endl << "        static void init_conv_tables() __attribute__((constructor));"
 << std::endl << "    }; // end component_pair specialization"
 << std::endl << "\tconv_table_t component_pair<" 
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
-				<< "::marker>::conv_table;" 
+				<< "::marker>::conv_table_first_to_second;"
+<< std::endl << "\tconv_table_t component_pair<" 
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
+				<< "::marker, "
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
+				<< "::marker>::conv_table_second_to_first;"
 << std::endl;
+
 			/* Now output the correspondence for unspecified_wordsize_type
 			 * (FIXME: make these emissions just invoke macros in the prelude) */
 			/* Given a pair of modules
@@ -929,9 +937,94 @@ namespace cake
                        << " in_second;"
 << std::endl << "    };"
 << std::endl;
+			} // end for all value corresps 
+			
+			/* Now emit the table */
+wrap_file    << "\tvoid component_pair<" 
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
+				<< "::marker, "
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
+				<< "::marker>::init_conv_tables()"
+<< std::endl << "\t{\n";
+			for (auto i_corresp = all_value_corresps.first;
+				i_corresp != all_value_corresps.second;
+				i_corresp++)
+			{
+				if (i_corresp->second->source == i_pair->first)
+				{
+					wrap_file << "\t\tconv_table_first_to_second";
+				}
+				else 
+				{
+					wrap_file << "\t\tconv_table_second_to_first";
+				}
+				
+				wrap_file << ".insert(std::make_pair((conv_table_key) {" << std::endl;
+				// output the fq type name as an initializer list
+				wrap_file << "\t\t\t{ ";
+				auto source_fq_name
+				 = compiler.fq_name_parts_for(i_corresp->second->source_data_type);
+				for (auto i_source_name_piece = source_fq_name.begin();
+					i_source_name_piece != source_fq_name.end();
+					i_source_name_piece++)
+				{
+					/*assert(*i_source_name_piece);*/ // FIXME: escape these!
+					wrap_file << "\"" << /*escape_c_literal(*/*i_source_name_piece/*)*/
+						<< "\"";
+					if (i_source_name_piece != source_fq_name.begin()) wrap_file << ", ";
+				}
+				wrap_file << " }, { ";
+				auto sink_fq_name
+				 = compiler.fq_name_parts_for(i_corresp->second->sink_data_type);
+				for (auto i_sink_name_piece = sink_fq_name.begin();
+					i_sink_name_piece != sink_fq_name.end();
+					i_sink_name_piece++)
+				{
+					/*assert(*i_sink_name_piece);*/ // FIXME: escape these!
+					wrap_file << "\"" << /*escape_c_literal(*/*i_sink_name_piece/*)*/
+						<< "\"";
+					if (i_sink_name_piece != sink_fq_name.begin()) wrap_file << ", ";
+				}
+				wrap_file << " }, ";
+				if (i_corresp->second->source == i_pair->first)
+				{
+					wrap_file << "true, "; // from first to second
+				} else wrap_file << "false, "; // from first to second
+				wrap_file << /* i_corresp->second->rule_tag */ "0 " << "}, " 
+					<< std::endl << "\t\t\t (conv_table_value) {";
+				// output the size of the object -- hey, we can use sizeof
+				wrap_file << " sizeof ( ::cake::" << namespace_name() << "::"
+					<< name_of_module(i_corresp->second->sink) << "::"
+					<< compiler.local_name_for(i_corresp->second->sink_data_type, false) << "), ";
+				// now output the address 
+				wrap_file << "reinterpret_cast<void*(*)(void*,void*)>(&";
+				i_corresp->second->emit_function_name();
+				wrap_file << "\t\t )}));" << std::endl;
 			}
-			wrap_file << "} // end namespace cake" << std::endl;
-			wrap_file << "namespace cake {" << std::endl;
+
+wrap_file  
+<< std::endl << "\t} /* end conv table initializer */" << std::endl;
+wrap_file << "extern \"C\" {" << std::endl;
+wrap_file << "void *__cake_component_pair_" 
+<< name_of_module(i_pair->first).size() << name_of_module(i_pair->first).size() 
+<< "_" 
+<< name_of_module(i_pair->second).size() << name_of_module(i_pair->second)
+<< "_first_to_second = &component_pair<" 
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
+				<< "::marker, "
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
+				<< "::marker>:: conv_table_first_to_second" << ";\n" << std::endl;
+wrap_file << "void *__cake_component_pair_" 
+<< name_of_module(i_pair->first).size() << name_of_module(i_pair->first) 
+<< "_" 
+<< name_of_module(i_pair->second).size() << name_of_module(i_pair->second) 
+<< "_second_to_first = &component_pair<" 
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
+				<< "::marker, "
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
+				<< "::marker>:: conv_table_second_to_first" << ";\n" << std::endl;
+wrap_file << "} /* end extern \"C\" */" << std::endl;
+
 			// emit each as a value_convert template
 			for (auto i_corresp = all_value_corresps.first;
 				i_corresp != all_value_corresps.second;

@@ -45,12 +45,13 @@ namespace cake
 	
 	void value_conversion::emit_header(boost::optional<std::string> return_typename, 
 		bool emit_struct_keyword/* = true*/,
-		bool emit_template_prefix /* = true */
+		bool emit_template_prefix /* = true */,
+		bool emit_return_typename /* = true */
 		)
 	{
 		m_out << (emit_template_prefix ? "template <>\n" : "" )
             << (emit_struct_keyword ? "struct " : "")
-			<< (return_typename ? *return_typename + "\n" : "")
+			<< ((emit_return_typename && return_typename) ? *return_typename + "\n" : "")
 			<< "value_convert<"
             << from_typename // From
             << ", "
@@ -79,6 +80,24 @@ namespace cake
         m_out.dec_level();
         m_out << "};" << std::endl;
 	}
+
+	void value_conversion::emit_function_name()
+	{
+		/* m_out.flush();
+		emit_header(false, false, false);
+		m_out.flush();
+		m_out << "::operator()";
+		m_out.flush();*/ 
+		m_out << "value_convert_function<"
+            << from_typename // From
+            << ", "
+            << to_typename // To
+            << ", "
+            << "0" // RuleTag
+            << ">" << std::endl;
+
+	}
+	
 	
 	std::vector< std::pair < boost::shared_ptr<dwarf::spec::type_die>,
 		                             boost::shared_ptr<dwarf::spec::type_die>
