@@ -98,6 +98,15 @@ namespace cake
 
 	}
 	
+	// HACK to output the type of a pointer to this conversion function
+	void value_conversion::emit_cxx_function_ptr_type(
+		boost::optional<const std::string& > decl_name)
+	{
+		m_out << "void *(*" << (decl_name ? *decl_name : "")
+			<< ")(" << from_typename << "* ,"
+				<< to_typename << " *)" << std::endl;
+	}
+	
 	
 	std::vector< std::pair < boost::shared_ptr<dwarf::spec::type_die>,
 		                             boost::shared_ptr<dwarf::spec::type_die>

@@ -38,6 +38,7 @@ endif
 clean:: 
 	rm -f *.o.hpp
 	rm -f *_wrap.cpp* *_wrap.o *_wrap.d
+	rm -f $(BASENAME) $(BASENAME).o
 	rm -f cake-generated.mk
 
 -include cake-generated.mk

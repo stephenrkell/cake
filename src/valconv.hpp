@@ -59,6 +59,7 @@ namespace cake
 		virtual void emit_body() = 0;
 		virtual void emit_forward_declaration();
 		virtual void emit_function_name();
+		virtual void emit_cxx_function_ptr_type(boost::optional<const std::string&>);
 		virtual std::vector< std::pair < boost::shared_ptr<dwarf::spec::type_die>,
 		                                 boost::shared_ptr<dwarf::spec::type_die>
 										>

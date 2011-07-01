@@ -304,6 +304,7 @@ namespace cake
 
 	// now we can define a function template to wrap all these up
 	template <typename Source, typename Sink, int RuleTag>
+	inline
 	void *
 	value_convert_function(
 		Source *from,

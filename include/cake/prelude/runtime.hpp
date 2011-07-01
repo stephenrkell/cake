@@ -24,7 +24,7 @@ namespace cake
 	struct conv_table_value
 	{
 		size_t to_size;
-		conv_func_t func;
+		/* void *func; // */ conv_func_t func;
 	};
 	typedef std::map<conv_table_key, conv_table_value> conv_table_t;
 	
@@ -51,6 +51,9 @@ namespace cake
 		typedef T *arg_type;
 		inline void operator()(int source_rep_id, const arg_type& obj, int target_rep_id) const
 		{
+			if (!components_table_inited) init_components_table();
+			if (!component_pairs_table_inited) init_component_pairs_table();
+			
 			walk_bfs(
 				source_rep_id,
 				obj,

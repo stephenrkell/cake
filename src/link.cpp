@@ -646,7 +646,7 @@ namespace cake
 			<< '\t' << "dwarfhpp \"$<\" > \"$@\"" << std::endl;
 		// dependencies for generated cpp file
 		out << wrap_file_makefile_name << ".d: " << wrap_file_makefile_name << std::endl
-			<< '\t' << "$(CXX) -MM -MG -I. -c \"$<\" > \"$@\"" << std::endl;
+			<< '\t' << "$(CXX) $(CXXFLAGS) -MM -MG -I. -c \"$<\" > \"$@\"" << std::endl;
 		out << "-include " << wrap_file_makefile_name << ".d" << std::endl;
 
 		out << output_module->get_filename() << ":: ";
@@ -877,7 +877,6 @@ namespace cake
 << std::endl << "         typedef ::cake::unspecified_wordsize_type in_second;"
 << std::endl << "    };"
 << std::endl;
-			
 			auto all_value_corresps = val_corresps.equal_range(*i_pair);
 			for (auto i_corresp = all_value_corresps.first;
 				i_corresp != all_value_corresps.second;
@@ -946,10 +945,21 @@ wrap_file    << "\tvoid component_pair<"
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
 				<< "::marker>::init_conv_tables()"
 << std::endl << "\t{\n";
+			int hack_ctr = 0;
 			for (auto i_corresp = all_value_corresps.first;
 				i_corresp != all_value_corresps.second;
 				i_corresp++)
 			{
+				// HACK: instantiate all the template function instnaces we need
+				// -- will be unnecessary once gcc bug 49609 is fixed
+				std::ostringstream hack_varname;
+				hack_varname << "_hack_" << hack_ctr++;
+				wrap_file << "\t\tstatic ";
+				i_corresp->second->emit_cxx_function_ptr_type(hack_varname.str());
+				wrap_file << " = &(";
+				i_corresp->second->emit_function_name();
+				wrap_file << ");" << std::endl;
+				
 				if (i_corresp->second->source == i_pair->first)
 				{
 					wrap_file << "\t\tconv_table_first_to_second";
@@ -1005,7 +1015,7 @@ wrap_file    << "\tvoid component_pair<"
 wrap_file  
 << std::endl << "\t} /* end conv table initializer */" << std::endl;
 wrap_file << "extern \"C\" {" << std::endl;
-wrap_file << "void *__cake_component_pair_" 
+wrap_file << "void *__cake_componentpair_" 
 << name_of_module(i_pair->first).size() << name_of_module(i_pair->first).size() 
 << "_" 
 << name_of_module(i_pair->second).size() << name_of_module(i_pair->second)
@@ -1014,7 +1024,7 @@ wrap_file << "void *__cake_component_pair_"
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
 				<< "::marker>:: conv_table_first_to_second" << ";\n" << std::endl;
-wrap_file << "void *__cake_component_pair_" 
+wrap_file << "void *__cake_componentpair_" 
 << name_of_module(i_pair->first).size() << name_of_module(i_pair->first) 
 << "_" 
 << name_of_module(i_pair->second).size() << name_of_module(i_pair->second) 

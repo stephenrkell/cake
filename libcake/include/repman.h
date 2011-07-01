@@ -41,6 +41,8 @@ struct co_object_group {
 
 extern void *components_table;
 extern void *component_pairs_table;
+extern int components_table_inited;
+extern int component_pairs_table_inited;
 void init_components_table(void);
 void init_component_pairs_table(void);
 
