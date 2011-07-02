@@ -1,6 +1,7 @@
 #define _GNU_SOURCE /* so that we get MAP_ANONYMOUS when including malloc.h */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 #include <malloc.h>
 #include "repman.h"
@@ -12,8 +13,24 @@
 extern const struct co_object_group __libcake_first_co_object_group __attribute__((weak));
 struct co_object_group *head = &__libcake_first_co_object_group; /* hard-wire the static entries */
 
-/* counter used to issue */
+/* counter used to issue rep ids */
 int next_rep_id;
+const char *rep_component_names[MAX_REPS];
+
+const char *get_component_name_for_rep(int rep)
+{
+	assert(next_rep_id <= MAX_REPS);
+	return rep_component_names[rep];
+}
+int get_rep_for_component_name(const char *name)
+{
+	for (int i = 0; i < next_rep_id; i++)
+	{
+		assert(i < MAX_REPS);
+		if (strcmp(rep_component_names[i], name) == 0) return i;
+	}
+	return -1;
+}
 
 int invalidate_co_object(void *object, int rep)
 {
@@ -98,7 +115,11 @@ void sync_all_co_objects(int from_rep, int to_rep)
 		if (p->reps[from_rep] != NULL && p->reps[to_rep] != NULL)
 		{
 			/*rep_conv_funcs[from_rep][to_rep][p->form](p->reps[from_rep], p->reps[to_rep]);*/
-            get_rep_conv_func(from_rep, to_rep, p->reps[from_rep])(p->reps[from_rep], p->reps[to_rep]);
+            get_rep_conv_func(
+				from_rep, to_rep, 
+				p->reps[from_rep],
+				p->reps[to_rep]
+			)(p->reps[from_rep], p->reps[to_rep]);
 		}
 		prev = p;
 	}
@@ -151,7 +172,8 @@ void init_co_object_from_object(int object_rep, void *object,
 	 * deep-copying by assuming that a co-object has already been allocated, that it may
 	 * or may not have been initialised (but eventually will be); they simply look it up. */
 	
-	get_rep_conv_func(object_rep, co_object_rep, object)(object, co_object);
+	assert(0);
+	get_rep_conv_func(object_rep, co_object_rep, object, co_object)(object, co_object);
 }
 
 void init_co_object(void *object, int from_rep, int to_rep)

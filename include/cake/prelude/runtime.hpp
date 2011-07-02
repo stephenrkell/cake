@@ -28,6 +28,23 @@ namespace cake
 	};
 	typedef std::map<conv_table_key, conv_table_value> conv_table_t;
 	
+	struct init_table_key
+	{
+		std::vector<std::string> first;
+		bool from_first_to_second;
+		bool operator<(const init_table_key& arg) const
+		{
+			return first < arg.first
+			|| (first == arg.first && from_first_to_second < arg.from_first_to_second);
+		}
+	};
+	struct init_table_value
+	{
+		size_t to_size;
+		conv_func_t func;
+	};
+	typedef std::map<init_table_key, init_table_value> init_table_t;
+	
 	/* How to do canonicalisation: 
 	 * lazily
 	 * the "canonical" type is the first one found 

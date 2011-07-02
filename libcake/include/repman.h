@@ -9,6 +9,7 @@ extern "C" {
 
 #define MAX_REPS 8
 extern int next_rep_id; // the next rep ID to issue
+extern const char *rep_component_names[MAX_REPS];
 
 #ifndef MIN
 #define MIN(a,b) ((a)<(b)?(a):(b))
@@ -65,23 +66,26 @@ void allocate_co_object_idem_callee_rep(int do_not_use, void *object, int form);
 
 /* from rep_man_tables.h */
 
-rep_sync_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object) __attribute__((weak));
+rep_sync_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, void *target_object);
 /* get_rep_conv_func(from_rep, to_rep, p->reps[from_rep])(p->reps[from_rep], p->reps[to_rep]);  */
                
-size_t get_co_object_size(void *obj, int obj_rep, int co_obj_rep) __attribute__((weak));
+size_t get_co_object_size(void *obj, int obj_rep, int co_obj_rep);
 /* object_rep_layout_sizes[co_object_rep][form]      */
          
 //int get_subobject_form(int rep, int form, int index) __attribute__((weak));
 // /* get_subobject_form(rep, start_subobject_form, i) */
                 
-size_t get_subobject_offset(int rep, int form, int index) __attribute__((weak));
+size_t get_subobject_offset(int rep, int form, int index);
 /* get_subobject_offset(rep, start_subobject_form, i) != (size_t) -1; */
                 
 //int get_derefed_form(int rep, int form, int index) __attribute__((weak));
 // /* get_derefed_form(rep, start_subobject_form, i) */
 
-size_t get_derefed_offset(int rep, int form, int index) __attribute__((weak));
+size_t get_derefed_offset(int rep, int form, int index);
 /* get_derefed_offset(rep, start_subobject_form, i) != (size_t) -1; */
+
+const char *get_component_name_for_rep(int rep);
+int get_rep_for_component_name(const char *name);
 
 // const char *get_form_name(int form) __attribute__((weak));
 // /* get_object_form(start_subobject_form) */

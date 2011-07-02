@@ -21,6 +21,7 @@ namespace cake
         antlr::tree::Tree *refinement;
 		bool source_is_on_left;
         antlr::tree::Tree *corresp; // for generating errors
+		bool init_only;
 	}; 
 	
 	// base class

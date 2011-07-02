@@ -232,6 +232,9 @@ namespace cake
 		// propagate guessed argument info
 		merge_guessed_argument_info_at_callsites();
 		
+		// which value corresps should we use as initialization rules?
+		compute_init_rules();
+		
 		// generate wrappers
 		compute_wrappers();
 	}
@@ -242,6 +245,61 @@ namespace cake
 	void link_derivation::extract_definition()
 	{
 	
+	}
+	
+	void link_derivation::compute_init_rules()
+	{
+		for (auto i_pair = all_iface_pairs.begin();
+			i_pair != all_iface_pairs.end();
+			i_pair++)
+		{
+			auto candidate_groups = candidate_init_rules[*i_pair];
+			
+			for (auto i_key = candidate_init_rules_tbl_keys.begin();
+				i_key != candidate_init_rules_tbl_keys.end();
+				i_key++)
+			{
+				// for each key, we scan its candidates looking for either
+				// -- a unique init rule, and any number of update rules
+				// -- a unique update rule, and no init rule
+				
+				auto candidates = candidate_groups.equal_range(*i_key);
+				if (srk31::count(candidates.first, candidates.second) == 1)
+				{
+					// we have a unique rule, so we're good
+					init_rules_tbl[*i_pair][candidates.first->first]
+					 = candidates.first->second;
+				}
+				else
+				{
+					boost::optional<
+						std::pair<init_rules_key_t,
+							init_rules_value_t>
+						> found_init;
+					
+					for (auto i_candidate = candidates.first;
+						i_candidate != candidates.second;
+						i_candidate++)
+					{
+						
+						// we want a unique init rule in here
+						if (i_candidate->second->init_only)
+						{
+							if (found_init) RAISE(i_candidate->second->corresp,
+								"multiple initialization rules for the same type "
+								"not currently supported");
+							else found_init = *i_candidate;
+						}
+					}
+					
+					if (!found_init) RAISE_INTERNAL(
+						candidates.first->second->corresp,
+						"BUG: can't handle ambiguous selection of initialization rule ");
+					
+					init_rules_tbl[*i_pair][found_init->first] = found_init->second;
+				}
+			}
+		}
 	}
 	
 	void link_derivation::merge_guessed_argument_info_at_callsites()
@@ -674,7 +732,8 @@ namespace cake
 			wrap_file << "\tclass marker {}; // used for per-component template specializations" 
 	  				<< std::endl;
 			wrap_file << "\tstatic int rep_id;" << std::endl;
-			wrap_file << "\tstatic void get_rep_id(void) __attribute__((constructor)); static void get_rep_id(void) { rep_id = next_rep_id++; }" << std::endl;
+			wrap_file << "\tstatic void get_rep_id(void) __attribute__((constructor)); static void get_rep_id(void) { rep_id = next_rep_id++; rep_component_names[rep_id] = \""
+			<< r.module_inverse_tbl[*i] << "\"; }" << std::endl; // FIXME: C-escape this
 			// also define the Cake component as a set of compilation units
 			wrap_file << "extern \"C\" {" << std::endl;
 			wrap_file << "\tconst char *__cake_component_" << r.module_inverse_tbl[*i]
@@ -802,6 +861,8 @@ namespace cake
 << std::endl << "        }	"
 << std::endl << "        static conv_table_t conv_table_first_to_second;"
 << std::endl << "        static conv_table_t conv_table_second_to_first;"
+<< std::endl << "        static init_table_t init_table_first_to_second;"
+<< std::endl << "        static init_table_t init_table_second_to_first;"
 << std::endl << "        static void init_conv_tables() __attribute__((constructor));"
 << std::endl << "    }; // end component_pair specialization"
 << std::endl << "\tconv_table_t component_pair<" 
@@ -814,6 +875,16 @@ namespace cake
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
 				<< "::marker>::conv_table_second_to_first;"
+<< std::endl << "\tinit_table_t component_pair<" 
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
+				<< "::marker, "
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
+				<< "::marker>::init_table_first_to_second;"
+<< std::endl << "\tinit_table_t component_pair<" 
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
+				<< "::marker, "
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
+				<< "::marker>::init_table_second_to_first;"
 << std::endl;
 
 			/* Now output the correspondence for unspecified_wordsize_type
@@ -960,79 +1031,148 @@ wrap_file    << "\tvoid component_pair<"
 				i_corresp->second->emit_function_name();
 				wrap_file << ");" << std::endl;
 				
-				if (i_corresp->second->source == i_pair->first)
+				if (!i_corresp->second->init_only)
 				{
-					wrap_file << "\t\tconv_table_first_to_second";
-				}
-				else 
+					if (i_corresp->second->source == i_pair->first)
+					{
+						wrap_file << "\t\tconv_table_first_to_second";
+					}
+					else 
+					{
+						wrap_file << "\t\tconv_table_second_to_first";
+					}
+
+					wrap_file << ".insert(std::make_pair((conv_table_key) {" << std::endl;
+					// output the fq type name as an initializer list
+					wrap_file << "\t\t\t{ ";
+					auto source_fq_name
+					 = compiler.fq_name_parts_for(i_corresp->second->source_data_type);
+					for (auto i_source_name_piece = source_fq_name.begin();
+						i_source_name_piece != source_fq_name.end();
+						i_source_name_piece++)
+					{
+						/*assert(*i_source_name_piece);*/ // FIXME: escape these!
+						wrap_file << "\"" << /*escape_c_literal(*/*i_source_name_piece/*)*/
+							<< "\"";
+						if (i_source_name_piece != source_fq_name.begin()) wrap_file << ", ";
+					}
+					wrap_file << " }, { ";
+					auto sink_fq_name
+					 = compiler.fq_name_parts_for(i_corresp->second->sink_data_type);
+					for (auto i_sink_name_piece = sink_fq_name.begin();
+						i_sink_name_piece != sink_fq_name.end();
+						i_sink_name_piece++)
+					{
+						/*assert(*i_sink_name_piece);*/ // FIXME: escape these!
+						wrap_file << "\"" << /*escape_c_literal(*/*i_sink_name_piece/*)*/
+							<< "\"";
+						if (i_sink_name_piece != sink_fq_name.begin()) wrap_file << ", ";
+					}
+					wrap_file << " }, ";
+					if (i_corresp->second->source == i_pair->first)
+					{
+						wrap_file << "true, "; // from first to second
+					} else wrap_file << "false, "; // from first to second
+					wrap_file << /* i_corresp->second->rule_tag */ "0 " << "}, " 
+						<< std::endl << "\t\t\t (conv_table_value) {";
+					// output the size of the object -- hey, we can use sizeof
+					wrap_file << " sizeof ( ::cake::" << namespace_name() << "::"
+						<< name_of_module(i_corresp->second->sink) << "::"
+						<< compiler.local_name_for(i_corresp->second->sink_data_type, false) << "), ";
+					// now output the address 
+					wrap_file << "reinterpret_cast<void*(*)(void*,void*)>(&";
+					i_corresp->second->emit_function_name();
+					wrap_file << "\t\t )}));" << std::endl;
+
+				} // end if not init-only
+				else
 				{
-					wrap_file << "\t\tconv_table_second_to_first";
+					wrap_file << "\t\t// init-only rule" << std::endl;
 				}
 				
-				wrap_file << ".insert(std::make_pair((conv_table_key) {" << std::endl;
-				// output the fq type name as an initializer list
-				wrap_file << "\t\t\t{ ";
-				auto source_fq_name
-				 = compiler.fq_name_parts_for(i_corresp->second->source_data_type);
-				for (auto i_source_name_piece = source_fq_name.begin();
-					i_source_name_piece != source_fq_name.end();
-					i_source_name_piece++)
+				// if it's an init rule, add it to the init table
+				if (init_rules_tbl[*i_pair][
+					(init_rules_key_t) { 
+						(i_corresp->second->source == i_pair->first),
+						i_corresp->second->source_data_type
+					}] == i_corresp->second)
 				{
-					/*assert(*i_source_name_piece);*/ // FIXME: escape these!
-					wrap_file << "\"" << /*escape_c_literal(*/*i_source_name_piece/*)*/
-						<< "\"";
-					if (i_source_name_piece != source_fq_name.begin()) wrap_file << ", ";
+					if (i_corresp->second->source == i_pair->first)
+					{
+						wrap_file << "\t\tinit_table_first_to_second";
+					}
+					else 
+					{
+						wrap_file << "\t\tinit_table_second_to_first";
+					}
+
+					wrap_file << ".insert(std::make_pair((init_table_key) {" << std::endl;
+					// output the fq type name as an initializer list
+					wrap_file << "\t\t\t{ ";
+					auto source_fq_name
+					 = compiler.fq_name_parts_for(i_corresp->second->source_data_type);
+					for (auto i_source_name_piece = source_fq_name.begin();
+						i_source_name_piece != source_fq_name.end();
+						i_source_name_piece++)
+					{
+						/*assert(*i_source_name_piece);*/ // FIXME: escape these!
+						wrap_file << "\"" << /*escape_c_literal(*/*i_source_name_piece/*)*/
+							<< "\"";
+						if (i_source_name_piece != source_fq_name.begin()) wrap_file << ", ";
+					}
+					wrap_file << " }, ";
+					if (i_corresp->second->source == i_pair->first)
+					{
+						wrap_file << "true, "; // from first to second
+					} else wrap_file << "false, "; // from first to second
+					wrap_file << /* i_corresp->second->rule_tag */ "0 " << "}, " 
+						<< std::endl << "\t\t\t (init_table_value) {";
+					// output the size of the object -- hey, we can use sizeof
+					wrap_file << " sizeof ( ::cake::" << namespace_name() << "::"
+						<< name_of_module(i_corresp->second->sink) << "::"
+						<< compiler.local_name_for(i_corresp->second->sink_data_type, false) << "), ";
+					// now output the address 
+					wrap_file << "reinterpret_cast<void*(*)(void*,void*)>(&";
+					i_corresp->second->emit_function_name();
+					wrap_file << "\t\t )}));" << std::endl;
 				}
-				wrap_file << " }, { ";
-				auto sink_fq_name
-				 = compiler.fq_name_parts_for(i_corresp->second->sink_data_type);
-				for (auto i_sink_name_piece = sink_fq_name.begin();
-					i_sink_name_piece != sink_fq_name.end();
-					i_sink_name_piece++)
+				else
 				{
-					/*assert(*i_sink_name_piece);*/ // FIXME: escape these!
-					wrap_file << "\"" << /*escape_c_literal(*/*i_sink_name_piece/*)*/
-						<< "\"";
-					if (i_sink_name_piece != sink_fq_name.begin()) wrap_file << ", ";
+					wrap_file << "\t\t// not an init rule" << std::endl;
 				}
-				wrap_file << " }, ";
-				if (i_corresp->second->source == i_pair->first)
-				{
-					wrap_file << "true, "; // from first to second
-				} else wrap_file << "false, "; // from first to second
-				wrap_file << /* i_corresp->second->rule_tag */ "0 " << "}, " 
-					<< std::endl << "\t\t\t (conv_table_value) {";
-				// output the size of the object -- hey, we can use sizeof
-				wrap_file << " sizeof ( ::cake::" << namespace_name() << "::"
-					<< name_of_module(i_corresp->second->sink) << "::"
-					<< compiler.local_name_for(i_corresp->second->sink_data_type, false) << "), ";
-				// now output the address 
-				wrap_file << "reinterpret_cast<void*(*)(void*,void*)>(&";
-				i_corresp->second->emit_function_name();
-				wrap_file << "\t\t )}));" << std::endl;
 			}
 
 wrap_file  
 << std::endl << "\t} /* end conv table initializer */" << std::endl;
 wrap_file << "extern \"C\" {" << std::endl;
 wrap_file << "void *__cake_componentpair_" 
-<< name_of_module(i_pair->first).size() << name_of_module(i_pair->first).size() 
+<< name_of_module(i_pair->first).size() << name_of_module(i_pair->first)
 << "_" 
 << name_of_module(i_pair->second).size() << name_of_module(i_pair->second)
-<< "_first_to_second = &component_pair<" 
+<< "_first_to_second[2] = { &component_pair<" 
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
-				<< "::marker>:: conv_table_first_to_second" << ";\n" << std::endl;
+				<< "::marker>:: conv_table_first_to_second, " 
+<< " &component_pair<" 
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
+				<< "::marker, "
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
+				<< "::marker>:: init_table_first_to_second };\n" << std::endl;
 wrap_file << "void *__cake_componentpair_" 
 << name_of_module(i_pair->first).size() << name_of_module(i_pair->first) 
 << "_" 
 << name_of_module(i_pair->second).size() << name_of_module(i_pair->second) 
-<< "_second_to_first = &component_pair<" 
+<< "_second_to_first[2] = { &component_pair<" 
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
-				<< "::marker>:: conv_table_second_to_first" << ";\n" << std::endl;
+				<< "::marker>:: conv_table_second_to_first, " 
+<< "&component_pair<" 
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
+				<< "::marker, "
+				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
+				<< "::marker>:: init_table_second_to_first };\n" << std::endl;
 wrap_file << "} /* end extern \"C\" */" << std::endl;
 
 			// emit each as a value_convert template
@@ -1547,7 +1687,8 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		antlr::tree::Tree *sink_infix_stub,
 		antlr::tree::Tree *return_leg,
 		bool free_source,
-		bool free_sink)
+		bool free_sink,
+		bool init_only)
 	{
 		assert(GET_TYPE(sink_expr) == CAKE_TOKEN(EVENT_SINK_AS_STUB));
 		auto key = sorted(std::make_pair(source, sink));
@@ -1593,7 +1734,8 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		antlr::tree::Tree *sink_infix_stub,
 		antlr::tree::Tree *refinement,
 		bool source_is_on_left,
-		antlr::tree::Tree *corresp
+		antlr::tree::Tree *corresp,
+		bool init_only
 	)
 	{
 		auto source_mn = read_definite_member_name(source_data_type_mn);
@@ -1669,7 +1811,8 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		antlr::tree::Tree *sink_infix_stub,
 		antlr::tree::Tree *refinement,
 		bool source_is_on_left,
-		antlr::tree::Tree *corresp
+		antlr::tree::Tree *corresp,
+		bool init_only
 	)
 	{
 // 		std::cerr << "Adding value corresp from source module @" << &*source
@@ -1771,6 +1914,9 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 			return;
 		}
 		
+		// from this point, we will generate a candidate for an init rule
+		boost::shared_ptr<value_conversion> init_candidate;
+			
 		bool emit_as_reinterpret = false;
 		if (source_concrete_type->is_rep_compatible(sink_concrete_type)
 			&& (!refinement || GET_CHILD_COUNT(refinement) == 0))
@@ -1783,10 +1929,11 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 					<< " because of rep-compatibility and C++-assignability." << std::endl;
 				//m_out << "// (skipped because of rep-compatibility and C++-assignability)" << std::endl << std::endl;
 				val_corresps.insert(std::make_pair(key, 
-					boost::dynamic_pointer_cast<value_conversion>(
+					init_candidate = boost::dynamic_pointer_cast<value_conversion>(
 						boost::make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
 						basic, "rep-compatibility and C++-assignability"))));
-				return;
+				//return;
+				goto add_init_candidate;
 			}			
 			else
 			{
@@ -1829,14 +1976,14 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 					//emit_structural_conversion_body(source_data_type, sink_data_type,
 					//	refinement, source_is_on_left);
 					val_corresps.insert(std::make_pair(key, 
-						boost::dynamic_pointer_cast<value_conversion>(
+						init_candidate = boost::dynamic_pointer_cast<value_conversion>(
 							boost::make_shared<structural_value_conversion>(wrap_code, wrap_code.m_out, 
 							basic))));
 				break;
 				default:
 					std::cerr << "Warning: didn't know how to generate conversion between "
 						<< *source_data_type << " and " << *sink_data_type << std::endl;
-				break;
+				return;
 			}
 	#undef TAG_PAIR
 		}
@@ -1844,10 +1991,20 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		{
 			//emit_reinterpret_conversion_body(source_data_type, sink_data_type);
 			val_corresps.insert(std::make_pair(key, 
-				boost::dynamic_pointer_cast<value_conversion>(
+				init_candidate = boost::dynamic_pointer_cast<value_conversion>(
 					boost::make_shared<reinterpret_value_conversion>(wrap_code, wrap_code.m_out, 
 					basic))));
 		}
+		
+	add_init_candidate:
+		assert(init_candidate);
+		candidate_init_rules[key].insert(std::make_pair(
+			(init_rules_key_t) {
+				(init_candidate->source == key.first),
+				init_candidate->source_data_type
+			},
+			init_candidate
+		));
 	}
 	
 	// Get the names of all functions provided by iface1

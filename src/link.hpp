@@ -109,6 +109,31 @@ namespace cake {
         
         typedef ev_corresp_map_t::value_type ev_corresp_entry;
         typedef val_corresp_map_t::value_type val_corresp_entry;
+		
+		// we record the value corresps grouped by iface_pair and by
+		// source data type, and later single out a unique init rule
+		// for each source data type
+		struct init_rules_key_t
+		{
+			bool from_first_to_second;
+			boost::shared_ptr<dwarf::spec::type_die> source_type;
+			bool operator<(const init_rules_key_t& k) const
+			{ return this->from_first_to_second < k.from_first_to_second
+				|| (this->from_first_to_second == k.from_first_to_second
+					&& this->source_type < k.source_type);
+			}
+		};
+		typedef boost::shared_ptr<val_corresp> init_rules_value_t;
+		typedef std::multimap<
+			init_rules_key_t,
+			init_rules_value_t
+		> candidate_init_rules_tbl_t;
+		
+		std::set<init_rules_key_t> candidate_init_rules_tbl_keys;
+		std::map<iface_pair, candidate_init_rules_tbl_t> candidate_init_rules;
+		
+		typedef std::map<init_rules_key_t, init_rules_value_t> init_rules_tbl_t;
+		std::map<iface_pair, init_rules_tbl_t> init_rules_tbl;
         
         // List of pointer into an ev_corresp map.
         // Note: all pointers should all point into same map, and moreover,
@@ -192,7 +217,8 @@ namespace cake {
                 antlr::tree::Tree *sink_infix_stub,
 				antlr::tree::Tree *return_leg,
                 bool free_source = false,
-                bool free_sink = false);
+                bool free_sink = false,
+				bool init_only = false);
         void add_value_corresp(
         	module_ptr source, 
             boost::shared_ptr<dwarf::spec::type_die> source_data_type,
@@ -202,7 +228,8 @@ namespace cake {
             antlr::tree::Tree *sink_infix_stub,
             antlr::tree::Tree *refinement,
 			bool source_is_on_left,
-            antlr::tree::Tree *corresp
+            antlr::tree::Tree *corresp,
+			bool init_only = false
         );
 		void add_value_corresp(
         	module_ptr source, 
@@ -213,7 +240,8 @@ namespace cake {
         	antlr::tree::Tree *sink_infix_stub,
         	antlr::tree::Tree *refinement,
 			bool source_is_on_left,
-        	antlr::tree::Tree *corresp
+        	antlr::tree::Tree *corresp,
+			bool init_only = false
 		);
 		bool ensure_value_corresp(module_ptr source, 
 			boost::shared_ptr<dwarf::spec::type_die> source_data_type,
@@ -223,18 +251,10 @@ namespace cake {
 		void 
 		find_usage_contexts(const std::string& ident,
 			antlr::tree::Tree *t, std::vector<antlr::tree::Tree *>& out);
+		void compute_init_rules();
 		void compute_wrappers();
         module_tag_t module_tag(module_ptr module) 
 		{ return reinterpret_cast<module_tag_t>(module.get()); }
-    /**** these are just notes-to-self ***/
-//		void compute_rep_domains();
-//		void output_rep_conversions();
-		
-//		void output_symbol_renaming_rules();
-		
-//		void output_formgens();		
-//		void output_wrappergens();
-    /*** end notes-to-self ***/
 		
 //		void output_static_co_objects(); 
 
