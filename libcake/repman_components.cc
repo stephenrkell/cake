@@ -257,7 +257,8 @@ void init_component_pairs_table(void)
 	component_pairs_table_inited = 1;
 }
 
-size_t get_co_object_size(void *obj, int obj_rep, int co_obj_rep)
+static init_table_t::value_type&  
+get_init_table_entry(void *obj, int obj_rep, int co_obj_rep)
 {
 	using namespace cake;
 	
@@ -287,11 +288,54 @@ size_t get_co_object_size(void *obj, int obj_rep, int co_obj_rep)
 			compiler.fq_name_parts_for(discovered),
 			from_first_to_second
 		}
-	].to_size;
+	];
+}	
+
+size_t get_co_object_size(void *obj, int obj_rep, int co_obj_rep)
+{
+	return get_init_table_entry(obj, obj_rep, co_obj_rep).to_size;
 }
 
-rep_sync_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, void *target_object)
+/* This is for co-objects that we have allocated. Their allocation sites are
+ * no good for discovery, so we inform process_image of their type explicitly. */
+void set_co_object_type(void *object, int obj_rep, void *co_object)
 {
-	assert(false);//	return 0; // FIXME
+	auto typename = get_init_table_entry(obj, obj_rep, co_obj_rep).to_typename;
+	/* Look through the CUs to find a definition of this typename. */
+	
+	assert(false);
+
+}
+
+conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, void *target_object)
+{
+	using cake::image;
+	
+	auto discovered_source = image.discover_object_descr((process_image::addr_t) source_object);
+	auto discovered_target = image.discover_object_descr((process_image::addr_t) target_object);
+	
+	/* We should assert that these two objects are in the same
+	 * co-object group. */
+	
+	std::cerr << "Getting rep conv func from object: ";
+	image.print_object(std::cerr, source_object);
+	std::cerr << *discovered_source
+		<< " to object: ";
+	image.print_object(std::cerr, target_object);
+	std::cerr << *discovered_target
+		<< std::endl;
+	
+	bool from_first_to_second = 
+		(p_component_pairs->find(std::make_pair(from_rep, to_rep)) 
+			!= p_component_pairs->end());
+			
+	auto component_pair = from_first_to_second 
+		? std::make_pair(from_rep, to_rep) : std::make_pair(to_rep, from_rep);
+	
+	assert(p_component_pairs->find(component_pair) != p_component_pairs->end());
+	
+	
+	
+	
 }
 

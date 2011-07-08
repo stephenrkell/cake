@@ -41,6 +41,7 @@ namespace cake
 	struct init_table_value
 	{
 		size_t to_size;
+		std::vector<std::string> to_typename;
 		conv_func_t func;
 	};
 	typedef std::map<init_table_key, init_table_value> init_table_t;

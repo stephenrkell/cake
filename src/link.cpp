@@ -1134,6 +1134,22 @@ wrap_file    << "\tvoid component_pair<"
 					// now output the address 
 					wrap_file << "reinterpret_cast<void*(*)(void*,void*)>(&";
 					i_corresp->second->emit_function_name();
+					wrap_file << ", " << std::endl << "\t\t\t{ ";
+					auto sink_fq_name
+					 = compiler.fq_name_parts_for(i_corresp->second->sink_data_type);
+					for (auto i_sink_name_piece = sink_fq_name.begin();
+						i_sink_name_piece != sink_fq_name.end();
+						i_sink_name_piece++)
+					{
+						/*assert(*i_source_name_piece);*/ // FIXME: escape these!
+						wrap_file << "\"" << /*escape_c_literal(*/*i_sink_name_piece/*)*/
+							<< "\"";
+						if (i_sink_name_piece != sink_fq_name.begin()) wrap_file << ", ";
+					}
+					wrap_file << " }, ";
+					// now output the function address 
+					wrap_file << "reinterpret_cast<void*(*)(void*,void*)>(&";
+					i_corresp->second->emit_function_name();
 					wrap_file << "\t\t )}));" << std::endl;
 				}
 				else
