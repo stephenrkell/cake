@@ -19,7 +19,8 @@ typedef void *(*conv_func_t)(void *, void *);
 
 struct co_object_info {
 	unsigned allocated_by:1; /* 0 == by rep_man; 1 == by user code */
-};
+	unsigned initialized:1;
+} __attribute__((packed));
 
 /* Table of co-object groups; each group is an array */
 struct co_object_group {
@@ -49,6 +50,7 @@ struct co_object_group *new_co_object_record(void *initial_object, int initial_r
 int object_is_live(struct co_object_group *rec);
 
 /* initialization and synchronisation */
+void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_rep);
 void init_co_object_from_object(int object_rep, void *object,
 		int co_object_rep, void *co_object);
 void sync_all_co_objects(int from_rep, int to_rep);
@@ -66,6 +68,7 @@ void allocate_co_object_idem_callee_rep(int do_not_use, void *object, int form);
 
 /* Table lookups */
 conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, void *target_object);
+conv_func_t get_init_func(int from_rep, int to_rep, void *source_object, void *target_object);
 size_t get_co_object_size(void *obj, int obj_rep, int co_obj_rep);
 
 /* Components table lookups */

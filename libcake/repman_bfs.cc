@@ -65,6 +65,7 @@ void walk_bfs(int object_rep, void *object, /*int object_form,*/ int co_object_r
 	process_image::addr_t object_actual_start_addr;
 	auto descr = cake::image.discover_object_descr(
 		(process_image::addr_t) object, shared_ptr<type_die>(), &object_actual_start_addr);
+	assert(descr);
 	void *object_actual_start = (void*) object_actual_start_addr;
 	/* descr might be a subprogram... if so, nothing is adjacent, so we can null it */
 	auto dwarf_type = dynamic_pointer_cast<type_die>(descr);
@@ -141,9 +142,16 @@ void build_adjacency_list_recursive(
 // //		subobject_offsets[rep][start_subobject_form][i] != (size_t) -1;
 // 		i++)
 
-	// assert that this type has data members
+	// If someone tries to walk_bfs from a function pointer, we will try to
+	// bootstrap the list from a queue consisting of a single object (the function)
+	// and no type. If so, the list is already complete (i.e. empty), so return
+	if (!type_at_this_offset) return;
+
 	auto structured_type_at_this_offset
 	 = dynamic_pointer_cast<dwarf::spec::with_data_members_die>(type_at_this_offset);
+	 
+	// We can assert this because the loop below only recurses on
+	// structured-typed members. We don't need to worry about getting ints.
 	assert(structured_type_at_this_offset);
 	for (auto i_subobj = structured_type_at_this_offset->member_children_begin();
 			i_subobj != structured_type_at_this_offset->member_children_end();

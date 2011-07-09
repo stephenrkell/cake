@@ -254,9 +254,13 @@ namespace cake
 			i_pair++)
 		{
 			auto candidate_groups = candidate_init_rules[*i_pair];
+			std::cerr << "For interface pair (" << name_of_module(i_pair->first)
+				<< ", " << name_of_module(i_pair->second) << ") there are "
+				<< candidate_groups.size() << " value corresps that are candidate init rules"
+				<< std::endl;
 			
-			for (auto i_key = candidate_init_rules_tbl_keys.begin();
-				i_key != candidate_init_rules_tbl_keys.end();
+			for (auto i_key = candidate_init_rules_tbl_keys[*i_pair].begin();
+				i_key != candidate_init_rules_tbl_keys[*i_pair].end();
 				i_key++)
 			{
 				// for each key, we scan its candidates looking for either
@@ -264,7 +268,11 @@ namespace cake
 				// -- a unique update rule, and no init rule
 				
 				auto candidates = candidate_groups.equal_range(*i_key);
-				if (srk31::count(candidates.first, candidates.second) == 1)
+				unsigned candidates_count = srk31::count(candidates.first, candidates.second);
+				std::cerr << "For data type " << *i_key->source_type <<
+					" there are " << candidates_count << " candidate init rules." << std::endl;
+				
+				if (candidates_count == 1)
 				{
 					// we have a unique rule, so we're good
 					init_rules_tbl[*i_pair][candidates.first->first]
@@ -1123,18 +1131,15 @@ wrap_file    << "\tvoid component_pair<"
 					wrap_file << " }, ";
 					if (i_corresp->second->source == i_pair->first)
 					{
-						wrap_file << "true, "; // from first to second
-					} else wrap_file << "false, "; // from first to second
-					wrap_file << /* i_corresp->second->rule_tag */ "0 " << "}, " 
+						wrap_file << "true"; // from first to second
+					} else wrap_file << "false"; // from first to second
+					wrap_file << "}, " 
 						<< std::endl << "\t\t\t (init_table_value) {";
 					// output the size of the object -- hey, we can use sizeof
 					wrap_file << " sizeof ( ::cake::" << namespace_name() << "::"
 						<< name_of_module(i_corresp->second->sink) << "::"
 						<< compiler.local_name_for(i_corresp->second->sink_data_type, false) << "), ";
-					// now output the address 
-					wrap_file << "reinterpret_cast<void*(*)(void*,void*)>(&";
-					i_corresp->second->emit_function_name();
-					wrap_file << ", " << std::endl << "\t\t\t{ ";
+					wrap_file << std::endl << "\t\t\t{ ";
 					auto sink_fq_name
 					 = compiler.fq_name_parts_for(i_corresp->second->sink_data_type);
 					for (auto i_sink_name_piece = sink_fq_name.begin();
@@ -2014,11 +2019,13 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		
 	add_init_candidate:
 		assert(init_candidate);
-		candidate_init_rules[key].insert(std::make_pair(
-			(init_rules_key_t) {
+		init_rules_key_t init_tbl_key = (init_rules_key_t) {
 				(init_candidate->source == key.first),
 				init_candidate->source_data_type
-			},
+			};
+		candidate_init_rules_tbl_keys[key].insert(init_tbl_key);
+		candidate_init_rules[key].insert(std::make_pair(
+			init_tbl_key,
 			init_candidate
 		));
 	}

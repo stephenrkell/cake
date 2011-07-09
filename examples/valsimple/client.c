@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 struct gadget
 {
@@ -17,6 +18,9 @@ struct gadget
 extern int pass(struct gadget *pg);
 int main(void)
 {
+	/* HACK: injected a malloc for debugging */
+	void *unused = malloc(42);
+
     struct gadget g = { 0, 42, 'g', {53.0, 2.1}, 1000000.0}, *pg = &g;
 
  	printf("Passing a gadget, amplitude %d, base %d, containing (%f, %f), density %f.\n",

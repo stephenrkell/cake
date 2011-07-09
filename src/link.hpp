@@ -129,7 +129,7 @@ namespace cake {
 			init_rules_value_t
 		> candidate_init_rules_tbl_t;
 		
-		std::set<init_rules_key_t> candidate_init_rules_tbl_keys;
+		std::map<iface_pair, std::set<init_rules_key_t> > candidate_init_rules_tbl_keys;
 		std::map<iface_pair, candidate_init_rules_tbl_t> candidate_init_rules;
 		
 		typedef std::map<init_rules_key_t, init_rules_value_t> init_rules_tbl_t;

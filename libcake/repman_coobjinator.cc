@@ -137,7 +137,7 @@ void *find_co_object(void *object, int object_rep, int co_object_rep,
 	}
 }
 
-static std::set<map_t*> maps;
+static std::set<map_t*> maps; // FIXME: reclaim these
 static std::set<boost::weak_ptr<co_object_group> > groups;
 
 static map_t *ensure_map_for_addr(void *addr)
@@ -146,7 +146,7 @@ static map_t *ensure_map_for_addr(void *addr)
 	if (!e->present) 
 	{
 		new (&e->m) map_t();
-		maps.insert(&e->m);
+		maps.insert(&e->m); // FIXME: reclaim these
 		e->present = 1;
 	}
 	return &e->m;
@@ -188,11 +188,24 @@ void sync_all_co_objects(int from_rep, int to_rep)
 			if (p_group->reps[from_rep] && p_group->reps[to_rep])
 			{
 				/*rep_conv_funcs[from_rep][to_rep][p->form](p->reps[from_rep], p->reps[to_rep]);*/
-            	get_rep_conv_func(
-					from_rep, to_rep, 
-					p_group->reps[from_rep],
-					p_group->reps[to_rep]
-				)(p_group->reps[from_rep], p_group->reps[to_rep]);
+				if (p_group->co_object_info[to_rep].initialized)
+				{
+					get_rep_conv_func(
+						from_rep, to_rep, 
+						p_group->reps[from_rep],
+						p_group->reps[to_rep]
+					)(p_group->reps[from_rep], p_group->reps[to_rep]);
+				}
+				else // not initialized
+				{
+					get_init_func(
+						from_rep, to_rep, 
+						p_group->reps[from_rep],
+						p_group->reps[to_rep]
+					)(p_group->reps[from_rep], p_group->reps[to_rep]);
+					
+					p_group->co_object_info[to_rep].initialized = 1;
+				}
 			}
 		}
 		else
@@ -214,6 +227,7 @@ void allocate_co_object_idem(void *object, int object_rep, int co_object_rep)
 	
 	/* the co-object doesn't exist, so allocate it -- use calloc for harmless defaults */
 	co_object = calloc(1, get_co_object_size(object, object_rep, co_object_rep));
+	/* tell the image what the type of this heap object is */
 	if (co_object == NULL) { fprintf(stderr, "Error: malloc failed\n"); exit(42); }
 	fprintf(stderr, "Allocating a co-object in rep %d for object at %p (rep %d)\n", 
             co_object_rep, object, object_rep);
@@ -224,4 +238,7 @@ void allocate_co_object_idem(void *object, int object_rep, int co_object_rep)
 	/* add info about the newly allocated co-object */
 	register_co_object(object, object_rep,
 		co_object, co_object_rep, ALLOC_BY_REP_MAN);
+	
+	/* tell the image what the type of this heap object is */
+	set_co_object_type(object, object_rep, co_object, co_object_rep);
 }

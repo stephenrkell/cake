@@ -32,6 +32,10 @@ dwarf::tool::cxx_compiler compiler(std::vector<std::string>(1, "g++"));
 
 }
 
+using boost::dynamic_pointer_cast;
+using dwarf::spec::compile_unit_die;
+using dwarf::spec::type_die;
+
 /* the actual tables -- type-correct aliases */
 typedef std::map<dwarf::spec::abstract_dieset::position, int> components_table_t;
 static components_table_t *p_components __attribute__((alias("components_table")));
@@ -87,11 +91,11 @@ void init_components_table(void)
 			std::string name(strptr);
 			
 			std::string::size_type off;
-			if ((off = name.find("__cake_component_")) == 0)
+			if (name.find("__cake_component_") == 0)
 			{
 				std::cerr << "Found Cake component definition: " << name << std::endl;
 				/* Found it! Grab the component name. */
-				std::string component_name = name.substr(off);
+				std::string component_name = name.substr(std::string("__cake_component_").length());
 				/* Now grab the string. */
 				process_image::addr_t base = image.get_dieset_base(*i_file->second.p_ds);
 				std::string sym_data(*reinterpret_cast<const char**>((char*)base + i_sym->st_value));
@@ -124,8 +128,10 @@ void init_components_table(void)
 					&&  (*i_cu)->get_producer() && *(*i_cu)->get_producer() == producer
 					)
 					{
-						(*p_components)[i_cu.base().base().base()] = get_rep_for_component_name(
+						int component_rep = get_rep_for_component_name(
 							component_name.c_str());
+						assert(component_rep != -1);
+						(*p_components)[i_cu.base().base().base()] = component_rep;
 						success = true;
 						break;
 					}
@@ -257,7 +263,7 @@ void init_component_pairs_table(void)
 	component_pairs_table_inited = 1;
 }
 
-static init_table_t::value_type&  
+static cake::init_table_t::mapped_type&  
 get_init_table_entry(void *obj, int obj_rep, int co_obj_rep)
 {
 	using namespace cake;
@@ -285,7 +291,7 @@ get_init_table_entry(void *obj, int obj_rep, int co_obj_rep)
 	
 	return (*p_table)[
 		(const init_table_key) {
-			compiler.fq_name_parts_for(discovered),
+			cake::compiler.fq_name_parts_for(discovered),
 			from_first_to_second
 		}
 	];
@@ -298,10 +304,39 @@ size_t get_co_object_size(void *obj, int obj_rep, int co_obj_rep)
 
 /* This is for co-objects that we have allocated. Their allocation sites are
  * no good for discovery, so we inform process_image of their type explicitly. */
-void set_co_object_type(void *object, int obj_rep, void *co_object)
+void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_rep)
 {
-	auto typename = get_init_table_entry(obj, obj_rep, co_obj_rep).to_typename;
+	auto name_parts = get_init_table_entry(object, obj_rep, co_obj_rep).to_typename;
+	
 	/* Look through the CUs to find a definition of this typename. */
+	std::cerr << "Searching component CU map of " << p_components->size() 
+		<< " entries." << std::endl;
+	for (auto i_component_entry = p_components->begin(); 
+		i_component_entry != p_components->end();
+		i_component_entry++)
+	{
+		if (i_component_entry->second == co_obj_rep)
+		{
+			// found a CU of this component
+			auto cu_pos = i_component_entry->first;
+			auto cu = dynamic_pointer_cast<compile_unit_die>(
+				(*cu_pos.p_ds)[cu_pos.off]);
+			auto found = cu->resolve(name_parts.begin(), name_parts.end());
+			if (found)
+			{
+				auto found_type = dynamic_pointer_cast<type_die>(found);
+				if (found_type)
+				{
+					// found it!
+					cake::image.inform_heap_object_descr(
+						(process_image::addr_t) co_object, found_type);
+					return;
+				}
+				assert(false);
+			}
+			assert(false);
+		}
+	}
 	
 	assert(false);
 
@@ -313,6 +348,11 @@ conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, voi
 	
 	auto discovered_source = image.discover_object_descr((process_image::addr_t) source_object);
 	auto discovered_target = image.discover_object_descr((process_image::addr_t) target_object);
+	
+	auto discovered_source_type = dynamic_pointer_cast<type_die>(discovered_source);
+	assert(discovered_source_type);
+	auto discovered_target_type = dynamic_pointer_cast<type_die>(discovered_target);
+	assert(discovered_target_type);
 	
 	/* We should assert that these two objects are in the same
 	 * co-object group. */
@@ -332,10 +372,63 @@ conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, voi
 	auto component_pair = from_first_to_second 
 		? std::make_pair(from_rep, to_rep) : std::make_pair(to_rep, from_rep);
 	
-	assert(p_component_pairs->find(component_pair) != p_component_pairs->end());
+	auto found_table = p_component_pairs->find(component_pair);
+	assert(found_table != p_component_pairs->end());
 	
+	auto convs_table = from_first_to_second ? 
+		found_table->second.convs_from_first_to_second
+		: found_table->second.convs_from_second_to_first;
 	
+	auto found = convs_table->find(
+		(cake::conv_table_key) {
+			cake::compiler.name_parts_for(discovered_source_type),
+			cake::compiler.name_parts_for(discovered_target_type),
+			from_first_to_second,
+			0 // FIXME
+			});
+	assert(found != convs_table->end());
+	return found->second.func;
+}
+
+conv_func_t get_init_func(int from_rep, int to_rep, void *source_object, void *target_object)
+{
+	using cake::image;
+	
+	auto discovered_source = image.discover_object_descr((process_image::addr_t) source_object);
+	auto discovered_source_type = dynamic_pointer_cast<type_die>(discovered_source);
+	assert(discovered_source_type);
+	
+	/* We should assert that these two objects are in the same
+	 * co-object group. */
+	
+	std::cerr << "Getting init func from object: ";
+	image.print_object(std::cerr, source_object);
+	std::cerr << *discovered_source
+		<< " to object: ";
+	image.print_object(std::cerr, target_object);
+	std::cerr << " (NEW INIT)"
+		<< std::endl;
+	
+	bool from_first_to_second = 
+		(p_component_pairs->find(std::make_pair(from_rep, to_rep)) 
+			!= p_component_pairs->end());
+			
+	auto component_pair = from_first_to_second 
+		? std::make_pair(from_rep, to_rep) : std::make_pair(to_rep, from_rep);
+	
+	auto found_table = p_component_pairs->find(component_pair);
+	assert(found_table != p_component_pairs->end());
+		
+	auto init_table = from_first_to_second ? 
+		found_table->second.inits_from_first_to_second
+		: found_table->second.inits_from_second_to_first;
+	
+	auto found = init_table->find(
+		(cake::init_table_key) {
+			cake::compiler.name_parts_for(discovered_source_type),
+			from_first_to_second});
+	assert(found != init_table->end());
+	return found->second.func;
 	
 	
 }
-

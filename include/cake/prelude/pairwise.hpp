@@ -24,7 +24,7 @@ namespace cake
 	template <typename FromIsAPtr, typename ToIsAPtr, int RuleTag>  
     struct value_convert<FromIsAPtr*, ToIsAPtr*, RuleTag>
     { 
-    	ToIsAPtr* operator()(FromIsAPtr*& from, ToIsAPtr **p_to = 0) const 
+    	ToIsAPtr* operator()(FromIsAPtr* from, ToIsAPtr **p_to = 0) const 
         { 
 			print_object(from);
 // 			// ensure a co-object exists
