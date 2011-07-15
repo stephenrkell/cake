@@ -2,7 +2,7 @@ extern "C" {
 #include "repman.h"
 }
 #include "runtime.hpp"
-#define REP_ID(ident) (ident::rep_id)
+#define REP_ID(ident) (ident::marker::rep_id)
 namespace cake
 {
 	/* All value_convert operator()s MUST have the same ABI!
@@ -12,7 +12,7 @@ namespace cake
 	 * class templates. The function template (at the bottom) ignores
 	 * the return value. */
 
-	template <typename From, typename To, int RuleTag = 0>  
+	template <typename From, typename To, typename FromComponent, typename ToComponent, int RuleTag>  
     struct value_convert 
     { 
     	To operator()(const From& from, To *p_to = 0) const 
@@ -21,12 +21,24 @@ namespace cake
 			if (p_to) *p_to = from; return from; 
         } 
     }; 
-	template <typename FromIsAPtr, typename ToIsAPtr, int RuleTag>  
-    struct value_convert<FromIsAPtr*, ToIsAPtr*, RuleTag>
+	template <typename FromIsAPtr, typename ToIsAPtr, typename FromComponent, typename ToComponent, int RuleTag>
+    struct value_convert<FromIsAPtr*, ToIsAPtr*, FromComponent, ToComponent, RuleTag>
     { 
     	ToIsAPtr* operator()(FromIsAPtr* from, ToIsAPtr **p_to = 0) const 
         { 
 			print_object(from);
+			
+			struct co_object_group *found_group;
+			void *found_co_object;
+			
+			found_co_object = find_co_object(from,
+				FromComponent::rep_id, ToComponent::rep_id,
+				&found_group);
+			assert(found_co_object);
+			
+			if (p_to) *p_to = reinterpret_cast<__typeof(*p_to)>(found_co_object);
+			return reinterpret_cast<__typeof(*p_to)>(found_co_object);
+			
 // 			// ensure a co-object exists
 // 			struct found_co_object_group *co_object_group;
 // 			void *co_object = find_co_object(
@@ -144,8 +156,8 @@ namespace cake
 	// Currently they don't do the right thing if both args point to rep-incompatible objects. 
 	// We will probably have to parameterise on modules,
 	// so that we can select the "default" corresponding type. Hmm.
-    template <typename FromPtr> 
-    struct value_convert<FromPtr*, unspecified_wordsize_type, 0> 
+    template <typename FromPtr, typename FromComponent, typename ToComponent> 
+    struct value_convert<FromPtr*, unspecified_wordsize_type, FromComponent, ToComponent, 0> 
     { 
         unspecified_wordsize_type operator ()(FromPtr* from, unspecified_wordsize_type *p_to = 0) const // NOT a reference 
         { 
@@ -155,8 +167,8 @@ namespace cake
             return ret;
         } 
 	}; 
-    template <typename ToPtr> 
-    struct value_convert<unspecified_wordsize_type, ToPtr*, 0> 
+    template <typename ToPtr, typename FromComponent, typename ToComponent> 
+    struct value_convert<unspecified_wordsize_type, ToPtr*, FromComponent, ToComponent, 0> 
     { 
         ToPtr* operator ()(const unspecified_wordsize_type& from, ToPtr **p_to = 0) const 
         { 
@@ -166,8 +178,8 @@ namespace cake
         } 
 	}; 
 	// another HACK: same but for wordsize integers
-    template <typename FromPtr> 
-    struct value_convert<FromPtr*, wordsize_integer_type, 0> 
+    template <typename FromPtr, typename FromComponent, typename ToComponent> 
+    struct value_convert<FromPtr*, wordsize_integer_type, FromComponent, ToComponent, 0> 
     { 
         wordsize_integer_type operator ()(FromPtr* from, wordsize_integer_type *p_to = 0) const // NOT a reference 
         { 
@@ -177,8 +189,8 @@ namespace cake
             return ret;
         } 
 	}; 
-    template <typename ToPtr> 
-    struct value_convert<wordsize_integer_type, ToPtr*, 0> 
+    template <typename ToPtr, typename FromComponent, typename ToComponent> 
+    struct value_convert<wordsize_integer_type, ToPtr*, FromComponent, ToComponent, 0> 
     { 
         ToPtr* operator ()(const wordsize_integer_type& from, ToPtr **p_to = 0) const 
         { 
@@ -188,8 +200,8 @@ namespace cake
         } 
 	}; 
 	// conversions between wordsize integers and wordsize opaque data
-    template <> 
-    struct value_convert<wordsize_integer_type, unspecified_wordsize_type, 0> 
+    template <typename FromComponent, typename ToComponent> 
+    struct value_convert<wordsize_integer_type, unspecified_wordsize_type, FromComponent, ToComponent, 0> 
     { 
         unspecified_wordsize_type operator ()(const wordsize_integer_type& from, unspecified_wordsize_type *p_to = 0) const 
         { 
@@ -201,8 +213,8 @@ namespace cake
         } 
 	}; 
 #if defined (X86_64) || (defined (__x86_64__))
-    template <> 
-    struct value_convert<int, unspecified_wordsize_type, 0> 
+    template <typename FromComponent, typename ToComponent> 
+    struct value_convert<int, unspecified_wordsize_type, FromComponent, ToComponent, 0> 
     { 
         unspecified_wordsize_type operator ()(const int& from, unspecified_wordsize_type *p_to = 0) const 
         { 
@@ -214,8 +226,8 @@ namespace cake
         } 
 	}; 
 #endif
-    template <> 
-    struct value_convert<unspecified_wordsize_type, wordsize_integer_type, 0> 
+    template <typename FromComponent, typename ToComponent> 
+    struct value_convert<unspecified_wordsize_type, wordsize_integer_type, FromComponent, ToComponent, 0> 
     { 
         wordsize_integer_type operator ()(const unspecified_wordsize_type& from, wordsize_integer_type *p_to = 0) const 
         {
@@ -226,8 +238,8 @@ namespace cake
         } 
 	}; 
 #if defined (X86_64) || (defined (__x86_64__))
-    template <> 
-    struct value_convert<unspecified_wordsize_type, int, 0> 
+    template <typename FromComponent, typename ToComponent> 
+    struct value_convert<unspecified_wordsize_type, int, FromComponent, ToComponent, 0> 
     { 
         int operator ()(const unspecified_wordsize_type& from, int *p_to = 0) const 
         {
@@ -238,8 +250,8 @@ namespace cake
 	}; 
 #endif
    // handle those pesky zero-length array
-    template <typename FromZeroArray, typename T> 
-    struct value_convert<FromZeroArray[0], T, 0> 
+    template <typename FromZeroArray, typename T, typename FromComponent, typename ToComponent> 
+    struct value_convert<FromZeroArray[0], T, FromComponent, ToComponent, 0> 
     { 
         T operator ()(FromZeroArray (&from)[0], T *p_to = 0) const // NOT a reference 
         { 
@@ -249,8 +261,8 @@ namespace cake
             return ret;
         } 
 	}; 
-    template <typename T, typename ToZeroArray> 
-    struct value_convert<T, ToZeroArray[0], 0> 
+    template <typename T, typename ToZeroArray, typename FromComponent, typename ToComponent> 
+    struct value_convert<T, ToZeroArray[0], FromComponent, ToComponent, 0> 
     { 
 		typedef ToZeroArray ToType[0];
         void operator ()(const T& from, ToType *p_to = 0) const 
@@ -283,6 +295,8 @@ namespace cake
         {
     	    return value_convert<From, 
                 To,
+				FirstComponentTag,
+				SecondComponentTag,
                 RuleTag
                 >().operator()(arg);
         }
@@ -297,20 +311,22 @@ namespace cake
         {
     	    return value_convert<From, 
                 To,
+				SecondComponentTag,
+				FirstComponentTag,
                 RuleTag
                 >().operator()(arg);
         }	
     };
 
 	// now we can define a function template to wrap all these up
-	template <typename Source, typename Sink, int RuleTag>
+	template <typename Source, typename Sink, typename FromComponent, typename ToComponent, int RuleTag>
 	inline
 	void *
 	value_convert_function(
 		Source *from,
 		Sink *to)
 	{
-		value_convert<Source, Sink, RuleTag>().operator()(*from, to);
+		value_convert<Source, Sink, FromComponent, ToComponent, RuleTag>().operator()(*from, to);
 		return to;
 	}
 }

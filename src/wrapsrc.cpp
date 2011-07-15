@@ -795,21 +795,73 @@ assert(false);
 		// NO -- they stay at 32-bit width! BUT pointers are 64-bit width. Argh.
 
 		environment new_env;
+		
 		// for deduplicating multiple aliases of the same cxxname...
-		std::map<std::string, bool> seen_cxxnames; /* bool is "was it a pointer?" */
+		std::map<std::string, std::set<std::string > > bindings_by_cxxname;
 		for (auto i_binding = env.begin(); i_binding != env.end(); i_binding++)
 		{
-			// sanity check
-			assert(i_binding->second.valid_in_module != new_module_context);
+			bindings_by_cxxname[i_binding->second.cxx_name].insert(i_binding->first);
+		}
+		
+		// for deduplicating multiple aliases of the same cxxname...
+		//std::map<std::string, bool> seen_cxxnames; /* bool is "was it a pointer?" */
+		
+		// for each unique cxxname...
+		//for (auto i_binding = env.begin(); i_binding != env.end(); i_binding++)
+		for (auto i_cxxname = bindings_by_cxxname.begin(); 
+			i_cxxname != bindings_by_cxxname.end();
+			i_cxxname++)
+		{
+			/* In this loop we are going to:
+			 * - emit a new cxx variable that is the crossed-over old one; 
+			 * - emit a call to allocate co-objects, in the case of pointers
+			 * - initialise it using the type constraints */
+		
+			// assert -- at least one binding exists
+			assert(i_cxxname->second.begin() != i_cxxname->second.end());
+			
+			auto i_first_binding = env.find(*i_cxxname->second.begin());
+			assert(i_first_binding != env.end());
+		
+			// sanity check -- for all bindings covered by this cxx name,
+			// check that they are valid in the module context we're crossing over *from*
+			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
+				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
+				i_binding_name++)
+			{
+				auto i_binding = env.find(*i_binding_name);
+				assert(i_binding != env.end());
+				assert(i_binding->second.valid_in_module == old_module_context);
+			}
+			
 			
 			// create a new cxx ident for the binding
-			auto ident = new_ident("xover_" + i_binding->first);
+			auto ident = new_ident("xover_" + i_first_binding->first);
 			
+			// collect constraints, over all aliases
+			std::set<boost::shared_ptr<dwarf::spec::type_die> > all_constraints;
+			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
+				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
+				i_binding_name++)
+			{
+				auto i_binding = env.find(*i_binding_name);
+				assert(i_binding != env.end());
+
+				auto constraint_iters = constraints.equal_range(i_binding->first);
+				for (auto i_constraint = constraint_iters.first;
+					i_constraint != constraint_iters.second;
+					i_constraint++)
+				{
+					all_constraints.insert(i_constraint->second);
+				}
+			}
+
 			/* Work out the target type expectations, using constraints */
 			boost::shared_ptr<dwarf::spec::type_die> precise_to_type;
 			int rule_tag = 0; // FIXME: handle annotations / typedefs in the *source*
-			auto iter_pair = constraints.equal_range(i_binding->first);
-			for (auto i_type = iter_pair.first; i_type != iter_pair.second; i_type++)
+			// get the constraints defined for this Cake name
+			//auto iter_pair = constraints.equal_range(i_binding->first);
+			for (auto i_type = all_constraints.begin(); i_type != all_constraints.end(); i_type++)
 			{
 				/* There are a few cases here. 
 				 * - all identical, all concrete: no problem
@@ -820,7 +872,7 @@ assert(false);
 				 * FIXME: for now, we don't handle the artificial cases. */
 				if (precise_to_type)
 				{
-					if (precise_to_type->iterator_here() == i_type->second->iterator_here())
+					if (precise_to_type->iterator_here() == (*i_type)->iterator_here())
 					{
 						// okay, same DIE, so continue
 						continue;
@@ -832,62 +884,103 @@ assert(false);
 				}
 				else 
 				{	
-					m_out << "// in crossover environment, " << i_binding->first 
+					m_out << "// in crossover environment, " << i_first_binding->first 
 						<< " has been constrained to type " 
-						<< compiler.name_for(i_type->second)
+						<< compiler.name_for(*i_type)
 						<< std::endl;
-					precise_to_type = i_type->second;
+					precise_to_type = *i_type;
 				}
+			}
+
+			// collect pointerness
+			bool is_a_pointer = false;
+			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
+				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
+				i_binding_name++)
+			{
+				auto i_binding = env.find(*i_binding_name);
+				assert(i_binding != env.end());
+				
+				is_a_pointer |= (precise_to_type &&
+					 precise_to_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type);
 			}
 			
-			/* Now insert code to ensure co-objects are allocated. We might pass
-			 * over the same cxxname multiple times. If we've seen it before,
-			 * we *might* still be interested -- if it wasn't a pointer then, but
-			 * is now. This is for unspecified_wordsize_type et al. */
-			auto found = seen_cxxnames.find(i_binding->second.cxx_name);
-			if (found == seen_cxxnames.end()
-			 || found->second == false)
+			// collect typeof
+			boost::optional<std::string> collected_cxx_typeof;
+			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
+				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
+				i_binding_name++)
 			{
-				bool was_a_pointer_last_time = 
-					found != seen_cxxnames.end() && found->second;
-				bool is_a_pointer_this_time = 
-					(precise_to_type &&
-					 precise_to_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type);
-				seen_cxxnames[i_binding->second.cxx_name] =
-					was_a_pointer_last_time || is_a_pointer_this_time;
+				auto i_binding = env.find(*i_binding_name);
+				assert(i_binding != env.end());
 				
-				// if this is the first time we've seen this cxxname,
-				// or if it's now a pointer, 
-				// we make the co-objects alloc call
-				if (found == seen_cxxnames.end() || (
-					!was_a_pointer_last_time && is_a_pointer_this_time))
-				{
-					m_out << "ensure_co_objects_allocated(REP_ID("
-						<< m_d.name_of_module(old_module_context) << "), ";
-					// make sure we invoke the pointer specialization
-					if (is_a_pointer_this_time) m_out <<
-						"ensure_is_a_pointer(";
-					m_out << i_binding->second.cxx_name;
-					if (is_a_pointer_this_time) m_out << ")";
-					m_out << ", REP_ID("
-						<< m_d.name_of_module(new_module_context)
-						<<  "));" << std::endl;
-				}
+				if (!collected_cxx_typeof) collected_cxx_typeof = i_binding->second.cxx_typeof;
+				else assert(*collected_cxx_typeof == i_binding->second.cxx_typeof);
 			}
+			
+			// output co-objects allocation call, if we have a pointer
+			if (is_a_pointer)
+			{
+				m_out << "ensure_co_objects_allocated(REP_ID("
+					<< m_d.name_of_module(old_module_context) << "), ";
+				// make sure we invoke the pointer specialization
+				/*if (is_a_pointer_this_time)*/ m_out <<
+					"ensure_is_a_pointer(";
+				m_out << i_cxxname->first; 
+				/*if (is_a_pointer_this_time)*/ m_out << ")";
+				m_out << ", REP_ID("
+					<< m_d.name_of_module(new_module_context)
+					<<  "));" << std::endl;
+			}
+// 			/* Now insert code to ensure co-objects are allocated. We might pass
+// 			 * over the same cxxname multiple times. If we've seen it before,
+// 			 * we *might* still be interested -- if it wasn't a pointer then, but
+// 			 * is now. This is for unspecified_wordsize_type et al. */
+// 			auto found = seen_cxxnames.find(i_binding->second.cxx_name);
+// 			if (found == seen_cxxnames.end()
+// 			 || found->second == false)
+// 			{
+// 				bool was_a_pointer_last_time = 
+// 					found != seen_cxxnames.end() && found->second;
+// 				bool is_a_pointer_this_time = 
+// 					(precise_to_type &&
+// 					 precise_to_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type);
+// 				seen_cxxnames[i_binding->second.cxx_name] =
+// 					was_a_pointer_last_time || is_a_pointer_this_time;
+// 				
+// 				// if this is the first time we've seen this cxxname,
+// 				// or if it's now a pointer, 
+// 				// we make the co-objects alloc call
+// 				if (found == seen_cxxnames.end() || (
+// 					!was_a_pointer_last_time && is_a_pointer_this_time))
+// 				{
+// 					m_out << "ensure_co_objects_allocated(REP_ID("
+// 						<< m_d.name_of_module(old_module_context) << "), ";
+// 					// make sure we invoke the pointer specialization
+// 					if (is_a_pointer_this_time) m_out <<
+// 						"ensure_is_a_pointer(";
+// 					m_out << i_binding->second.cxx_name;
+// 					if (is_a_pointer_this_time) m_out << ")";
+// 					m_out << ", REP_ID("
+// 						<< m_d.name_of_module(new_module_context)
+// 						<<  "));" << std::endl;
+// 				}
+// 			}
+			
 			
 			// output its initialization
 			m_out << "auto " << ident << " = ";
 			open_value_conversion(
-				link_derivation::sorted(new_module_context, i_binding->second.valid_in_module),
+				link_derivation::sorted(new_module_context, i_first_binding->second.valid_in_module),
 				rule_tag, // defaults to 0, but may have been set above
 				boost::shared_ptr<dwarf::spec::type_die>(), // no precise from type
 				precise_to_type, // defaults to no precise to type, but may have been set above
-				i_binding->second.cxx_typeof, // from typeof is in the binding
+				(is_a_pointer ? std::string("((void*)0)") : *collected_cxx_typeof), 
 				boost::optional<std::string>(), // NO precise to typeof, 
 				   // BUT maybe we could start threading a context-demanded type through? 
 				   // It's not clear how we'd get this here -- scan future uses of each xover'd binding?
 				   // i.e. we only get it *later* when we try to emit some stub logic that uses this binding
-				i_binding->second.valid_in_module, // from_module is 
+				i_first_binding->second.valid_in_module, // from_module is 
 				new_module_context
 			);
 			
@@ -914,16 +1007,23 @@ assert(false);
 			 * at the same time. This might be a problem when we do propagation of
 			 * unique_corresponding_type... although val corresps may be expressed
 			 * in terms of typedefs, so perhaps not. */
-			m_out << i_binding->second.cxx_name;
+			if (is_a_pointer) m_out << "ensure_is_a_pointer(";
+			m_out <<i_cxxname->first;
+			if (is_a_pointer) m_out << ")";
 			close_value_conversion();
 			m_out << ";" << std::endl;
 			
-			// add it to the new environment
-			new_env[i_binding->first] = (bound_var_info) {
-				ident,
-				ident,
-				new_module_context
-			};
+			// for each Cake name, add it to the new environment
+			for (auto i_cakename = bindings_by_cxxname[i_cxxname->first].begin();
+					i_cakename != bindings_by_cxxname[i_cxxname->first].end();
+					i_cakename++)
+			{
+				new_env[*i_cakename] = (bound_var_info) {
+					ident,
+					ident,
+					new_module_context
+				};
+			}
 		}
 		// sanity check
 		assert(new_env.size() == env.size());
@@ -1323,7 +1423,10 @@ assert(false);
 				m_out << "::cake::value_convert<" << std::endl
 					<< "\t/* from type: */ " << from_typestring << ", " << std::endl
 					<< "\t/* to type: */ " << to_typestring << ", " << std::endl
-					<< "\t/* rule tag: */ " << rule_tag << ">()(";
+					<< "\t/* FromComponent: */ " << m_d.name_of_module(from_module) << "::marker," << std::endl
+					<< "\t/* ToComponent: */ " << m_d.name_of_module(to_module) << "::marker, " << std::endl
+					<< "\t/* rule tag: */ " << rule_tag << std::endl
+					<<  ">()(";
 //             }
 //             else 
 //             {

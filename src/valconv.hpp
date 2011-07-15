@@ -44,6 +44,8 @@ namespace cake
 		}
 		
 	protected:
+		std::string source_fq_namespace() const;
+		std::string sink_fq_namespace() const;
 		void emit_header(boost::optional<std::string> return_typename, 
 			bool emit_struct_keyword = true, bool emit_template_prefix = true,
 			bool emit_return_typename = true);

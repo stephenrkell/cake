@@ -737,10 +737,10 @@ namespace cake
 					
 			wrap_file << "\t#include \"" << (*i)->get_filename() << ".hpp\"" << std::endl;
 			// also define a marker class, and code to grab a rep_id at init time
-			wrap_file << "\tclass marker {}; // used for per-component template specializations" 
+			wrap_file << "\tstruct marker { static int rep_id; }; // used for per-component template specializations" 
 	  				<< std::endl;
-			wrap_file << "\tstatic int rep_id;" << std::endl;
-			wrap_file << "\tstatic void get_rep_id(void) __attribute__((constructor)); static void get_rep_id(void) { rep_id = next_rep_id++; rep_component_names[rep_id] = \""
+			wrap_file << "\tint marker::rep_id;" << std::endl;
+			wrap_file << "\tstatic void get_rep_id(void) __attribute__((constructor)); static void get_rep_id(void) { marker::rep_id = next_rep_id++; rep_component_names[marker::rep_id] = \""
 			<< r.module_inverse_tbl[*i] << "\"; }" << std::endl; // FIXME: C-escape this
 			// also define the Cake component as a set of compilation units
 			wrap_file << "extern \"C\" {" << std::endl;
@@ -850,6 +850,8 @@ namespace cake
 << std::endl << "        {"
 << std::endl << "            return value_convert<From, "
 << std::endl << "                To,"
+<< std::endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker,"
+<< std::endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker,"
 << std::endl << "                RuleTag"
 << std::endl << "                >().operator()(arg);"
 << std::endl << "        }"
@@ -864,6 +866,8 @@ namespace cake
 << std::endl << "        {"
 << std::endl << "            return value_convert<From, "
 << std::endl << "                To,"
+<< std::endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker,"
+<< std::endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker,"
 << std::endl << "                RuleTag"
 << std::endl << "                >().operator()(arg);"
 << std::endl << "        }	"

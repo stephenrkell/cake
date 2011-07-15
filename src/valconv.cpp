@@ -9,6 +9,11 @@
 
 namespace cake
 {
+	std::string value_conversion::source_fq_namespace() const
+	{ return w.ns_prefix + "::" + w.m_d.name_of_module(source); }
+	std::string value_conversion::sink_fq_namespace() const
+	{ return w.ns_prefix + "::" + w.m_d.name_of_module(sink); }
+	
 	boost::shared_ptr<value_conversion> create_value_conversion(module_ptr source,
             boost::shared_ptr<dwarf::spec::type_die> source_data_type,
             antlr::tree::Tree *source_infix_stub,
@@ -57,6 +62,8 @@ namespace cake
             << ", "
             << to_typename // To
             << ", "
+			<< source_fq_namespace() << "::marker, " // FromComponent
+			<< sink_fq_namespace() << "::marker, " // ToComponent
             << "0" // RuleTag
             << ">" << std::endl;
 	}	
@@ -93,6 +100,8 @@ namespace cake
             << ", "
             << to_typename // To
             << ", "
+			<< source_fq_namespace() << "::marker, " // FromComponent
+			<< sink_fq_namespace() << "::marker, " // ToComponent
             << "0" // RuleTag
             << ">" << std::endl;
 
