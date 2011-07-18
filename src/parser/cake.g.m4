@@ -14,7 +14,7 @@ DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; AN
 EVENT_CORRESP; EVENT_SINK_AS_PATTERN; EVENT_SINK_AS_STUB; CONST_ARITH; KEYWORD_PATTERN; INFIX_STUB_EXPR; 
 IDENTS_TO_BIND; ARRAY; VALUE_CONSTRUCT; EVENT_PATTERN_REWRITE_EXPR; RETURN_EVENT; INVOKE_WITH_ARGS; 
 EVENT_WITH_CONTEXT_SEQUENCE; CONTEXT_SEQUENCE; EVENT_COUNT_PREDICATE; ARRAY_SUBSCRIPT; FORM_ASSOCIATION; 
-VALUE_CORRESPONDENCE_REFINEMENT; PATTERN_OF_VALUES; DESCEND_TO_MEMBERS; }
+VALUE_CORRESPONDENCE_REFINEMENT; PATTERN_OF_VALUES; DESCEND_TO_MEMBERS; NAMED_VALUE_CORRESP; }
 
 
 @header {
@@ -51,9 +51,16 @@ membershipClaim		: (memberNameExpr ':' KEYWORD_CLASS_OF)=>
 //memberNameExpr		/*: '.'? IDENT ( '.' IDENT )* -> ^( DEFINITE_MEMBER_NAME IDENT* )*/
                                           
 memberNameExpr		: definiteMemberName -> ^( DEFINITE_MEMBER_NAME definiteMemberName )
+					| KEYWORD_VOID^ /* means "actually, no member" */
 					| INDEFINITE_MEMBER_NAME^ 
                     ;
-                    
+
+/* FIXME: we want to unify this with restrictedPostfixExpression somehow.
+ * The latter allows more stuff though. This should really just be a path
+ * through a static structure, representable as a list of idents. 
+ * BUT we want to be able to represent arrays. 
+ * Maybe idents beginning with digits are okay? Maybe we just define 
+ * "member selection on arrays" for digit-based? */
 definiteMemberName : IDENT^ ( memberSuffix^ )*
                    ;
 memberSuffix : '.' IDENT
@@ -329,14 +336,14 @@ pairwiseCorrespondenceElement   : (IDENT ':' eventCorrespondence) =>
                                     IDENT ':' eventCorrespondence
                                     -> ^( EVENT_CORRESP eventCorrespondence IDENT ) /* named form */
                                 |   eventCorrespondence -> ^( EVENT_CORRESP eventCorrespondence ) /* ordinary form */
-                                | (IDENT ':' KEYWORD_VALUES '{')=> /* named form */
+                                | (IDENT ':' KEYWORD_VALUES '{')=> /* named form -- FIXME: do we need this? */
                                     IDENT ':' valueCorrespondenceBlock
-                                    -> ^( valueCorrespondenceBlock IDENT )
+                                    -> ^( NAMED_VALUE_CORRESP valueCorrespondenceBlock IDENT ) /* FIXME */
                                 | (KEYWORD_VALUES '{')=>  /* ordinary form */
                                     valueCorrespondenceBlock
                                 | singleValueCorrespondence /* ordinary form */
                                 | IDENT ':' singleValueCorrespondence /* named form */
-                                   -> ^( singleValueCorrespondence IDENT )
+                                   -> ^( NAMED_VALUE_CORRESP singleValueCorrespondence IDENT )
                                 ;
                                 
 eventCorrespondence	:	
@@ -503,15 +510,59 @@ valueCorrespondenceTerminator: SEMICOLON
 	  /*annotatedValueBindingPattern infixStubExpression correspondenceOperator^ infixStubExpression valuePattern*/
 valueCorrespondenceBase	: 
     (valuePattern infixStubExpression leftToRightCorrespondenceOperator)=>
-     valuePattern infixStubExpression leftToRightCorrespondenceOperator^ infixStubExpression stubNonSequencingExpression
-  | (stubNonSequencingExpression infixStubExpression rightToLeftCorrespondenceOperator)=>
-    stubNonSequencingExpression infixStubExpression rightToLeftCorrespondenceOperator^ infixStubExpression /*annotatedValueBindingPattern*/ valuePattern
+     valuePattern infixStubExpression leftToRightCorrespondenceOperator^ infixStubExpression /*restrictedPostfixExpression*/memberNameExpr
+  | (/*restrictedPostfixExpression*/memberNameExpr infixStubExpression rightToLeftCorrespondenceOperator)=>
+    /*restrictedPostfixExpression*/memberNameExpr infixStubExpression rightToLeftCorrespondenceOperator^ infixStubExpression /*annotatedValueBindingPattern*/ valuePattern
   | (valuePattern infixStubExpression bidirectionalCorrespondenceOperator)=>
     valuePattern infixStubExpression bidirectionalCorrespondenceOperator^ infixStubExpression valuePattern
   | (singleOrNamedMultiValueDescription bidirectionalCorrespondenceOperator)=>
     singleOrNamedMultiValueDescription bidirectionalCorrespondenceOperator^ singleOrNamedMultiValueDescription
   ;
-  
+
+/* NOTE: we had stubNonSequencingExpression for a reason: to be able to write
+ * field rules like
+ *
+ *  field1 + field2 --> fieldA; 
+ *
+ * ... which now we can't do. 
+ * This is because the grammar is ambiguous: if we wrote
+ *
+ *   field1 + field2 (infixStub) --> field A; 
+ * 
+ * ... then it's not clear whether we have an invocation
+ * or an infix stub. 
+ * How to fix this?
+ * We could force programmers to write
+ * 
+ * void (field1 + field2) --> fieldA;
+ *
+ * ... but then "void" is really unintuitive.
+ * We could dispense with infix stubs, but then
+ *
+ * fieldX ({lock(field); that})--> fieldA;
+ * 
+ * ... would have to be expressed like so:
+ *
+ * { lock(&fieldX); fieldX }    --> fieldA;
+ * { unlock(&fieldX); fieldA } <--  fieldA;
+ *
+ * ... Is this so bad? Is this even a sensible example ( / locking strategy)?
+ * What about aliasing in this locking example?
+ * e.g. struct { obj *my_obj}; <--> struct { obj *should_lock; int blah; }
+ * ... here we are fine *unless* another alias for the lock exists
+ * in some co-object... then each sync will attempt to lock/unlock *multiple* times.
+ * The real way to solve this is to put the locking on the corresp for the
+ * object itself, not some pointer to it.
+ * And actually we might want this in p2k, because p2k cookies are actually
+ * pointers -- something we have been finessing until now.
+ * Maybe the right solution is to allow corresps for opaque types?! YES.
+ * Instances of opaque types have identities, but no contents.
+ * So we use malloc(0) for them?! YES. Means we require a libc that supports malloc(0) properly.
+ * The opaque types just can't define any field corresps or whatnot.
+ * 
+ * It's going to get even more interesting when we consider
+ * sharing objects that we want to insert locking calls for.*/
+
 singleOrNamedMultiValueDescription: memberNameExpr^
                                   | namedMultiValueDescription^
                                   ;
@@ -609,8 +660,13 @@ stubPrimitiveExpression	: stubLiteralExpression^
 
 memberSelectionOperator : MEMBER_SELECT | INDIRECT_MEMBER_SELECT | ELLIPSIS; /* ellipsis is 'access associated' */
 
-memberSelectionSuffix : memberSelectionOperator^ IDENT 
+memberSelectionSuffix : memberSelectionOperator IDENT 
+         -> ^( memberSelectionOperator IDENT )
                       ;
+
+arrayIndexingSuffix: '[' stubLangExpression ']'
+         -> ^( ARRAY_SUBSCRIPT stubLangExpression )
+         ;
 
 /*functionInvocationInfix : '('! ( stubLangExpression (','! stubLangExpression )* )? ')'! 
 						;*/
@@ -623,11 +679,25 @@ postfixExpression : stubPrimitiveExpression^ ( suffix^ )* ELLIPSIS? /* raising S
                                                           /* Same deal for array subscripting. */
 suffix : '(' ( stubLangExpression (',' stubLangExpression )* )? ')' 
          -> ^(INVOKE_WITH_ARGS ^( MULTIVALUE stubLangExpression* ) )
-       | memberSelectionOperator IDENT
-         -> ^( memberSelectionOperator IDENT )
-       | '[' stubLangExpression ']'
-         -> ^( ARRAY_SUBSCRIPT stubLangExpression )
+/*       | memberSelectionOperator IDENT
+         -> ^( memberSelectionOperator IDENT )*/
+       | memberSelectionSuffix
+/*       | '[' stubLangExpression ']'
+         -> ^( ARRAY_SUBSCRIPT stubLangExpression )*/
+       | arrayIndexingSuffix
        ;
+
+/* These "restricted" ones are for value corresp left-/right-hand sides.
+ * We don't want to include function invocations because they lead the
+ * syntactic predicates the wrong way when we have infix stub expressions --
+ * the brackets get misparsed as function call brackets. */
+restrictedSuffix: memberSelectionSuffix
+       | arrayIndexingSuffix
+       ;
+
+restrictedPostfixExpression: stubPrimitiveExpression^ ( restrictedSuffix^ )* ELLIPSIS?
+                          ;
+
 
 /* Here MULTIPLY is actually unary * (dereference) 
  * and BITWISE_AND is actually unary & (address-of) -- mea culpa */

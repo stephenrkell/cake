@@ -105,15 +105,25 @@ namespace cake
 		module_ptr target_module;
 		std::pair<module_ptr, module_ptr> modules;
 
-		struct member_mapping_rule
+		struct member_mapping_rule_base
 		{
+			structural_value_conversion *owner;
 			definite_member_name target;
+			boost::optional<definite_member_name> unique_source_field;
 			antlr::tree::Tree *stub;
 			module_ptr pre_context;
 			antlr::tree::Tree *pre_stub;
 			module_ptr post_context;
 			antlr::tree::Tree *post_stub;
 		};
+		
+		struct member_mapping_rule : public member_mapping_rule_base
+		{
+			member_mapping_rule(const member_mapping_rule_base& val);
+			
+			void check_sanity();
+		};
+		
 // 		struct explicit_member_mapping_rule : member_mapping_rule
 // 		{
 // 			definite_member_name source;

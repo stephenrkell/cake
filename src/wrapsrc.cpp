@@ -1423,8 +1423,8 @@ assert(false);
 				m_out << "::cake::value_convert<" << std::endl
 					<< "\t/* from type: */ " << from_typestring << ", " << std::endl
 					<< "\t/* to type: */ " << to_typestring << ", " << std::endl
-					<< "\t/* FromComponent: */ " << m_d.name_of_module(from_module) << "::marker," << std::endl
-					<< "\t/* ToComponent: */ " << m_d.name_of_module(to_module) << "::marker, " << std::endl
+					<< "\t/* FromComponent: */ " << ns_prefix + "::" + m_d.name_of_module(from_module) << "::marker," << std::endl
+					<< "\t/* ToComponent: */ " << ns_prefix + "::" + m_d.name_of_module(to_module) << "::marker, " << std::endl
 					<< "\t/* rule tag: */ " << rule_tag << std::endl
 					<<  ">()(";
 //             }

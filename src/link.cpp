@@ -114,7 +114,8 @@ namespace cake
 					BIND3(arrow, pairwiseCorrespondenceBody, CORRESP);
 					std::cerr << CCP(GET_TEXT(leftChild))
 						<< " <--> "
-						<< CCP(GET_TEXT(rightChild));
+						<< CCP(GET_TEXT(rightChild))
+						<< std::endl;
 					request::module_tbl_t::iterator found_left = 
 						r.module_tbl.find(std::string(CCP(GET_TEXT(leftChild))));
 					if (found_left == r.module_tbl.end()) RAISE(n, "module not defined!");
@@ -786,41 +787,6 @@ namespace cake
 			}
 		}
 		wrap_file << "} // end namespace cake" << std::endl;
-
-		// output the base (unspecialized) templates for corresponding-type lookup
-		wrap_file << "namespace cake {"
-<< std::endl << "    template <"
-<< std::endl << "        typename ComponentPair, "
-<< std::endl << "        typename InFirst, "
-<< std::endl << "        int RuleTag,"
-<< std::endl << "        bool DirectionIsFromFirstToSecond"
-<< std::endl << "    > struct corresponding_type_to_first"
-<< std::endl << "    {}; /* we specialize this for various InSeconds */ "
-<< std::endl << "    template <"
-<< std::endl << "        typename ComponentPair, "
-<< std::endl << "        typename InSecond, "
-<< std::endl << "        int RuleTag,"
-<< std::endl << "        bool DirectionIsFromSecondToFirst"
-<< std::endl << "    > struct corresponding_type_to_second"
-<< std::endl << "    {}; /* we specialize this for various InFirsts */ "
-<< std::endl << "} // end namespace cake" << std::endl;
-		// output the pointer specializations
-		wrap_file << "namespace cake {"
-<< std::endl << "    template <"
-<< std::endl << "        typename ComponentPair, "
-<< std::endl << "        typename InFirstIsAPtr, "
-<< std::endl << "        int RuleTag,"
-<< std::endl << "        bool DirectionIsFromFirstToSecond"
-<< std::endl << "    > struct corresponding_type_to_first <ComponentPair, InFirstIsAPtr*, RuleTag, DirectionIsFromFirstToSecond>"
-<< std::endl << "    { typedef void *in_second; }; /* we specialize this for various InSeconds */ "
-<< std::endl << "    template <"
-<< std::endl << "        typename ComponentPair, "
-<< std::endl << "        typename InSecondIsAPtr, "
-<< std::endl << "        int RuleTag,"
-<< std::endl << "        bool DirectionIsFromSecondToFirst"
-<< std::endl << "    > struct corresponding_type_to_second<ComponentPair, InSecondIsAPtr*, RuleTag, DirectionIsFromSecondToFirst> "
-<< std::endl << "    { typedef void *in_first; }; /* we specialize this for various InFirsts */ "
-<< std::endl << "} // end namespace cake" << std::endl;
 
 		wrap_file << "// we have " << all_iface_pairs.size() << " iface pairs" << std::endl;
 		
@@ -1606,97 +1572,124 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 				case CAKE_TOKEN(KEYWORD_VALUES):
 					{
 						INIT;
-						BIND2(n, correspHead); // some kind of correspondence operator
-						std::string ruleName;
-						if (GET_CHILD_COUNT(n) > 1)
+						// we may have multiple value corresps here
+						FOR_ALL_CHILDREN(n)
 						{
-							BIND3(n, ruleNameIdent, IDENT);
-							ruleName = CCP(GET_TEXT(ruleNameIdent));
-						}
-						switch(GET_TYPE(correspHead))
-						{
-							case CAKE_TOKEN(BI_DOUBLE_ARROW):
-							{
-								INIT;
-								/* The BI_DOUBLE_ARROW is special because 
-	  							* - it might have multivalue children (for many-to-many)
-	  							* - it should not have nonempty infix stubs
-		  							(because these would be ambiguous) */
-								BIND2(correspHead, leftValDecl);
-								BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
-								BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
-								if (GET_CHILD_COUNT(leftInfixStub)
-								|| GET_CHILD_COUNT(rightInfixStub) > 0)
-								{
-									RAISE(correspHead, 
-									"infix stubs are ambiguous for bidirectional value correspondences");
-								}
-								BIND2(correspHead, rightValDecl);
-								BIND3(correspHead, valueCorrespondenceRefinement, 
-									VALUE_CORRESPONDENCE_REFINEMENT);
-								// we don't support many-to-many yet
-								assert(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
-								&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE));
-								ALIAS3(leftValDecl, leftMember, DEFINITE_MEMBER_NAME);
-								ALIAS3(rightValDecl, rightMember, DEFINITE_MEMBER_NAME);
-								// each add_value_corresp call denotes a 
-								// value conversion function that needs to be generated
-								add_value_corresp(left, leftMember, leftInfixStub,
-									right, rightMember, rightInfixStub,
-									valueCorrespondenceRefinement, true, correspHead);
-								add_value_corresp(right, rightMember, rightInfixStub,
-									left, leftMember, leftInfixStub, 
-									valueCorrespondenceRefinement, false, correspHead);
+							ALIAS2(n, correspHead);
+							assert(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
+								|| GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW_Q)
+								|| GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
+								|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
+								|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW_Q)
+								|| GET_TYPE(correspHead) == CAKE_TOKEN(NAMED_VALUE_CORRESP));
 
-							}
-							break;
-							case CAKE_TOKEN(LR_DOUBLE_ARROW):
-							case CAKE_TOKEN(RL_DOUBLE_ARROW):
-							case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
-							case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
+							std::string ruleName;
+							if (GET_TYPE(correspHead) == CAKE_TOKEN(NAMED_VALUE_CORRESP))
 							{
-								INIT;
-								BIND2(correspHead, leftValDecl);
-								BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
-								BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
-								BIND2(correspHead, rightValDecl);
-								BIND3(correspHead, valueCorrespondenceRefinement, 
-									VALUE_CORRESPONDENCE_REFINEMENT);
-								// many-to-many not allowed
-								if(!(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
-								&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE)))
-								{ RAISE(correspHead, "many-to-many value correspondences must be bidirectional"); }
-								ALIAS3(leftValDecl, leftMember, DEFINITE_MEMBER_NAME);
-								ALIAS3(rightValDecl, rightMember, DEFINITE_MEMBER_NAME);
-								
-								// FIXME: pay attention to question marks
-								switch(GET_TYPE(correspHead))
-								{
-									case CAKE_TOKEN(LR_DOUBLE_ARROW):
-									case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
-										add_value_corresp(left, leftMember, leftInfixStub,
-											right, rightMember, rightInfixStub,
-											valueCorrespondenceRefinement, true, correspHead);
-										goto record_touched;
-									case CAKE_TOKEN(RL_DOUBLE_ARROW):
-									case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
-										add_value_corresp(right, rightMember, rightInfixStub,
-											left, leftMember, leftInfixStub, 
-											valueCorrespondenceRefinement, false, correspHead);
-										goto record_touched;
-									record_touched:
-										touched_data_types[left].insert(
-											read_definite_member_name(leftMember));
-										touched_data_types[right].insert(
-											read_definite_member_name(rightMember));
-										break;
-									default: assert(false);
-								}
+								if (GET_CHILD_COUNT(correspHead) != 2) RAISE_INTERNAL(correspHead,
+									"named rules must be a simple pair");
+								auto ruleNameIdent = GET_CHILD(correspHead, 1); 
+								if (GET_TYPE(ruleNameIdent) != CAKE_TOKEN(IDENT))
+								{ RAISE_INTERNAL(ruleNameIdent, "must be a simple ident"); }
+								ruleName = CCP(GET_TEXT(ruleNameIdent));
+								// HACK: move down one
+								correspHead = GET_CHILD(correspHead, 0);
 							}
-							break;
-							default: assert(false);
-						}
-					}
+							assert(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
+								|| GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW_Q)
+								|| GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
+								|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
+								|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW_Q));
+
+							switch(GET_TYPE(correspHead))
+							{
+								case CAKE_TOKEN(BI_DOUBLE_ARROW):
+								{
+									INIT;
+									/* The BI_DOUBLE_ARROW is special because 
+	  								* - it might have multivalue children (for many-to-many)
+	  								* - it should not have nonempty infix stubs
+		  								(because these would be ambiguous) */
+									BIND2(correspHead, leftValDecl);
+									BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
+									BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
+									if (GET_CHILD_COUNT(leftInfixStub)
+									|| GET_CHILD_COUNT(rightInfixStub) > 0)
+									{
+										RAISE(correspHead, 
+										"infix stubs are ambiguous for bidirectional value correspondences");
+									}
+									BIND2(correspHead, rightValDecl);
+									BIND3(correspHead, valueCorrespondenceRefinement, 
+										VALUE_CORRESPONDENCE_REFINEMENT);
+									// we don't support many-to-many yet
+									assert(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
+									&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE));
+									ALIAS3(leftValDecl, leftMember, DEFINITE_MEMBER_NAME);
+									ALIAS3(rightValDecl, rightMember, DEFINITE_MEMBER_NAME);
+									// each add_value_corresp call denotes a 
+									// value conversion function that needs to be generated
+									add_value_corresp(left, leftMember, leftInfixStub,
+										right, rightMember, rightInfixStub,
+										valueCorrespondenceRefinement, true, correspHead);
+									add_value_corresp(right, rightMember, rightInfixStub,
+										left, leftMember, leftInfixStub, 
+										valueCorrespondenceRefinement, false, correspHead);
+
+								}
+								break;
+								case CAKE_TOKEN(LR_DOUBLE_ARROW):
+								case CAKE_TOKEN(RL_DOUBLE_ARROW):
+								case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
+								case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
+								{
+									INIT;
+									BIND2(correspHead, leftValDecl);
+									BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
+									BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
+									BIND2(correspHead, rightValDecl);
+									BIND3(correspHead, valueCorrespondenceRefinement, 
+										VALUE_CORRESPONDENCE_REFINEMENT);
+									// many-to-many not allowed
+									if(!(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
+									&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE)))
+									{ RAISE(correspHead, "many-to-many value correspondences must be bidirectional"); }
+									ALIAS3(leftValDecl, leftMember, DEFINITE_MEMBER_NAME);
+									ALIAS3(rightValDecl, rightMember, DEFINITE_MEMBER_NAME);
+
+									bool init_only = false;
+									switch(GET_TYPE(correspHead))
+									{
+										case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
+											init_only = true;
+										case CAKE_TOKEN(LR_DOUBLE_ARROW):
+											add_value_corresp(left, leftMember, leftInfixStub,
+												right, rightMember, rightInfixStub,
+												valueCorrespondenceRefinement, true, correspHead,
+												init_only);
+											goto record_touched;
+										case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
+											init_only = true;
+										case CAKE_TOKEN(RL_DOUBLE_ARROW):
+											add_value_corresp(right, rightMember, rightInfixStub,
+												left, leftMember, leftInfixStub, 
+												valueCorrespondenceRefinement, false, correspHead,
+												init_only);
+											goto record_touched;
+										record_touched:
+											touched_data_types[left].insert(
+												read_definite_member_name(leftMember));
+											touched_data_types[right].insert(
+												read_definite_member_name(rightMember));
+											break;
+										default: assert(false);
+									}
+								}
+								break;
+								default: assert(false);
+							} // end switch on correspHead type
+						} // end FOR_ALL_CHILDREN
+					} // end case VALUES
 					break;
 				default: RAISE(n, "expected an event correspondence or a value correspondence block");
 			}
@@ -1767,12 +1760,12 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		auto source_data_type_opt = boost::dynamic_pointer_cast<dwarf::spec::type_die>(
 			source->get_ds().toplevel()->visible_resolve(
 			source_mn.begin(), source_mn.end()));
-		if (!source_data_type_opt) RAISE(corresp, "could not resolve data type");
+		if (!source_data_type_opt) RAISE(corresp, "could not resolve source data type");
 		auto sink_mn = read_definite_member_name(sink_data_type_mn);
 		auto sink_data_type_opt = boost::dynamic_pointer_cast<dwarf::spec::type_die>(
 			sink->get_ds().toplevel()->visible_resolve(
 			sink_mn.begin(), sink_mn.end()));
-		if (!sink_data_type_opt) RAISE(corresp, "could not resolve data type");
+		if (!sink_data_type_opt) RAISE(corresp, "could not resolve sink data type");
 		add_value_corresp(source, 
 			source_data_type_opt, 
 			source_infix_stub,
@@ -1881,10 +1874,6 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 							/* .source_is_on_left = */ source_is_on_left,
 							/* .corresp = */ corresp };
 		
-		// can't handle infix stubs, yet
-		assert((!source_infix_stub || GET_CHILD_COUNT(source_infix_stub) == 0)
-		&& (!sink_infix_stub || GET_CHILD_COUNT(sink_infix_stub) == 0));
-	
 		// we *only* emit conversions between concrete types
 		auto source_concrete_type = source_data_type->get_concrete_type();
 		auto sink_concrete_type = sink_data_type->get_concrete_type();

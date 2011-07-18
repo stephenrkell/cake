@@ -2,9 +2,119 @@ extern "C" {
 #include "repman.h"
 }
 #include "runtime.hpp"
+#include <boost/type_traits/remove_const.hpp>
+#include <boost/type_traits/remove_reference.hpp>
 #define REP_ID(ident) (ident::marker::rep_id)
+
+    template <
+        typename ComponentPair, 
+        typename InFirst, 
+        int RuleTag,
+        bool DirectionIsFromFirstToSecond
+    > struct corresponding_type_to_first
+    {}; /* we specialize this for various InSeconds */ 
+    template <
+        typename ComponentPair, 
+        typename InSecond, 
+        int RuleTag,
+        bool DirectionIsFromSecondToFirst
+    > struct corresponding_type_to_second
+    {}; /* we specialize this for various InFirsts */ 
+    template <
+        typename ComponentPair, 
+        typename InFirstIsAPtr, 
+        int RuleTag,
+        bool DirectionIsFromFirstToSecond
+    > struct corresponding_type_to_first <ComponentPair, InFirstIsAPtr*, RuleTag, DirectionIsFromFirstToSecond>
+    { typedef void *in_second; }; /* we specialize this for various InSeconds */ 
+    template <
+        typename ComponentPair, 
+        typename InSecondIsAPtr, 
+        int RuleTag,
+        bool DirectionIsFromSecondToFirst
+    > struct corresponding_type_to_second<ComponentPair, InSecondIsAPtr*, RuleTag, DirectionIsFromSecondToFirst> 
+    { typedef void *in_first; }; /* we specialize this for various InFirsts */ 
+
 namespace cake
 {
+	/* These represent value correspondences which Cake programmers don't
+	 * have to write explicitly: between base types and pointers. */
+#define template_head4_map_keyed_on_first_module(InFirst_typename) \
+    template < \
+        typename ComponentPair,  \
+        typename InFirst_typename,  \
+        int RuleTag, \
+        bool DirectionIsFromFirstToSecond \
+    > struct corresponding_type_to_first 
+
+#define template_head4_map_keyed_on_second_module(InSecond_typename) \
+    template < \
+        typename ComponentPair,  \
+        typename InSecond_typename,  \
+        int RuleTag, \
+        bool DirectionIsFromSecondToFirst \
+    > struct corresponding_type_to_second 
+	
+#define template_head3_map_keyed_on_first_module \
+    template < \
+        typename ComponentPair,  \
+        int RuleTag, \
+        bool DirectionIsFromFirstToSecond \
+    > struct corresponding_type_to_first 
+
+#define template_head3_map_keyed_on_second_module \
+    template < \
+        typename ComponentPair,  \
+        int RuleTag, \
+        bool DirectionIsFromSecondToFirst \
+    > struct corresponding_type_to_second 
+
+// empty mappings -- by default, there is no corresponding type
+
+template_head4_map_keyed_on_first_module(InFirst) {};
+template_head4_map_keyed_on_second_module(InSecond) {};
+	
+// mappings for pointers -- by default, all pointer types correspond to void*
+template_head4_map_keyed_on_first_module(InFirstIsAPtr)
+<ComponentPair, InFirstIsAPtr*, RuleTag, DirectionIsFromFirstToSecond>
+: public corresponding_type_to_first<ComponentPair, void, RuleTag,
+	DirectionIsFromFirstToSecond> {
+	typedef void *in_second;
+};	
+template_head4_map_keyed_on_second_module(InSecondIsAPtr)
+<ComponentPair, InSecondIsAPtr*, RuleTag, DirectionIsFromSecondToFirst>
+: public corresponding_type_to_second<ComponentPair, void, RuleTag,
+	DirectionIsFromSecondToFirst> {
+typedef void *in_first;
+};
+
+// mappings for base types -- by default, all base types correspond to themselves
+#define pair_of_mappings(base_type) \
+template_head3_map_keyed_on_first_module \
+<ComponentPair, base_type, RuleTag, DirectionIsFromFirstToSecond> \
+: public corresponding_type_to_first<ComponentPair, void, RuleTag, \
+	DirectionIsFromFirstToSecond> { \
+	typedef base_type in_second; \
+};	 \
+template_head3_map_keyed_on_second_module \
+<ComponentPair, base_type, RuleTag, DirectionIsFromSecondToFirst> \
+: public corresponding_type_to_second<ComponentPair, void, RuleTag, \
+	DirectionIsFromSecondToFirst> { \
+	typedef base_type in_first; \
+}
+
+pair_of_mappings(bool);
+pair_of_mappings(char);
+pair_of_mappings(wchar_t);
+pair_of_mappings(unsigned char);
+pair_of_mappings(short);
+pair_of_mappings(unsigned short);
+pair_of_mappings(long);
+pair_of_mappings(unsigned long);
+pair_of_mappings(float);
+pair_of_mappings(double);
+pair_of_mappings(long double);
+
 	/* All value_convert operator()s MUST have the same ABI!
 	 * Pointer or reference "from", then pointer "to". 
  	 * Return values vary the ABI depending on the returned object size; 

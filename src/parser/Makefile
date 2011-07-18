@@ -45,6 +45,9 @@ test-lexer-samples: cakePyLexer.py # samples/ephy.cake samples/xcl.cake
 		python cakePyLexer.py < "$$fname"; \
 	done 
 
+test_parser: cakeCLexer.o cakeCParser.o test_parser.o
+	gcc -o "$@" $+ -lantlr3c
+
 %Py.g: %.g.m4 $(INCS)
 	( test ! -e "$@" || chmod +w "$@" ) && m4 -Dantlr_m4_include_file=antlr-m4-py.inc "$<" > "$@" && chmod ugo-w "$@"
 
@@ -81,6 +84,8 @@ $(GRAMMAR_BASENAME)/%JavaLexer.java $(GRAMMAR_BASENAME)/%JavaParser.java: %Java.
 
 clean::
 	rm -f *.class *.h *.o *.a *.pyc *.d *{Py,Java,Cpp,C}.g 
-	rm -f *{Parser,Lexer}.c
+	rm -f *Parser.c *Lexer.c
+	rm -f *Parser.py *Lexer.py
 	rm -f $(GRAMMAR_BASENAME)/*{Parser,Lexer}.java $(GRAMMAR_BASENAME)/*.tokens
 	rm -f stamp
+	rm -f test_parser

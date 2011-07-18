@@ -259,7 +259,14 @@ namespace cake {
 //		void output_static_co_objects(); 
 
 	public:
-		void write_makerules(std::ostream& out);	
+		std::pair<
+			val_corresp_map_t::iterator,
+			val_corresp_map_t::iterator
+		> val_corresps_for_iface_pair(iface_pair ifaces)
+		{ return val_corresps.equal_range(ifaces); }
+		
+		typedef link_derivation::val_corresp_map_t::value_type ent;
+				void write_makerules(std::ostream& out);	
 		void extract_definition();
 		std::vector<std::string> dependencies() { return std::vector<std::string>(); }
         link_derivation(cake::request& r, antlr::tree::Tree *t, 
