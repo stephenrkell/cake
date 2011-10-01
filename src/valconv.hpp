@@ -4,7 +4,6 @@
 #include <sstream>
 #include <map>
 #include <vector>
-#include <dwarfpp/abstract.hpp>
 #include <dwarfpp/encap.hpp>
 #include <dwarfpp/cxx_compiler.hpp>
 
@@ -25,7 +24,8 @@ namespace cake
 	}; 
 	
 	// base class
-	class value_conversion : public basic_value_conversion
+	class value_conversion : public boost::enable_shared_from_this<value_conversion>, 
+		public basic_value_conversion
 	{
 		friend class link_derivation;
 	protected:
@@ -136,6 +136,8 @@ namespace cake
 		
 		// this includes all EXPLICIT corresps, projected to TOPLEVEL -- need not be unique
 		std::multimap<std::string, member_mapping_rule*> explicit_toplevel_mappings;
+		// FIXME: if we have a group of nontoplevel rules, we should synthesise a 
+		// pseudo-correspondence and just use that. Anything wrong with this?
 		
 		// this includes only NAME-MATCHED IMPLICIT corresps only
 		std::map<std::string, member_mapping_rule> name_matched_mappings;
@@ -144,7 +146,9 @@ namespace cake
 	public:
 		structural_value_conversion(wrapper_file& w,
 			srk31::indenting_ostream& out, 
-			const basic_value_conversion& basic);
+			const basic_value_conversion& basic,
+			bool make_init_conversion,
+			bool& out_init_and_update_are_identical);
 		
 		void emit_body();
 		std::vector< dep

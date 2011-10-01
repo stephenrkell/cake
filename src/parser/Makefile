@@ -6,7 +6,7 @@ INCS := $(wildcard *.inc)
 
 .PHONY: default
 #default: java-all 
-default: cakeCLexer.o cakeCParser.o stamp
+default: cakeCLexer.o cakeCParser.o test_parser stamp
 
 stamp:
 	touch stamp

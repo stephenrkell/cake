@@ -11,7 +11,6 @@
 #include <fileno.hpp>
 #include <dwarfpp/lib.hpp>
 #include <dwarfpp/encap.hpp>
-#include <dwarfpp/encap_adt.hpp>
 #include <indenting_ostream.hpp>
 #include "parser.hpp"
 
@@ -102,7 +101,7 @@ namespace cake
         virtual const dwarf::spec::abstract_def& get_spec() = 0;
 	public: 
         boost::shared_ptr<module_described_by_dwarf> shared_this() { return this->shared_from_this(); }
-    	dwarf::encap::Die_encap_all_compile_units& all_compile_units() 
+    	boost::shared_ptr<dwarf::encap::file_toplevel_die> all_compile_units() 
         { return dies.all_compile_units(); }
 		bool do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
 		bool check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);

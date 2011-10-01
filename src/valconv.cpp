@@ -12,19 +12,29 @@ using boost::shared_ptr;
 using dwarf::spec::member_die;
 using dwarf::spec::type_die;
 using dwarf::spec::with_named_children_die;
+using dwarf::spec::with_data_members_die;
+using dwarf::spec::structure_type_die;
+using std::make_pair;
+using std::string;
+using std::pair;
+using std::endl;
+using std::cerr;
+using std::vector;
+using std::ostringstream;
+using boost::optional;
 
 namespace cake
 {
-	std::string value_conversion::source_fq_namespace() const
+	string value_conversion::source_fq_namespace() const
 	{ return w.ns_prefix + "::" + w.m_d.name_of_module(source); }
-	std::string value_conversion::sink_fq_namespace() const
+	string value_conversion::sink_fq_namespace() const
 	{ return w.ns_prefix + "::" + w.m_d.name_of_module(sink); }
 	
-	boost::shared_ptr<value_conversion> create_value_conversion(module_ptr source,
-            boost::shared_ptr<dwarf::spec::type_die> source_data_type,
+	shared_ptr<value_conversion> create_value_conversion(module_ptr source,
+            shared_ptr<dwarf::spec::type_die> source_data_type,
             antlr::tree::Tree *source_infix_stub,
             module_ptr sink,
-            boost::shared_ptr<dwarf::spec::type_die> sink_data_type,
+            shared_ptr<dwarf::spec::type_die> sink_data_type,
             antlr::tree::Tree *sink_infix_stub,
             antlr::tree::Tree *refinement,
 			bool source_is_on_left,
@@ -47,19 +57,27 @@ namespace cake
 			
 	void value_conversion::emit_preamble()
 	{
-        emit_header(boost::optional<std::string>(to_typename), false, false); // no struct keyword, no template<>
-        m_out << "::" << std::endl;
+        emit_header(optional<string>(to_typename), false, false); // no struct keyword, no template<>
+        m_out << "::" << endl;
         emit_signature(false, false); // NO return type, NO default argument
-        m_out << std::endl << "{" << std::endl;
+        m_out << endl << "{" << endl;
         m_out.inc_level();
 	}
 	
-	void value_conversion::emit_header(boost::optional<std::string> return_typename, 
+	void value_conversion::emit_header(optional<string> return_typename, 
 		bool emit_struct_keyword/* = true*/,
 		bool emit_template_prefix /* = true */,
 		bool emit_return_typename /* = true */
 		)
 	{
+		int rule_tag = w.m_d.val_corresp_numbering[shared_from_this()];
+// 		cerr << "Retrieved number " << rule_tag 
+// 			<< " for rule relating source data type " 
+// 			<< *this->source_data_type
+// 			<< " with sink data type "
+// 			<< *this->sink_data_type
+// 			<< endl;
+		
 		m_out << (emit_template_prefix ? "template <>\n" : "" )
             << (emit_struct_keyword ? "struct " : "")
 			<< ((emit_return_typename && return_typename) ? *return_typename + "\n" : "")
@@ -70,8 +88,8 @@ namespace cake
             << ", "
 			<< source_fq_namespace() << "::marker, " // FromComponent
 			<< sink_fq_namespace() << "::marker, " // ToComponent
-            << "0" // RuleTag
-            << ">" << std::endl;
+            << rule_tag // RuleTag
+            << ">" << endl;
 	}	
 	void value_conversion::emit_signature(bool emit_return_type/* = true*/, 
 		bool emit_default_argument /* = true */) 
@@ -86,12 +104,12 @@ namespace cake
 	void value_conversion::emit_forward_declaration()
 	{
         emit_header(false, true);
-		m_out << "{" << std::endl;
+		m_out << "{" << endl;
 		m_out.inc_level();
 		emit_signature();
 		m_out << ";";
         m_out.dec_level();
-        m_out << "};" << std::endl;
+        m_out << "};" << endl;
 	}
 
 	void value_conversion::emit_function_name()
@@ -108,45 +126,41 @@ namespace cake
             << ", "
 			<< source_fq_namespace() << "::marker, " // FromComponent
 			<< sink_fq_namespace() << "::marker, " // ToComponent
-            << "0" // RuleTag
-            << ">" << std::endl;
+            << w.m_d.val_corresp_numbering[shared_from_this()] // RuleTag
+            << ">" << endl;
 
 	}
 	
 	// HACK to output the type of a pointer to this conversion function
 	void value_conversion::emit_cxx_function_ptr_type(
-		boost::optional<const std::string& > decl_name)
+		optional<const string& > decl_name)
 	{
 		m_out << "void *(*" << (decl_name ? *decl_name : "")
 			<< ")(" << from_typename << "* ,"
-				<< to_typename << " *)" << std::endl;
+				<< to_typename << " *)" << endl;
 	}
 	
 	
-	std::vector< std::pair < boost::shared_ptr<dwarf::spec::type_die>,
-		                             boost::shared_ptr<dwarf::spec::type_die>
-									>
-							> value_conversion::get_dependencies()
+	vector< pair < shared_ptr<type_die>, shared_ptr<type_die> > > 
+	value_conversion::get_dependencies()
 	{
-		return std::vector< std::pair < boost::shared_ptr<dwarf::spec::type_die>,
-		                             boost::shared_ptr<dwarf::spec::type_die>
-									> >();
+		return vector< pair < shared_ptr<type_die>, shared_ptr<type_die> > >();
 	}
-		
+	
 	void reinterpret_value_conversion::emit_body()
 	{
 		m_out << "if (__cake_p_to) *__cake_p_to = *reinterpret_cast<const " 
-			<< w.get_type_name(sink_data_type) << "*>(&__cake_from);" << std::endl
+			<< w.get_type_name(sink_data_type) << "*>(&__cake_from);" << endl
 			<< "return *reinterpret_cast<const " 
-			<< w.get_type_name(sink_data_type) << "*>(&__cake_from);" << std::endl;
+			<< w.get_type_name(sink_data_type) << "*>(&__cake_from);" << endl;
 	}
 			
 	struct member_has_name
-	 : public std::unary_function<boost::shared_ptr<dwarf::spec::member_die> , bool>
+	 : public std::unary_function<shared_ptr<member_die> , bool>
 	{
-		std::string m_name;
-		member_has_name(const std::string& name) : m_name(name) {}
-		bool operator()(boost::shared_ptr<dwarf::spec::member_die> p_member) const
+		string m_name;
+		member_has_name(const string& name) : m_name(name) {}
+		bool operator()(shared_ptr<member_die> p_member) const
 		{
 			return p_member->get_name() && (*p_member->get_name() == m_name);
 		}
@@ -205,11 +219,11 @@ namespace cake
 			(std::find_if(
 					value_corresps.first, value_corresps.second, 
 					[found_target_field_type, found_source_field_type](const ent& arg) { 
-						/* std::cerr << "Testing corresp with source "
+						/* cerr << "Testing corresp with source "
 							<< *(arg.second->source_data_type)
 							<< " and sink " 
 							<< *(arg.second->sink_data_type)
-							<< std::endl; */
+							<< endl; */
 						return (arg.second->sink_data_type->iterator_here()
 									== found_target_field_type->iterator_here()
 							) && 
@@ -227,11 +241,11 @@ namespace cake
 		
 			))
 		{
-			std::cerr << "Exception refers to target field " << *found_target_field
+			cerr << "Exception refers to target field " << *found_target_field
 				<< " and ";
-			if (unique_source_field) std::cerr << " and source field " << *found_source_field;
-			else std::cerr << " with no unique source";
-			std::cerr << std::endl;
+			if (unique_source_field) cerr << " and source field " << *found_source_field;
+			else cerr << " with no unique source";
+			cerr << endl;
 			
 			RAISE(owner->corresp, "corresponding fields lack corresponding type");
 		}
@@ -239,16 +253,19 @@ namespace cake
 
 	structural_value_conversion::structural_value_conversion(wrapper_file& w,
 			srk31::indenting_ostream& out, 
-			const basic_value_conversion& basic)
+			const basic_value_conversion& basic,
+			bool init_only,
+			bool& init_is_identical)
 		: value_conversion(w, out, basic), source_module(w.module_of_die(source_data_type)),
 			target_module(w.module_of_die(sink_data_type)),
-			modules(link_derivation::sorted(std::make_pair(source_module, target_module)))
+			modules(link_derivation::sorted(make_pair(source_module, target_module)))
 	{
 		/* Find explicitly assigned-to fields:
 		 * the map is from the assigned-to- field
 		 * to the rule details.
-		 * NOTE that this includes non-toplevel field corresps.  */
+		 * NOTE that this should non-toplevel field corresps (FIXME).  */
 		//std::map<definite_member_name, member_mapping_rule> field_corresps;
+		init_is_identical = true; // ... unless we find otherwise
 		if (refinement)
 		{
 			INIT;
@@ -264,7 +281,7 @@ namespace cake
 						BIND2(refinementRule, leftInfixStub);
 						BIND2(refinementRule, rightInfixStub);
 						BIND2(refinementRule, rightValuePattern);
-						explicit_field_corresps.insert(std::make_pair(
+						explicit_field_corresps.insert(make_pair(
 							read_definite_member_name(
 								source_is_on_left ? rightValuePattern : leftValuePattern),
 								(member_mapping_rule_base)
@@ -273,10 +290,10 @@ namespace cake
 										this,
 									/* definite_member_name target; */ 
 										read_definite_member_name(source_is_on_left ? rightValuePattern : leftValuePattern),
-									/* boost::optional<definite_member_name> unique_source_field; */
+									/* optional<definite_member_name> unique_source_field; */
 										GET_TYPE(source_is_on_left ? leftInfixStub : rightInfixStub) == CAKE_TOKEN(DEFINITE_MEMBER_NAME) ?
 											read_definite_member_name(source_is_on_left ? leftInfixStub : rightInfixStub)
-											: boost::optional<definite_member_name>(),
+											: optional<definite_member_name>(),
 									/* antlr::tree::Tree *stub; */
 										source_is_on_left ? leftValuePattern : rightValuePattern,
 									/* module_ptr pre_context; */
@@ -292,13 +309,13 @@ namespace cake
 					break;
 					case (CAKE_TOKEN(LR_DOUBLE_ARROW)):
 					{
-						assert(source_is_on_left);
+						if (!source_is_on_left) continue; // this field rule is not relevant
 						INIT;
 						BIND2(refinementRule, leftStubExpr);
 						BIND2(refinementRule, leftInfixStub);
 						BIND2(refinementRule, rightInfixStub);
 						BIND2(refinementRule, rightValuePattern);
-						explicit_field_corresps.insert(std::make_pair(
+						explicit_field_corresps.insert(make_pair(
 							read_definite_member_name(rightValuePattern),
 							(member_mapping_rule_base)
 							{
@@ -306,10 +323,10 @@ namespace cake
 									this,
 								/* definite_member_name target; */ 
 									read_definite_member_name(rightValuePattern),
-								/* boost::optional<definite_member_name> unique_source_field; */
+								/* optional<definite_member_name> unique_source_field; */
 									GET_TYPE(leftStubExpr) == CAKE_TOKEN(DEFINITE_MEMBER_NAME) ?
 										read_definite_member_name(leftStubExpr)
-										: boost::optional<definite_member_name>(),
+										: optional<definite_member_name>(),
 								/* antlr::tree::Tree *stub; */
 									leftStubExpr,
 								/* module_ptr pre_context; */
@@ -326,13 +343,13 @@ namespace cake
 					break;
 					case (CAKE_TOKEN(RL_DOUBLE_ARROW)):
 					{
-						assert(!source_is_on_left);
+						if (source_is_on_left) continue; // this field rule is not relevant
 						INIT;
 						BIND2(refinementRule, leftValuePattern);
 						BIND2(refinementRule, leftInfixStub);
 						BIND2(refinementRule, rightInfixStub);
 						BIND2(refinementRule, rightStubExpr);
-						explicit_field_corresps.insert(std::make_pair(
+						explicit_field_corresps.insert(make_pair(
 							read_definite_member_name(leftValuePattern),
 							(member_mapping_rule_base)
 							{
@@ -340,10 +357,10 @@ namespace cake
 									this,
 								/* definite_member_name target; */ 
 									read_definite_member_name(leftValuePattern),
-								/* boost::optional<definite_member_name> unique_source_field; */
+								/* optional<definite_member_name> unique_source_field; */
 									GET_TYPE(rightStubExpr) == CAKE_TOKEN(DEFINITE_MEMBER_NAME) ?
 										read_definite_member_name(rightStubExpr)
-										: boost::optional<definite_member_name>(),
+										: optional<definite_member_name>(),
 								/* antlr::tree::Tree *stub; */
 									rightStubExpr,
 								/* module_ptr pre_context; */
@@ -360,26 +377,72 @@ namespace cake
 					break;
 					case (CAKE_TOKEN(LR_DOUBLE_ARROW_Q)):
 					{
-						assert(source_is_on_left);
+						if (!source_is_on_left) continue; // not relevant in this direction
+						init_is_identical = false;
+						if (!init_only) continue; // not relevant unless we're generating a distinct init rule
 						INIT;
 						BIND2(refinementRule, leftStubExpr);
 						BIND2(refinementRule, leftInfixStub);
 						BIND2(refinementRule, rightInfixStub);
 						BIND2(refinementRule, rightValuePattern);
-
-						assert(false);
+						explicit_field_corresps.insert(make_pair(
+							read_definite_member_name(rightValuePattern),
+							(member_mapping_rule_base)
+							{
+								/* structural_value_conversion *owner, */
+									this,
+								/* definite_member_name target; */ 
+									read_definite_member_name(rightValuePattern),
+								/* optional<definite_member_name> unique_source_field; */
+									GET_TYPE(leftStubExpr) == CAKE_TOKEN(DEFINITE_MEMBER_NAME) ?
+										read_definite_member_name(leftStubExpr)
+										: optional<definite_member_name>(),
+								/* antlr::tree::Tree *stub; */
+									leftStubExpr,
+								/* module_ptr pre_context; */
+									w.module_of_die(source_data_type),
+								/* antlr::tree::Tree *pre_stub; */
+									leftInfixStub,
+								/* module_ptr post_context; */
+									w.module_of_die(sink_data_type),
+								/* antlr::tree::Tree *post_stub; */
+									rightInfixStub
+							}));
 					}
 					break;
 					case (CAKE_TOKEN(RL_DOUBLE_ARROW_Q)):
 					{
-						assert(!source_is_on_left);
+						if (source_is_on_left) continue; // not relevant in this direction
+						init_is_identical = false;
+						if (!init_only) continue; // not relevant unless we're generating a distinct init rule
 						INIT;
 						BIND2(refinementRule, leftValuePattern);
 						BIND2(refinementRule, leftInfixStub);
 						BIND2(refinementRule, rightInfixStub);
 						BIND2(refinementRule, rightStubExpr);
-
-						assert(false);
+						explicit_field_corresps.insert(make_pair(
+							read_definite_member_name(leftValuePattern),
+							(member_mapping_rule_base)
+							{
+								/* structural_value_conversion *owner, */
+									this,
+								/* definite_member_name target; */ 
+									read_definite_member_name(leftValuePattern),
+								/* optional<definite_member_name> unique_source_field; */
+									GET_TYPE(rightStubExpr) == CAKE_TOKEN(DEFINITE_MEMBER_NAME) ?
+										read_definite_member_name(rightStubExpr)
+										: optional<definite_member_name>(),
+								/* antlr::tree::Tree *stub; */
+									rightStubExpr,
+								/* module_ptr pre_context; */
+									w.module_of_die(sink_data_type),
+								/* antlr::tree::Tree *pre_stub; */
+									rightInfixStub,
+								/* module_ptr post_context; */
+									w.module_of_die(source_data_type),
+								/* antlr::tree::Tree *post_stub; */
+									leftInfixStub
+							}));
 					}
 					break;
 					default: RAISE(refinementRule, "expected a correspondence operator");
@@ -400,22 +463,22 @@ namespace cake
 			if (i_mapping->first.size() == 1)
 			{
 				explicit_toplevel_mappings.insert(
-					std::make_pair(
+					make_pair(
 						i_mapping->first.at(0), &i_mapping->second));
 			}
 			else
 			{
-				std::cerr << "WARNING: found a non-toplevel mapping (FIXME)" << std::endl;
+				cerr << "WARNING: found a non-toplevel mapping (FIXME)" << endl;
 			}
 		}
 		/* The NON-toplevel mappings are useful for our dependencies only.
-		 * We should collect them togther into FIXME the a dependencies description somehow. */
+		 * We should collect them togther into FIXME the dependencies description somehow. */
 
 		/* Name-match toplevel subtrees not mentioned so far. */
 		for (auto i_member
-			 = boost::dynamic_pointer_cast<dwarf::spec::structure_type_die>(sink_data_type)
+			 = dynamic_pointer_cast<structure_type_die>(sink_data_type)
 			 	->member_children_begin();
-			i_member != boost::dynamic_pointer_cast<dwarf::spec::structure_type_die>(sink_data_type)
+			i_member != dynamic_pointer_cast<structure_type_die>(sink_data_type)
 			 	->member_children_end();
 			i_member++)
 		{
@@ -426,7 +489,7 @@ namespace cake
 				/* We have a name-matching candidate -- look for like-named
 				 * field in opposing structure. */
 
-				auto source_as_struct = boost::dynamic_pointer_cast<dwarf::spec::structure_type_die>(
+				auto source_as_struct = dynamic_pointer_cast<structure_type_die>(
 					source_data_type);
 
 				auto found = std::find_if(source_as_struct->member_children_begin(),
@@ -434,18 +497,18 @@ namespace cake
 					member_has_name(*(*i_member)->get_name()));
 				if (found != source_as_struct->member_children_end())
 				{
-					std::cerr << "Matched a name " << *(*i_member)->get_name()
+					cerr << "Matched a name " << *(*i_member)->get_name()
 						<< " in DIEs " << *source_as_struct
 						<< " and " << *sink_data_type
-						<< std::endl;
-					name_matched_mappings.insert(std::make_pair(
+						<< endl;
+					name_matched_mappings.insert(make_pair(
 						*(*i_member)->get_name(),
 						(member_mapping_rule_base){
 							/* structural_value_conversion *owner, */
 								this,
 							/* definite_member_name target; */ 
 								definite_member_name(1, *(*i_member)->get_name()),
-							/* boost::optional<definite_member_name> unique_source_field; */
+							/* optional<definite_member_name> unique_source_field; */
 								definite_member_name(1, *(*i_member)->get_name()),
 							/* antlr::tree::Tree *stub; */ 
 								make_definite_member_name_expr(
@@ -462,16 +525,16 @@ namespace cake
 				}
 				else
 				{
-					std::cerr << "Didn't match name " << *(*i_member)->get_name()
+					cerr << "Didn't match name " << *(*i_member)->get_name()
 						<< " from DIE " << *sink_data_type
 						<< " in DIE " << *source_as_struct
-						<< std::endl;
+						<< endl;
 				}
 			}
 		}
 	}
 
-	std::vector< value_conversion::dep > structural_value_conversion::get_dependencies()
+	vector< value_conversion::dep > structural_value_conversion::get_dependencies()
 	{
 		std::set<dep> working;
 	
@@ -481,13 +544,13 @@ namespace cake
 				i_mapping != name_matched_mappings.end();
 				i_mapping++)
 		{
-			auto pair = std::make_pair(
-					*boost::dynamic_pointer_cast<dwarf::spec::member_die>(
-						boost::dynamic_pointer_cast<dwarf::spec::with_named_children_die>(this->source_data_type)
+			auto pair = make_pair(
+					*dynamic_pointer_cast<member_die>(
+						dynamic_pointer_cast<with_named_children_die>(this->source_data_type)
 							->named_child(i_mapping->second.target.at(0))
 						)->get_type(),
-					*boost::dynamic_pointer_cast<dwarf::spec::member_die>(
-						boost::dynamic_pointer_cast<dwarf::spec::with_named_children_die>(this->sink_data_type)
+					*dynamic_pointer_cast<member_die>(
+						dynamic_pointer_cast<with_named_children_die>(this->sink_data_type)
 							->named_child(i_mapping->second.target.at(0))
 						)->get_type()
 					);
@@ -502,16 +565,23 @@ namespace cake
 			// FIXME: to accommodate foo.bar <--> foo.bar,
 			// we need to capture that the dependency *must* adhere to the 
 			// body of rules included by the Cake programmer
-			auto pair = std::make_pair(
-					*boost::dynamic_pointer_cast<dwarf::spec::member_die>(
-						boost::dynamic_pointer_cast<dwarf::spec::with_named_children_die>(
+			
+			// FIXME: what if we don't have a source member?!
+			auto source_member = dynamic_pointer_cast<member_die>(
+						dynamic_pointer_cast<with_named_children_die>(
 							this->source_data_type
-						)->named_child(i_mapping->first))->get_type(),
-					*boost::dynamic_pointer_cast<dwarf::spec::member_die>(
-						boost::dynamic_pointer_cast<dwarf::spec::with_named_children_die>(
+						)->named_child(i_mapping->first));
+			if (!source_member) continue; // HACK: say "no dependencies", for now...
+			// ... in practice, this will be caught by the C++ compiler
+			
+			auto sink_member = dynamic_pointer_cast<member_die>(
+						dynamic_pointer_cast<with_named_children_die>(
 							this->sink_data_type
-						)->named_child(i_mapping->second->target.at(0)))->get_type()
-					);
+						)->named_child(i_mapping->second->target.at(0)));
+			auto source_member_type = *source_member->get_type();
+			auto sink_member_type = *sink_member->get_type();
+			
+			auto pair = make_pair(source_member_type, sink_member_type);
 
 			assert(pair.first && pair.second);
 			auto retval = working.insert(pair);
@@ -520,23 +590,23 @@ namespace cake
 			// that have the same string, then group these as constraints 
 			// and add them to the dependency
 		}
-		std::cerr << "DEPENDENCIES of conversion " 
+		cerr << "DEPENDENCIES of conversion " 
 			<< " from " << *this->source_data_type
 			<< " to " << *this->sink_data_type
-			<< ": total " << working.size() << std::endl;
-		std::cerr << "Listing:" << std::endl;
+			<< ": total " << working.size() << endl;
+		cerr << "Listing:" << endl;
 		for (auto i_dep = working.begin(); i_dep != working.end(); i_dep++)
 		{
-			std::cerr << "require from " << *i_dep->first << " to " << *i_dep->second << std::endl;
+			cerr << "require from " << *i_dep->first << " to " << *i_dep->second << endl;
 		}		
-		return std::vector< dep >(working.begin(), working.end());
+		return vector< dep >(working.begin(), working.end());
 	}
 	
 	void structural_value_conversion::emit_body()
 	{
 		/* Create or find buffer */
-		m_out << w.get_type_name(sink_data_type) << " __cake_tmp, *__cake_p_buf;" << std::endl
-			<< "if (__cake_p_to) __cake_p_buf = __cake_p_to; else __cake_p_buf = &__cake_tmp;" << std::endl;
+		m_out << w.get_type_name(sink_data_type) << " __cake_tmp, *__cake_p_buf;" << endl
+			<< "if (__cake_p_to) __cake_p_buf = __cake_p_to; else __cake_p_buf = &__cake_tmp;" << endl;
 		/* HACK: create a non-const "from" reference, because we want to index
 		 * our templates by CV-qualifier-free typenames. */
 		m_out << "auto __cake_nonconst_from = "
@@ -546,57 +616,35 @@ namespace cake
 						"__typeof(__cake_from)"
 					" >::type "
 				" >::type &"
-			" >(__cake_from);" << std::endl;
+			" >(__cake_from);" << endl;
 
-		/* Emit toplevel field mappings right now */
+		/* These are module--name pairs for the source and sink modules. 
+		 * FIXME: get rid of these -- this->{source,sink} should do fine. */
+		auto pre_context_pair = /*std::make_pair(i_name_matched->second.pre_context, 
+			w.m_d.name_of_module(i_name_matched->second.pre_context));*/
+			make_pair(this->source, w.m_d.name_of_module(this->source));
+		auto post_context_pair = /*std::make_pair(i_name_matched->second.post_context, 
+			w.m_d.name_of_module(i_name_matched->second.post_context));*/
+			make_pair(this->sink, w.m_d.name_of_module(this->sink));
+		
+		/* Here's how we emit these.
+		 * 
+		 * 0. Build the list of sink-side (target) fields we are going to write.
+		 * 1. Build an environment containing all the source-side fields that these depend on.
+		 * 2. For each target field, emit its pre-stub (if any) and extend the environment with the result.
+		 * 3. Crossover the environment. This has the effect of applying depended-on correspondences.
+		 * 4. For each target field, emit its post-stub (if any) and extend the environment with the result.
+		 * 5. For each target field, assign its value.
+		 */
+		
+		/* 0. Build the list of sink-side (target) fields we are going to write. */
+		map<string, member_mapping_rule *> target_fields_to_write;
 		for (auto i_name_matched = name_matched_mappings.begin();
 				i_name_matched != name_matched_mappings.end();
 				i_name_matched++)
 		{
-			/* These are module--name pairs for the source and sink modules. */
-			auto pre_context_pair = std::make_pair(i_name_matched->second.pre_context, 
-				w.m_d.name_of_module(i_name_matched->second.pre_context));
-			auto post_context_pair = std::make_pair(i_name_matched->second.post_context, 
-				w.m_d.name_of_module(i_name_matched->second.post_context));
-			
-			/* All dependencies should be in place now -- check this. */
-			i_name_matched->second.check_sanity();
-
-			/* Build an environment for the code fragment handling this field. */
-// #define REMOVE_CONST(s) "boost::remove_const<__typeof(" + (s) + ")>::type"
-#define REMOVE_CONST(s) (s)
-			wrapper_file::environment env;
-			// insert the whole source object, bound by magic "__cake_from" ident
-			// -- NOTE: must remove this before crossover, or we'll get an infinite loop!
-			env.insert(std::make_pair(std::string("__cake_from"), // cake name -- we will want "this" too, eventually
-				(wrapper_file::bound_var_info) {
-					"from", // cxx name
-					/* source_data_type, */ REMOVE_CONST(std::string("__cake_nonconst_from")), // typeof
-					source_module
-					}));
-			
-			/* Since we need not have a unique source field (might e.g. be an expression
-			 * involving multiple source fields, build a Cake environment containing
-			 * all source fields. */
-			for (auto i_field = boost::dynamic_pointer_cast<dwarf::spec::with_data_members_die>(
-						source_data_type)->member_children_begin();
-					i_field != boost::dynamic_pointer_cast<dwarf::spec::with_data_members_die>(
-						source_data_type)->member_children_end();
-					i_field++)
-			{
-				assert((*i_field)->get_name());
-
-				std::cerr << "adding name " << *(*i_field)->get_name() << std::endl;
-				env.insert(std::make_pair(*(*i_field)->get_name(),
-					(wrapper_file::bound_var_info) {
-						std::string("__cake_nonconst_from.") + *(*i_field)->get_name(), // cxx name
-						REMOVE_CONST(std::string("__cake_nonconst_from.") + *(*i_field)->get_name()), // typeof
-						source_module
-					}));
-			}
-			
-			std::string target_field_selector;
-			std::ostringstream s;
+			string target_field_selector;
+			ostringstream s;
 			for (auto i_name_part = i_name_matched->second.target.begin();
 				i_name_part != i_name_matched->second.target.end();
 				i_name_part++)
@@ -606,17 +654,92 @@ namespace cake
 				s << *i_name_part;
 			}
 			target_field_selector = s.str();
+			
+			assert(
+				target_fields_to_write.find(target_field_selector)
+				 == target_fields_to_write.end()
+			); // i.e. that this key is not already present
+			
+			target_fields_to_write.insert(make_pair(target_field_selector, &i_name_matched->second));
+		}
+		for (auto i_explicit_toplevel = explicit_toplevel_mappings.begin();
+				i_explicit_toplevel != explicit_toplevel_mappings.end();
+				i_explicit_toplevel++)
+		{
+			// assert uniqueness in the multimap for now
+			auto equal_range = explicit_toplevel_mappings.equal_range(i_explicit_toplevel->first);
+			auto copied_first = equal_range.first;
+			assert(++copied_first == equal_range.second); // means "size == 1"
+			
+			target_fields_to_write.insert(*i_explicit_toplevel);
+		}
+		
+		/* 1. Build an environment containing all the source-side fields that these depend on. */
+		wrapper_file::environment basic_env;
+		// insert the whole source object, bound by magic "__cake_from" ident
+		// -- NOTE: must remove this before crossover, or we'll get an infinite loop!
+		// FIXME: do we still need a binding of Cake name __cake_from?
+		basic_env.insert(make_pair(string("__cake_from"), // cake name -- we will want "this" too, eventually
+			(wrapper_file::bound_var_info) {
+				"__cake_from", // cxx name
+				/* source_data_type, */ "__cake_nonconst_from", // typeof
+				source_module
+				}));
+		// approximate: all toplevel source-side fields, no non-toplevel ones
+		/* Since we need not have a unique source field (might e.g. be an expression
+		 * involving multiple source fields), build a Cake environment containing
+		 * all source fields. */
+		for (auto i_field = dynamic_pointer_cast<with_data_members_die>(
+					source_data_type)->member_children_begin();
+				i_field != dynamic_pointer_cast<with_data_members_die>(
+					source_data_type)->member_children_end();
+				i_field++)
+		{
+			assert((*i_field)->get_name());
+
+			cerr << "adding name " << *(*i_field)->get_name() << endl;
+			basic_env.insert(make_pair(*(*i_field)->get_name(),
+				(wrapper_file::bound_var_info) {
+					string("__cake_nonconst_from.") + *(*i_field)->get_name(), // cxx name
+					"__cake_nonconst_from." + *(*i_field)->get_name(), // typeof
+					source_module
+				}));
+		}
+		// environment complete for now; create a context out of this environment
+		wrapper_file::context ctxt(w, source_module, target_module, basic_env);
+		ctxt.opt_val_corresp = (wrapper_file::context::val_info_s){ this->corresp };
+
+		/* 2. For each target field, emit its pre-stub (if any) and extend the environment with the result.
+		 * Note that the pre-stub needs to execute in a temporarily extended environment, with
+		 * "this", "here" and "there". Rather than start a new C++ naming context, we just hack
+		 * our environment to map these Cake-keyword names to the relevant C++ expressions,
+		 * then undo this hackery after we've bound a name to the result. Otherwise, we wouldn't be
+		 * able to bind this name using "auto" and have it stay in scope for later. */
+		for (auto i_target = target_fields_to_write.begin();
+				i_target != target_fields_to_write.end();
+				i_target++)
+		{
+			// sanity check
+			assert(pre_context_pair.first == this->source);
+			assert(post_context_pair.first == this->sink);
+			
+			/* All dependencies should be in place now -- check this. */
+			i_target->second->check_sanity();
+			
+			string target_field_selector = i_target->first;
+
 			/* If we *do* have a unique source field, then a bunch of other Cake idents
 			 * are defined: "this", "here" and "there" (but not "that" -- I think). */
-			boost::optional<std::string> unique_source_field_selector;
-			if (i_name_matched->second.unique_source_field)
+			optional<string> unique_source_field_selector;
+			wrapper_file::environment extra_env;
+			if (i_target->second->unique_source_field)
 			{
-				std::ostringstream s;
-				for (auto i_name_part = i_name_matched->second.unique_source_field->begin();
-					i_name_part != i_name_matched->second.unique_source_field->end();
+				ostringstream s;
+				for (auto i_name_part = i_target->second->unique_source_field->begin();
+					i_name_part != i_target->second->unique_source_field->end();
 					i_name_part++)
 				{
-					if (i_name_part != i_name_matched->second.unique_source_field->begin())
+					if (i_name_part != i_target->second->unique_source_field->begin())
 					{ s << "."; }
 					s << *i_name_part;
 				}
@@ -625,109 +748,173 @@ namespace cake
 				// It may use "this", "here" and "there" (but not "that").
 				// So first we insert magic "__cake_this", "__cake_here" and "__cake_there"
 				// entries to the Cake environment for this.
-				env.insert(std::make_pair("__cake_this",
+				extra_env.insert(make_pair("__cake_this",
 					(wrapper_file::bound_var_info) {
 						"__cake_nonconst_from." + *unique_source_field_selector, // cxx name
-						REMOVE_CONST("__cake_nonconst_from." + *unique_source_field_selector), // typeof
+						"__cake_nonconst_from." + *unique_source_field_selector, // typeof
 						source_module
 					}));
-				env.insert(std::make_pair("__cake_here",
+				extra_env.insert(make_pair("__cake_here",
 					(wrapper_file::bound_var_info) {
 						"&__cake_from." + *unique_source_field_selector, // cxx name
-						REMOVE_CONST("&__cake_nonconst_from." + *unique_source_field_selector), // typeof
+						"&__cake_nonconst_from." + *unique_source_field_selector, // typeof
 						source_module
 					}));
 			}
 			// we always have a "there"
-			env.insert(std::make_pair("__cake_there",
+			extra_env.insert(make_pair("__cake_there",
 				(wrapper_file::bound_var_info) {
 					"&__cake_p_buf->" + target_field_selector, // cxx name
 					"&__cake_p_buf->" + target_field_selector, // typeof
 					source_module
 				}));
 			
-			// environment complete for now; create a context out of this environment
-			wrapper_file::context ctxt(w, source_module, target_module, env);
-
-			/* First we evaluate the source expression. */
+			// compute the merged environment
+			auto extended_env1 = w.merge_environment(ctxt.env, extra_env);
+			ctxt.env = extended_env1;
+			
+			/* Evaluate the source expression in this environment. */
 			auto status1 = w.emit_stub_expression_as_statement_list(ctxt,
-				i_name_matched->second.stub/*,
+				i_target->second->stub/*,
 				sink_data_type*/);
-				
-			auto new_env1 = w.merge_environment(ctxt.env, status1.new_bindings);
-			if (status1.result_fragment != w.NO_VALUE) new_env1["__cake_it"] = 
+			
+			/* Keep things simple: assert there are no new bindings. 
+			 * If there are, we'll have to stash the bindings with a different name, then 
+			 * re-establish them in the post-stub. */
+			assert(status1.new_bindings.size() == 0);
+			// auto new_env1 = w.merge_environment(ctxt.env, status1.new_bindings);
+			/* Bind the result under a special name (not __cake_it). 
+			 * The source expression should always yield a value. */
+			assert(status1.result_fragment != w.NO_VALUE && status1.result_fragment != "");
+			// we extend the *basic* (shared) environment
+			extended_env1["__cake_it"] = 
 				(wrapper_file::bound_var_info) {
 					status1.result_fragment,
 					status1.result_fragment,  //shared_ptr<type_die>(),
 					ctxt.modules.source };
 			
-			ctxt.env = new_env1;
 			/* Now we can evaluate the pre-stub if there is one. It should use "this" if
 			 * it depends on the field value. */
-			auto new_env2 = new_env1; // provisional value
-			if (i_name_matched->second.pre_stub)
+			auto extended_env2 = extended_env1; // provisional value
+			if (i_target->second->pre_stub && GET_CHILD_COUNT(i_target->second->pre_stub) > 0)
 			{
 				auto status2 = w.emit_stub_expression_as_statement_list(ctxt,
-					i_name_matched->second.pre_stub);
-				new_env2 = w.merge_environment(ctxt.env, status2.new_bindings);
-					if (status2.result_fragment != w.NO_VALUE) new_env2["__cake_it"] = 
+					i_target->second->pre_stub);
+				extended_env2 = w.merge_environment(extended_env1, status2.new_bindings);
+					if (status2.result_fragment != w.NO_VALUE) extended_env2["__cake_it"] = 
 						(wrapper_file::bound_var_info) {
 							status2.result_fragment,
 							status2.result_fragment,  //shared_ptr<type_die>(),
 							ctxt.modules.source 
 						};
 			}
+			// stash the result in the basic env
+			assert(extended_env2.find("__cake_it") != extended_env2.end());
+			basic_env["__cake_source_" + target_field_selector]
+			 = extended_env2["__cake_it"];
 			
-			/* Now we need to "cross over" the environment. This crossover is different
-			 * from the one in the wrapper code. We don't need to allocate or sync
-			 * co-objects: the allocation has already been done, and we're in the middle
-			 * of a sync process right now, most likely. Nevertheless, crossover_environment
-			 * should work. But first we erase "this", "here" and "there" from the environment
-			 * if we added them -- these are side-specific. */
-			// crossover point
-			ctxt.modules.current = target_module;
-			if (i_name_matched->second.unique_source_field)
+			// revert to the basic env, with this extension
+			ctxt.env = basic_env;
+		} // end for i_target
+		/* Now our environment contains bindings for each evaluated source expression,
+		 * we can delete "from" and the original fields from the environment. */
+		for (auto i_field = dynamic_pointer_cast<with_data_members_die>(
+					source_data_type)->member_children_begin();
+				i_field != dynamic_pointer_cast<with_data_members_die>(
+					source_data_type)->member_children_end();
+				i_field++)
+		{
+			assert((*i_field)->get_name());
+
+			basic_env.erase(*(*i_field)->get_name());
+		} 
+		basic_env.erase("__cake_from");
+
+		/* 3. Crossover the environment. This has the effect of applying depended-on correspondences. */
+		ctxt.modules.current = target_module;
+		assert(ctxt.env.find("__cake_this") == ctxt.env.end());
+		assert(ctxt.env.find("__cake_here") == ctxt.env.end());
+		assert(ctxt.env.find("__cake_there") == ctxt.env.end());
+		/* Now we need to "cross over" the environment. This crossover is different
+		 * from the one in the wrapper code. We don't need to allocate or sync
+		 * co-objects: the allocation has already been done, and we're in the middle
+		 * of a sync process right now, most likely. Nevertheless, crossover_environment
+		 * should work. But first we erase "this", "here" and "there" from the environment
+		 * if we added them -- these are side-specific. */
+		// crossover point
+		ctxt.modules.current = target_module;
+		m_out << "// source->sink crossover point" << endl;
+		auto crossed_env = w.crossover_environment(source_module, basic_env, target_module, 
+			/* no constraints */ 
+			std::multimap< string, shared_ptr<type_die> >());
+		
+		/* 4, 5. Now finish the job: for each target field, compute any post-stub and assign. */
+		for (auto i_target = target_fields_to_write.begin();
+				i_target != target_fields_to_write.end();
+				i_target++)
+		{
+			// always start with crossed-over environment
+			ctxt.env = crossed_env;
+			
+			// HACK: code cloned from above
+			optional<string> unique_source_field_selector;
+			if (i_target->second->unique_source_field)
 			{
-				new_env2.erase("__cake_this");
-				new_env2.erase("__cake_here");
+				ostringstream s;
+				for (auto i_name_part = i_target->second->unique_source_field->begin();
+					i_name_part != i_target->second->unique_source_field->end();
+					i_name_part++)
+				{
+					if (i_name_part != i_target->second->unique_source_field->begin())
+					{ s << "."; }
+					s << *i_name_part;
+				}
+				unique_source_field_selector = s.str();
 			}
-			new_env2.erase("__cake_there");
-			new_env2.erase("__cake_from");
-			m_out << "// source->sink crossover point" << std::endl;
-			ctxt.env = w.crossover_environment(source_module, new_env2, target_module, 
-				/* no constraints */ 
-				std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >());
+				
+			// XXX: recover the stashed source value __cake_source + target_field_selector!
+			// In the simple-source-expression, no-pre-stub case, how do we map from field name to this value?
+			// -- the target side will have a name for it (not necessarily the source name!) 
+			// -- we want this name to map to __cake_source_ + target_field_selector
+			// In the more complex pre-stub and/or source expression case, how do we reference __cake_it?
+			// -- the stub can *only* use "here", "there" and "that"
+			// AH. It's a non-problem. Implicitly, we *always* write __cake_it!
+			// That's all the sink-side rule ever does -- there are no sink-side expressions.
 			
 			/* Now we add "that", "there" and "here" (but not "this") to the environment. */
-			if (i_name_matched->second.unique_source_field)
+			if (i_target->second->unique_source_field)
 			{
-				env.insert(std::make_pair("__cake_that",
+				ctxt.env.insert(make_pair("__cake_that",
 					(wrapper_file::bound_var_info) {
 						"__cake_nonconst_from." + *unique_source_field_selector, // cxx name
-						REMOVE_CONST("__cake_nonconst_from." + *unique_source_field_selector), // typeof
+						"__cake_nonconst_from." + *unique_source_field_selector, // typeof
 						target_module
 					}));
 
-				env.insert(std::make_pair("__cake_there",
+				ctxt.env.insert(make_pair("__cake_there",
 					(wrapper_file::bound_var_info) {
 						"&__cake_nonconst_from." + *unique_source_field_selector, // cxx name
-						REMOVE_CONST("&__cake_nonconst_from." + *unique_source_field_selector), // typeof
+						"&__cake_nonconst_from." + *unique_source_field_selector, // typeof
 						target_module
 					}));
-			} // we can always add "here"
-			env.insert(std::make_pair("__cake_here",
+			} 
+			string target_field_selector = i_target->first;
+			// we can always add "here"
+			ctxt.env.insert(make_pair("__cake_here",
 				(wrapper_file::bound_var_info) {
 					"&__cake_p_buf->" + target_field_selector, // cxx name
 					"&__cake_p_buf->" + target_field_selector, // typeof
 					target_module
-				}));	
-#undef REMOVE_CONST
+				}));
+			// we can also always add "it"!
+			ctxt.env.insert(make_pair("__cake_it", ctxt.env["__cake_source_" + i_target->first]));
+
 			/* Now emit the post-stub. */
 			auto new_env3 = ctxt.env; // provisional value
-			if (i_name_matched->second.post_stub)
+			if (i_target->second->post_stub && GET_CHILD_COUNT(i_target->second->post_stub) > 0)
 			{
 				auto status3 = w.emit_stub_expression_as_statement_list(ctxt,
-					i_name_matched->second.post_stub);
+					i_target->second->post_stub);
 				new_env3 = w.merge_environment(ctxt.env, status3.new_bindings);
 					if (status3.result_fragment != w.NO_VALUE) new_env3["__cake_it"] = 
 						(wrapper_file::bound_var_info) {
@@ -754,10 +941,11 @@ namespace cake
 // 				<< "<" << "__typeof(__cake_p_buf->" << target_field_selector << ")"
 // 				<< ">(__cake_from." << target_field_selector << ");" << std::endl;
 			
+			assert(ctxt.env["__cake_it"].cxx_name != "");
 			m_out << "__cake_p_buf->" << target_field_selector << " = " <<
-				env["__cake_it"].cxx_name << ";" << std::endl;
+				ctxt.env["__cake_it"].cxx_name << ";" << endl;
 				
-		} // end for i_name_matched
+		} // end for i_target
 
 		/* Recurse on others */
 		// FIXME -- I think we don't actually recurse, we just use
@@ -767,7 +955,7 @@ namespace cake
 		// lower-level rules are actually discoverable from the dependency record.
 
 		// output return statement
-		m_out << "return *__cake_p_buf;" << std::endl;
+		m_out << "return *__cake_p_buf;" << endl;
 	}
 
 }

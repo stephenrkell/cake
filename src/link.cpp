@@ -8,6 +8,23 @@
 #include "link.hpp"
 #include "wrapsrc.hpp"
 
+using boost::make_shared;
+using boost::dynamic_pointer_cast;
+using boost::shared_ptr;
+using std::endl;
+using std::cerr;
+using std::ostream;
+using std::ostringstream;
+using std::string;
+using std::pair;
+using std::make_pair;
+using std::boolalpha;
+using std::vector;
+using std::map;
+using std::multimap;
+using dwarf::spec::type_die;
+using dwarf::spec::subprogram_die;
+
 namespace cake
 {
 	struct satisfies_dep
@@ -15,8 +32,8 @@ namespace cake
 		value_conversion::dep m_dep;
 		satisfies_dep(const value_conversion::dep& dep) : m_dep(dep) {}
 		
-		bool operator ()(const std::pair< link_derivation::iface_pair, 
-				boost::shared_ptr<value_conversion> > candidate) const
+		bool operator ()(const pair< link_derivation::iface_pair, 
+				shared_ptr<value_conversion> > candidate) const
 		{
 // 			if (candidate.second->source_data_type->get_name() &&
 // 				*candidate.second->source_data_type->get_name() == "int"
@@ -27,15 +44,15 @@ namespace cake
 // 			{
 // 				bool retval = candidate.second->source_data_type == m_dep.first
 // 				 && candidate.second->sink_data_type == m_dep.second;
-// 				std::cerr << "Would have returned " << std::boolalpha << retval << std::endl;
-// 				std::cerr << "candidate source data type: " << *candidate.second->source_data_type
-// 					<< " @" << &*candidate.second->source_data_type << std::endl;
-// 				std::cerr << "candidate sink data type: " << *candidate.second->sink_data_type
-// 					<< " @" << &*candidate.second->sink_data_type << std::endl;
-// 				std::cerr << "m_dep.first: " << *m_dep.first
-// 					<< " @" << &*m_dep.first << std::endl;
-// 				std::cerr << "m_dep.second: " << *m_dep.second
-// 					<< " @" << &*m_dep.second << std::endl;
+// 				cerr << "Would have returned " << boolalpha << retval << endl;
+// 				cerr << "candidate source data type: " << *candidate.second->source_data_type
+// 					<< " @" << &*candidate.second->source_data_type << endl;
+// 				cerr << "candidate sink data type: " << *candidate.second->sink_data_type
+// 					<< " @" << &*candidate.second->sink_data_type << endl;
+// 				cerr << "m_dep.first: " << *m_dep.first
+// 					<< " @" << &*m_dep.first << endl;
+// 				cerr << "m_dep.second: " << *m_dep.second
+// 					<< " @" << &*m_dep.second << endl;
 // 				
 // 				assert(false);
 // 			}			
@@ -45,10 +62,10 @@ namespace cake
 	};
 		
 	link_derivation::link_derivation(cake::request& r, antlr::tree::Tree *t,
-		const std::string& id,
-		const std::string& output_module_filename) 
+		const string& id,
+		const string& output_module_filename) 
 	 : 	derivation(r, t), 
-	 	compiler(std::vector<std::string>(1, std::string("g++"))),
+	 	compiler(vector<string>(1, string("g++"))),
 	 	output_namespace("link_" + id + "_"), 
 	 	wrap_file_makefile_name(
 			boost::filesystem::path(id + "_wrap.cpp").string()),
@@ -71,36 +88,36 @@ namespace cake
 		
 		{
 			INIT;
-			std::cerr << "Link expression at " << t << " links modules: ";
+			cerr << "Link expression at " << t << " links modules: ";
 			FOR_ALL_CHILDREN(identList)
 			{
-				std::cerr << CCP(GET_TEXT(n)) << " ";
+				cerr << CCP(GET_TEXT(n)) << " ";
 				request::module_tbl_t::iterator found = r.module_tbl.find(
-					std::string(CCP(GET_TEXT(n))));
+					string(CCP(GET_TEXT(n))));
 				if (found == r.module_tbl.end()) RAISE(n, "module not defined!");
 				input_modules.push_back(found->second);
 			}
-			std::cerr << std::endl;
+			cerr << endl;
 		}
 
 		// enumerate all interface pairs
-		for (std::vector<module_ptr>::iterator i_mod = input_modules.begin();
+		for (vector<module_ptr>::iterator i_mod = input_modules.begin();
 				i_mod != input_modules.end();
 				i_mod++)
 		{
-			std::vector<module_ptr>::iterator copy_of_i_mod = i_mod;
-			for (std::vector<module_ptr>::iterator j_mod = ++copy_of_i_mod;
+			vector<module_ptr>::iterator copy_of_i_mod = i_mod;
+			for (vector<module_ptr>::iterator j_mod = ++copy_of_i_mod;
 				j_mod != input_modules.end();
 				j_mod++)
 			{
-				all_iface_pairs.insert(sorted(std::make_pair(*i_mod, *j_mod)));
+				all_iface_pairs.insert(sorted(make_pair(*i_mod, *j_mod)));
 			}
 		}
 		
 		// add explicit correspondences from the Cake syntax tree
 		{
 			INIT;
-			std::cerr << "Link expression at " << t << " has pairwise blocks as follows: ";
+			cerr << "Link expression at " << t << " has pairwise blocks as follows: ";
 			FOR_ALL_CHILDREN(linkRefinement)
 			{
 				INIT;
@@ -112,15 +129,15 @@ namespace cake
 					BIND3(arrow, leftChild, IDENT);
 					BIND3(arrow, rightChild, IDENT);
 					BIND3(arrow, pairwiseCorrespondenceBody, CORRESP);
-					std::cerr << CCP(GET_TEXT(leftChild))
+					cerr << CCP(GET_TEXT(leftChild))
 						<< " <--> "
 						<< CCP(GET_TEXT(rightChild))
-						<< std::endl;
+						<< endl;
 					request::module_tbl_t::iterator found_left = 
-						r.module_tbl.find(std::string(CCP(GET_TEXT(leftChild))));
+						r.module_tbl.find(string(CCP(GET_TEXT(leftChild))));
 					if (found_left == r.module_tbl.end()) RAISE(n, "module not defined!");
    					request::module_tbl_t::iterator found_right = 
-						r.module_tbl.find(std::string(CCP(GET_TEXT(rightChild))));
+						r.module_tbl.find(string(CCP(GET_TEXT(rightChild))));
 					if (found_right == r.module_tbl.end()) RAISE(n, "module not defined!");
 					
 					add_corresps_from_block(
@@ -129,7 +146,7 @@ namespace cake
 						pairwiseCorrespondenceBody);
 				}
 			}
-			std::cerr << std::endl;
+			cerr << endl;
 			
 			// add implicit correpsondences *last*, s.t. explicit ones can take priority
 			for (auto i_pair = all_iface_pairs.begin(); 
@@ -141,17 +158,17 @@ namespace cake
 		} // end INIT block
 		
 //         // remember each interface pair and add implicit corresps
-//         for (std::vector<module_ptr>::iterator i_mod = input_modules.begin();
+//         for (vector<module_ptr>::iterator i_mod = input_modules.begin();
 //         		i_mod != input_modules.end();
 //                 i_mod++)
 //         {
-//         	std::vector<module_ptr>::iterator copy_of_i_mod = i_mod;
-//         	for (std::vector<module_ptr>::iterator j_mod = ++copy_of_i_mod;
+//         	vector<module_ptr>::iterator copy_of_i_mod = i_mod;
+//         	for (vector<module_ptr>::iterator j_mod = ++copy_of_i_mod;
 //         		j_mod != input_modules.end();
 //                 j_mod++)
 // 			{
-//             	all_iface_pairs.insert(sorted(std::make_pair(*i_mod, *j_mod)));
-// 		        add_implicit_corresps(std::make_pair(*i_mod, *j_mod));
+//             	all_iface_pairs.insert(sorted(make_pair(*i_mod, *j_mod)));
+// 		        add_implicit_corresps(make_pair(*i_mod, *j_mod));
 //             }
 // 			// now add corresps generated by dependency
 //         	for (auto i_pair = all_iface_pairs.begin();
@@ -194,18 +211,18 @@ namespace cake
 						// like char and int.
 						// (FIXME: this is a quick-and-dirty C++-specific HACK right now
 						// and should be fixed to use knowledge of DWARF base type encodings.)
-							std::cerr << "Falling back on C++-assignability to convert from "
+							cerr << "Falling back on C++-assignability to convert from "
 								<< wrap_code.get_type_name(i_dep->first) 
-								<< " to " << wrap_code.get_type_name(i_dep->second) << std::endl;
+								<< " to " << wrap_code.get_type_name(i_dep->second) << endl;
 							continue;
 						}
 
-						std::cerr << "Found unsatisfied dependency: from "
+						cerr << "Found unsatisfied dependency: from "
 							<< compiler.fq_name_for(i_dep->first)
 							<< " to " << compiler.fq_name_for(i_dep->second)
 							<< " required by rule "
 							<< &*i_val_corresp // FIXME: operator<<
-							<< std::endl;
+							<< endl;
 						auto source_data_type = i_dep->first;
 						auto sink_data_type = i_dep->second;
 						//assert(false);
@@ -233,6 +250,9 @@ namespace cake
 		// propagate guessed argument info
 		merge_guessed_argument_info_at_callsites();
 		
+		// assign numbers to value corresps
+		assign_value_corresp_numbers();
+		
 		// which value corresps should we use as initialization rules?
 		compute_init_rules();
 		
@@ -255,10 +275,10 @@ namespace cake
 			i_pair++)
 		{
 			auto candidate_groups = candidate_init_rules[*i_pair];
-			std::cerr << "For interface pair (" << name_of_module(i_pair->first)
+			cerr << "For interface pair (" << name_of_module(i_pair->first)
 				<< ", " << name_of_module(i_pair->second) << ") there are "
 				<< candidate_groups.size() << " value corresps that are candidate init rules"
-				<< std::endl;
+				<< endl;
 			
 			for (auto i_key = candidate_init_rules_tbl_keys[*i_pair].begin();
 				i_key != candidate_init_rules_tbl_keys[*i_pair].end();
@@ -270,8 +290,8 @@ namespace cake
 				
 				auto candidates = candidate_groups.equal_range(*i_key);
 				unsigned candidates_count = srk31::count(candidates.first, candidates.second);
-				std::cerr << "For data type " << *i_key->source_type <<
-					" there are " << candidates_count << " candidate init rules." << std::endl;
+				cerr << "For data type " << *i_key->source_type <<
+					" there are " << candidates_count << " candidate init rules." << endl;
 				
 				if (candidates_count == 1)
 				{
@@ -281,8 +301,8 @@ namespace cake
 				}
 				else
 				{
-					boost::optional<
-						std::pair<init_rules_key_t,
+					optional<
+						pair<init_rules_key_t,
 							init_rules_value_t>
 						> found_init;
 					
@@ -343,7 +363,7 @@ namespace cake
 			{
 				if ((*i_dfs)->get_tag() == DW_TAG_subprogram)
 				{
-					auto subprogram = boost::dynamic_pointer_cast<
+					auto subprogram = dynamic_pointer_cast<
 						dwarf::spec::subprogram_die>(*i_dfs);
 					if (subprogram->get_declaration()
 						&& *subprogram->get_declaration())
@@ -356,12 +376,12 @@ namespace cake
 							// we're on! search for event patterns
 							struct pattern_info
 							{
-								std::vector<boost::optional<std::string> > call_argnames;
+								vector<optional<string> > call_argnames;
 								antlr::tree::Tree *pattern;
 								ev_corresp *corresp;
 							};
-							std::multimap<std::string, pattern_info> patterns;
-							std::vector<std::string> callnames;
+							multimap<string, pattern_info> patterns;
+							vector<string> callnames;
 							// patterns could be in any link block featuring this module...
 							// ... so we just want to check against the source module
 							for (auto i_corresp = ev_corresps.begin();
@@ -402,7 +422,7 @@ namespace cake
 											BIND3(p, memberNameExpr, DEFINITE_MEMBER_NAME); // name of call being matched -- can ignore this here
 											BIND3(p, eventCountPredicate, EVENT_COUNT_PREDICATE);
 											BIND3(p, eventParameterNamesAnnotation, KEYWORD_NAMES);
-											std::vector<boost::optional<std::string> > argnames;
+											vector<optional<string> > argnames;
 											auto dmn = read_definite_member_name(memberNameExpr);
 											if (subprogram->get_name() && dmn.size() == 1 
 												&& dmn.at(0) == *subprogram->get_name())
@@ -420,7 +440,7 @@ namespace cake
 														{
 															case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
 															{
-																std::ostringstream s;
+																ostringstream s;
 																s << read_definite_member_name(arg);
 																argnames.push_back(s.str());
 																break;
@@ -429,7 +449,7 @@ namespace cake
 																// no information about arg name here
 
 																argnames.push_back(
-																	boost::optional<std::string>());
+																	optional<string>());
 																break;
 															default: assert(false);
 
@@ -437,7 +457,7 @@ namespace cake
 													}
 												}
 												// add this pattern
-												patterns.insert(std::make_pair(
+												patterns.insert(make_pair(
 													dmn,
 													(pattern_info) {
 													argnames,
@@ -460,7 +480,7 @@ namespace cake
 								i_callname++)
 							{
 								auto patterns_seq = patterns.equal_range(*i_callname);
-								boost::optional<std::vector<boost::optional< std::string> > >
+								optional<vector<optional< string> > >
 									seen_argnames;
 								bool argnames_identical = true;
 								for (auto i_pattern = patterns_seq.first;
@@ -472,10 +492,10 @@ namespace cake
 									{
 										// HMM: seen non-equivalent argnames for the same arg
 										argnames_identical = false;
-										std::cerr << "Warning: different patterns use non-identical argnames "
+										cerr << "Warning: different patterns use non-identical argnames "
 											<< "for subprogram " 
-											<< *subprogram->get_name() << std::endl;
-										seen_argnames = boost::optional<std::vector<boost::optional<std::string> > >();
+											<< *subprogram->get_name() << endl;
+										seen_argnames = optional<vector<optional<string> > >();
 									}
 								}
 								if (argnames_identical)
@@ -483,25 +503,25 @@ namespace cake
 									/* Okay, go ahead and add name attrs */
 									assert(seen_argnames);
 									auto encap_subprogram =
-										boost::dynamic_pointer_cast<dwarf::encap::subprogram_die>(
+										dynamic_pointer_cast<dwarf::encap::subprogram_die>(
 											subprogram);
 									for (auto i_name = seen_argnames->begin();
 										i_name != seen_argnames->end();
 										i_name++)
 									{
 										auto created =
-											dwarf::encap::factory::get_factory(
+											dwarf::encap::factory::for_spec(
 												dwarf::spec::DEFAULT_DWARF_SPEC
-											).create<DW_TAG_formal_parameter>(
+											).create_die(DW_TAG_formal_parameter,
 												encap_subprogram,
 												*i_name ? 
-												boost::optional<const std::string&>(**i_name)
-												: boost::optional<const std::string&>());
-										std::cerr << "created fp of subprogram "
+												optional<const string&>(**i_name)
+												: optional<const string&>());
+										cerr << "created fp of subprogram "
 											<< *subprogram->get_name()
 											<< " with name " <<  (*i_name ? **i_name : "(no name)")
 											<< " at offset " << created->get_offset()
-											<< std::endl;
+											<< endl;
 									}
 								}
 
@@ -525,16 +545,16 @@ namespace cake
 										i_arg != i_pattern->second.call_argnames.end();
 										i_arg++)
 									{
-										std::vector<antlr::tree::Tree *> contexts;
+										vector<antlr::tree::Tree *> contexts;
 										if (!*i_arg) continue;
 										find_usage_contexts(**i_arg,
 											i_pattern->second.corresp->sink_expr,
 											contexts);
 										if (contexts.size() > 0)
 										{
-											std::cerr << "Considering type expectations "
+											cerr << "Considering type expectations "
 												<< "for stub uses of identifier " 
-												<< **i_arg << std::endl;
+												<< **i_arg << endl;
 											for (auto i_ctxt = contexts.begin(); 
 												i_ctxt != contexts.end();
 												i_ctxt++)
@@ -544,14 +564,14 @@ namespace cake
 												assert(GET_TYPE(node) == CAKE_TOKEN(IDENT));
 												while (node && ((node = /*GET_PARENT(node)*/ NULL /* HACK: getParent is broken!  2011-4-22 */) != NULL))
 												{
-													std::cerr << "Considering subtree " << CCP(TO_STRING_TREE(node))
-														<< std::endl;
+													cerr << "Considering subtree " << CCP(TO_STRING_TREE(node))
+														<< endl;
 													switch (GET_TYPE(node))
 													{
 														case CAKE_TOKEN(INVOKE_WITH_ARGS):
 															// this is the interesting case
-															std::cerr << "FIXME: found a stub function call using ident " 
-																<< **i_arg << std::endl;
+															cerr << "FIXME: found a stub function call using ident " 
+																<< **i_arg << endl;
 
 														case CAKE_TOKEN(IDENT):
 														case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
@@ -582,8 +602,8 @@ namespace cake
 	}
 	
 	void 
-	link_derivation::find_usage_contexts(const std::string& ident,
-		antlr::tree::Tree *t, std::vector<antlr::tree::Tree *>& out)
+	link_derivation::find_usage_contexts(const string& ident,
+		antlr::tree::Tree *t, vector<antlr::tree::Tree *>& out)
 	{
 		INIT;
 		// first check ourselves
@@ -601,15 +621,15 @@ namespace cake
 	void 
 	link_derivation::find_type_expectations_in_stub(module_ptr module,
 		antlr::tree::Tree *stub, 
-		boost::shared_ptr<dwarf::spec::type_die> current_type_expectation,
-		std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& out)
+		shared_ptr<dwarf::spec::type_die> current_type_expectation,
+		multimap< string, shared_ptr<dwarf::spec::type_die> >& out)
 	{
 		/* We walk the stub AST structure, resolving names against the module.
 		 * Roughly, where there are static type annotations in the module,
 		 * e.g. type info for C function signatures,
 		 * we infer C++ static type requirements for any idents used.
 		 * This might include typedefs, i.e. we don't concretise. */
-		std::map<int, boost::shared_ptr<dwarf::spec::type_die> > child_type_expectations;
+		map<int, shared_ptr<dwarf::spec::type_die> > child_type_expectations;
 		antlr::tree::Tree *parent_whose_children_to_walk = stub;
 		switch(GET_TYPE(stub))
 		{
@@ -619,7 +639,7 @@ namespace cake
 					BIND3(stub, argsExpr, MULTIVALUE);
 					parent_whose_children_to_walk = argsExpr;
 					BIND2(stub, functionExpr);
-					boost::optional<definite_member_name> function_dmn;
+					optional<definite_member_name> function_dmn;
 					switch(GET_TYPE(functionExpr))
 					{
 						case IDENT:
@@ -633,8 +653,8 @@ namespace cake
 							break;
 						default:
 						{
-							std::cerr << "Warning: saw a functionExpr that wasn't of simple form: "
-								<< CCP(GET_TEXT(functionExpr)) << std::endl;
+							cerr << "Warning: saw a functionExpr that wasn't of simple form: "
+								<< CCP(GET_TEXT(functionExpr)) << endl;
 							break;
 						}
 					}
@@ -645,7 +665,7 @@ namespace cake
 							function_dmn->begin(), function_dmn->end());
 						if (found)
 						{
-							auto subprogram_die = boost::dynamic_pointer_cast<
+							auto subprogram_die = dynamic_pointer_cast<
 								dwarf::spec::subprogram_die>(found);
 							if (found)
 							{
@@ -676,7 +696,7 @@ namespace cake
 				}
 				goto walk_children;
 			case CAKE_TOKEN(IDENT):
-				if (current_type_expectation) out.insert(std::make_pair(
+				if (current_type_expectation) out.insert(make_pair(
 					CCP(GET_TEXT(stub)), current_type_expectation));
 				break; /* idents have no children */
 			default:
@@ -699,52 +719,52 @@ namespace cake
 				
 		} // end switch
 	}	
-//     std::string link_derivation::namespace_name()
+//     string link_derivation::namespace_name()
 //     {
-//     	std::ostringstream s;
+//     	ostringstream s;
 //         s << "link_" << r.module_inverse_tbl[output_module] << '_';
 //         return s.str();
 // 	}
 
-	void link_derivation::write_makerules(std::ostream& out)
+	void link_derivation::write_makerules(ostream& out)
 	{
 		// implicit rule for making hpp files
-		out << "%.o.hpp: %.o" << std::endl
-			<< '\t' << "dwarfhpp \"$<\" > \"$@\"" << std::endl;
+		out << "%.o.hpp: %.o" << endl
+			<< '\t' << "dwarfhpp \"$<\" > \"$@\"" << endl;
 		// dependencies for generated cpp file
-		out << wrap_file_makefile_name << ".d: " << wrap_file_makefile_name << std::endl
-			<< '\t' << "$(CXX) $(CXXFLAGS) -MM -MG -I. -c \"$<\" > \"$@\"" << std::endl;
-		out << "-include " << wrap_file_makefile_name << ".d" << std::endl;
+		out << wrap_file_makefile_name << ".d: " << wrap_file_makefile_name << endl
+			<< '\t' << "$(CXX) $(CXXFLAGS) -MM -MG -I. -c \"$<\" > \"$@\"" << endl;
+		out << "-include " << wrap_file_makefile_name << ".d" << endl;
 
 		out << output_module->get_filename() << ":: ";
-		for (std::vector<module_ptr>::iterator i = input_modules.begin();
+		for (vector<module_ptr>::iterator i = input_modules.begin();
 			i != input_modules.end(); i++)
 		{
 			out << (*i)->get_filename() << ' ';
 		}
 		
 		// output the wrapper file header
-		wrap_file << "// generated by Cake version " << CAKE_VERSION << std::endl;
-		wrap_file << "#include <cake/prelude.hpp>" << std::endl;
-		wrap_file << "extern \"C\" {\n#include <libcake/repman.h>\n}" << std::endl;
+		wrap_file << "// generated by Cake version " << CAKE_VERSION << endl;
+		wrap_file << "#include <cake/prelude.hpp>" << endl;
+		wrap_file << "extern \"C\" {\n#include <libcake/repman.h>\n}" << endl;
 
 		// for each component, include its dwarfpp header in its own namespace
-		for (std::vector<module_ptr>::iterator i = input_modules.begin();
+		for (vector<module_ptr>::iterator i = input_modules.begin();
 				i != input_modules.end();
 				i++)
 		{
 			wrap_file << "namespace cake { namespace " << namespace_name()
-					<< " { namespace " << r.module_inverse_tbl[*i] << " {" << std::endl;
+					<< " { namespace " << r.module_inverse_tbl[*i] << " {" << endl;
 					
-			wrap_file << "\t#include \"" << (*i)->get_filename() << ".hpp\"" << std::endl;
+			wrap_file << "\t#include \"" << (*i)->get_filename() << ".hpp\"" << endl;
 			// also define a marker class, and code to grab a rep_id at init time
 			wrap_file << "\tstruct marker { static int rep_id; }; // used for per-component template specializations" 
-	  				<< std::endl;
-			wrap_file << "\tint marker::rep_id;" << std::endl;
+	  				<< endl;
+			wrap_file << "\tint marker::rep_id;" << endl;
 			wrap_file << "\tstatic void get_rep_id(void) __attribute__((constructor)); static void get_rep_id(void) { marker::rep_id = next_rep_id++; rep_component_names[marker::rep_id] = \""
-			<< r.module_inverse_tbl[*i] << "\"; }" << std::endl; // FIXME: C-escape this
+			<< r.module_inverse_tbl[*i] << "\"; }" << endl; // FIXME: C-escape this
 			// also define the Cake component as a set of compilation units
-			wrap_file << "extern \"C\" {" << std::endl;
+			wrap_file << "extern \"C\" {" << endl;
 			wrap_file << "\tconst char *__cake_component_" << r.module_inverse_tbl[*i]
 				<< " = ";
 				/* output a bunch of string literals of the form
@@ -760,11 +780,11 @@ namespace cake
 						<< '^'
 						<< ((*i_cu)->get_producer() ? *(*i_cu)->get_producer() : "(unknown producer)")
 						<< "^\""
-						<< std::endl;
+						<< endl;
 				}
-				wrap_file << ";" << std::endl;
-			wrap_file << "} /* end extern \"C\" */" << std::endl;
-			wrap_file << "} } }" << std::endl; 
+				wrap_file << ";" << endl;
+			wrap_file << "} /* end extern \"C\" */" << endl;
+			wrap_file << "} } }" << endl; 
 
 		}
 		
@@ -772,7 +792,7 @@ namespace cake
 		// (AFTER doing name-matching, s.t. can match maximally)
 
 		// for each pair of components, forward-declare the value conversions
-		wrap_file << "namespace cake {" << std::endl;
+		wrap_file << "namespace cake {" << endl;
 		for (auto i_pair = all_iface_pairs.begin(); i_pair != all_iface_pairs.end();
 			i_pair++)
 		{
@@ -782,13 +802,13 @@ namespace cake
 				i_corresp != all_value_corresps.second;
 				i_corresp++)
 			{
-				wrap_file << "// forward declaration: " << CCP(TO_STRING_TREE(i_corresp->second->corresp)) << std::endl;
+				wrap_file << "// forward declaration: " << CCP(TO_STRING_TREE(i_corresp->second->corresp)) << endl;
 				i_corresp->second->emit_forward_declaration();
 			}
 		}
-		wrap_file << "} // end namespace cake" << std::endl;
+		wrap_file << "} // end namespace cake" << endl;
 
-		wrap_file << "// we have " << all_iface_pairs.size() << " iface pairs" << std::endl;
+		wrap_file << "// we have " << all_iface_pairs.size() << " iface pairs" << endl;
 		
 		// for each pair of components, output the value conversions
 		for (auto i_pair = all_iface_pairs.begin(); i_pair != all_iface_pairs.end();
@@ -796,74 +816,74 @@ namespace cake
 		{
 			// first emit the component_pair specialisation which describes the rules
 			// applying for this pair of components
-			wrap_file << "namespace cake {" << std::endl;
+			wrap_file << "namespace cake {" << endl;
 			wrap_file << "\ttemplate<> struct component_pair<" 
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
-				<< "::marker> {" << std::endl;
+				<< "::marker> {" << endl;
 
 			// FIXME: emit mapping
 			wrap_file 
-<< std::endl << "        template <"
-<< std::endl << "            typename To,"
-<< std::endl << "            typename From /* = ::cake::unspecified_wordsize_type */, "
-<< std::endl << "            int RuleTag = 0"
-<< std::endl << "        >"
-<< std::endl << "        static"
-<< std::endl << "        To"
-<< std::endl << "        value_convert_from_first_to_second(const From& arg)"
-<< std::endl << "        {"
-<< std::endl << "            return value_convert<From, "
-<< std::endl << "                To,"
-<< std::endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker,"
-<< std::endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker,"
-<< std::endl << "                RuleTag"
-<< std::endl << "                >().operator()(arg);"
-<< std::endl << "        }"
-<< std::endl << "        template <"
-<< std::endl << "            typename To,"
-<< std::endl << "            typename From /* = ::cake::unspecified_wordsize_type */, "
-<< std::endl << "            int RuleTag = 0"
-<< std::endl << "        >"
-<< std::endl << "        static "
-<< std::endl << "        To"
-<< std::endl << "        value_convert_from_second_to_first(const From& arg)"
-<< std::endl << "        {"
-<< std::endl << "            return value_convert<From, "
-<< std::endl << "                To,"
-<< std::endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker,"
-<< std::endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker,"
-<< std::endl << "                RuleTag"
-<< std::endl << "                >().operator()(arg);"
-<< std::endl << "        }	"
-<< std::endl << "        static conv_table_t conv_table_first_to_second;"
-<< std::endl << "        static conv_table_t conv_table_second_to_first;"
-<< std::endl << "        static init_table_t init_table_first_to_second;"
-<< std::endl << "        static init_table_t init_table_second_to_first;"
-<< std::endl << "        static void init_conv_tables() __attribute__((constructor));"
-<< std::endl << "    }; // end component_pair specialization"
-<< std::endl << "\tconv_table_t component_pair<" 
+<< endl << "        template <"
+<< endl << "            typename To,"
+<< endl << "            typename From /* = ::cake::unspecified_wordsize_type */, "
+<< endl << "            int RuleTag = 0"
+<< endl << "        >"
+<< endl << "        static"
+<< endl << "        To"
+<< endl << "        value_convert_from_first_to_second(const From& arg)"
+<< endl << "        {"
+<< endl << "            return value_convert<From, "
+<< endl << "                To,"
+<< endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker,"
+<< endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker,"
+<< endl << "                RuleTag"
+<< endl << "                >().operator()(arg);"
+<< endl << "        }"
+<< endl << "        template <"
+<< endl << "            typename To,"
+<< endl << "            typename From /* = ::cake::unspecified_wordsize_type */, "
+<< endl << "            int RuleTag = 0"
+<< endl << "        >"
+<< endl << "        static "
+<< endl << "        To"
+<< endl << "        value_convert_from_second_to_first(const From& arg)"
+<< endl << "        {"
+<< endl << "            return value_convert<From, "
+<< endl << "                To,"
+<< endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker,"
+<< endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker,"
+<< endl << "                RuleTag"
+<< endl << "                >().operator()(arg);"
+<< endl << "        }	"
+<< endl << "        static conv_table_t conv_table_first_to_second;"
+<< endl << "        static conv_table_t conv_table_second_to_first;"
+<< endl << "        static init_table_t init_table_first_to_second;"
+<< endl << "        static init_table_t init_table_second_to_first;"
+<< endl << "        static void init_conv_tables() __attribute__((constructor));"
+<< endl << "    }; // end component_pair specialization"
+<< endl << "\tconv_table_t component_pair<" 
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
 				<< "::marker>::conv_table_first_to_second;"
-<< std::endl << "\tconv_table_t component_pair<" 
+<< endl << "\tconv_table_t component_pair<" 
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
 				<< "::marker>::conv_table_second_to_first;"
-<< std::endl << "\tinit_table_t component_pair<" 
+<< endl << "\tinit_table_t component_pair<" 
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
 				<< "::marker>::init_table_first_to_second;"
-<< std::endl << "\tinit_table_t component_pair<" 
+<< endl << "\tinit_table_t component_pair<" 
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
 				<< "::marker>::init_table_second_to_first;"
-<< std::endl;
+<< endl;
 
 			/* Now output the correspondence for unspecified_wordsize_type
 			 * (FIXME: make these emissions just invoke macros in the prelude) */
@@ -874,117 +894,175 @@ namespace cake
 			 * given second, in first, 1<--2
 			 * given first, in second, 1-->2
 			 * given first, in second, 1<--2 */
-				wrap_file << "// unspecified_wordsize_type correspondences -- defined for each module" << std::endl <<
+				wrap_file << "// unspecified_wordsize_type correspondences -- defined for each module" << endl <<
 				"    template <>"
-<< std::endl << "    struct corresponding_type_to_second<" 
-<< std::endl << "        component_pair<" 
-<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
-<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
-                      << " ::cake::unspecified_wordsize_type"
-                      << ", 0, " // RuleTag
+<< endl << "    struct corresponding_type_to_second<" 
+<< endl << "        component_pair<" 
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
+                      << " ::cake::unspecified_wordsize_type, "
+                      //<< "0, " // RuleTag
                       << "true" << ">" // DirectionIsFromSecondToFirst
-<< std::endl << "    {"
-<< std::endl << "         typedef ::cake::unspecified_wordsize_type in_first;"
-<< std::endl << "    };"
-<< std::endl;
+<< endl << "    {"
+<< endl << "         typedef ::cake::unspecified_wordsize_type in_first;"
+<< endl << "    };"
+<< endl;
 				wrap_file << 
 				"    template <>"
-<< std::endl << "    struct corresponding_type_to_first<" 
-<< std::endl << "        component_pair<" 
-<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
-<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
-                      << " ::cake::unspecified_wordsize_type"
-                      << ", 0, " // RuleTag
+<< endl << "    struct corresponding_type_to_first<" 
+<< endl << "        component_pair<" 
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
+                      << " ::cake::unspecified_wordsize_type, " 
+                      //<< "0, " // RuleTag
                       << "false" << ">" // DirectionIsFromFirstToSecond
-<< std::endl << "    {"
-<< std::endl << "         typedef ::cake::unspecified_wordsize_type in_second;"
-<< std::endl << "    };"
-<< std::endl;
+<< endl << "    {"
+<< endl << "         typedef ::cake::unspecified_wordsize_type in_second;"
+<< endl << "    };"
+<< endl;
 				wrap_file <<
 				"    template <>"
-<< std::endl << "    struct corresponding_type_to_second<" 
-<< std::endl << "        component_pair<" 
-<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, " 
-<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, "
-                      << " ::cake::unspecified_wordsize_type"
-                      << ", 0, " // RuleTag
+<< endl << "    struct corresponding_type_to_second<" 
+<< endl << "        component_pair<" 
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, " 
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, "
+                      << " ::cake::unspecified_wordsize_type, "
+                      //<< "0, " // RuleTag
                       << "false" << ">" // DirectionIsFromSecondToFirst
-<< std::endl << "    {"
-<< std::endl << "         typedef ::cake::unspecified_wordsize_type in_first;"
-<< std::endl << "    };"
-<< std::endl;
+<< endl << "    {"
+<< endl << "         typedef ::cake::unspecified_wordsize_type in_first;"
+<< endl << "    };"
+<< endl;
 				wrap_file << 
 				"    template <>"
-<< std::endl << "    struct corresponding_type_to_first<" 
-<< std::endl << "        component_pair<" 
-<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, " 
-<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, "
-                      << " ::cake::unspecified_wordsize_type"
-                      << ", 0, " // RuleTag
+<< endl << "    struct corresponding_type_to_first<" 
+<< endl << "        component_pair<" 
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, " 
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, "
+                      << " ::cake::unspecified_wordsize_type, "
+                      //<< "0, " // RuleTag
                       << "true" << ">" // DirectionIsFromFirstToSecond
-<< std::endl << "    {"
-<< std::endl << "         typedef ::cake::unspecified_wordsize_type in_second;"
-<< std::endl << "    };"
-<< std::endl;
-			auto all_value_corresps = val_corresps.equal_range(*i_pair);
-			for (auto i_corresp = all_value_corresps.first;
-				i_corresp != all_value_corresps.second;
-				i_corresp++)
+<< endl << "    {"
+<< endl << "         typedef ::cake::unspecified_wordsize_type in_second;"
+<< endl << "    };"
+<< endl;
+			//auto all_value_corresps = val_corresps.equal_range(*i_pair);
+			auto all_value_corresp_groups = val_corresp_groups[*i_pair];
+			for (auto i_corresp_group = all_value_corresp_groups.begin();
+				i_corresp_group != all_value_corresp_groups.end();
+				i_corresp_group++)
 			{
+				const val_corresp_group_key& k = i_corresp_group->first;
+				vector<val_corresp *>& vec = i_corresp_group->second;
+				
 				// first output the correpsonding_type specializations:
 				// there is a sink-to-source and source-to-sink relationship
 				wrap_file << "// " << wrap_code.get_type_name(
-                             i_corresp->second->source == i_pair->first 
-                                ? i_corresp->second->source_data_type
-                                : i_corresp->second->sink_data_type)
-					<< ( (i_corresp->second->source == i_pair->first) ? " --> " : " <-- " )
+                             k.source_module == i_pair->first 
+                                ? k.source_data_type
+                                : k.sink_data_type)
+					<< ( (k.source_module == i_pair->first) ? " --> " : " <-- " )
 					<< wrap_code.get_type_name(
-                             i_corresp->second->sink == i_pair->second
-                                ? i_corresp->second->sink_data_type
-                                : i_corresp->second->source_data_type)
-					<< std::endl;
+                            k.sink_module == i_pair->second
+                                ? k.sink_data_type
+                                : k.source_data_type)
+					<< endl;
 				wrap_file << 
 				"    template <>"
-<< std::endl << "    struct corresponding_type_to_second<" 
-<< std::endl << "        component_pair<" 
-<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
-<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
+<< endl << "    struct corresponding_type_to_second<" 
+<< endl << "        component_pair<" 
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
                       << wrap_code.get_type_name(
-                             i_corresp->second->source == i_pair->second 
-                                ? i_corresp->second->source_data_type
-                                : i_corresp->second->sink_data_type)
-                      << ", 0, " // RuleTag
-                      << std::boolalpha << (i_corresp->second->source == i_pair->second) << ">" // DirectionIsFromSecondToFirst
-<< std::endl << "    {"
-<< std::endl << "         typedef "
+                             k.source_module == i_pair->second 
+                                ? k.source_data_type
+                                : k.sink_data_type) << ", "
+                      //<< ", 0, " // RuleTag
+                      //<< ", " << val_corresp_numbering[i_corresp->second] << ", "
+                      << boolalpha << (k.source_module == i_pair->second) << ">" // DirectionIsFromSecondToFirst
+<< endl << "    {"
+<< endl;
+				for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); i_p_corresp++)
+				{
+					// the template argument data type
+					shared_ptr<type_die> outer_type = 
+					(k.source_module == i_pair->second)
+						? k.source_data_type
+						: k.sink_data_type);
+					auto outer_type_synonymy_chain = type_synonymy_chain(outer_type);
+					
+					// the type to be typedef'd in the struct body
+					shared_ptr inner_type = 
+					(k.source_module == i_pair->first)
+						? k.source_data_type
+						: k.sink_data_type);
+					auto inner_type_synonymy_chain = type_synonymy_chain(outer_type);
+					
+   wrap_file << "         typedef "
                        << wrap_code.get_type_name(
-                              i_corresp->second->source == i_pair->first
-                                 ? i_corresp->second->source_data_type
-                                  : i_corresp->second->sink_data_type)
-                       << " in_first;"
-<< std::endl << "    };"
-<< std::endl;
+                              (*i_p_corresp)->source == i_pair->first
+                                 ? (*i_p_corresp)->source_data_type
+                                  : (*i_p_corresp)->sink_data_type)
+                       << " "
+                       << ( (*i_p_corresp)->init_only ? "__init_only_" : "" )
+                       << ((outer_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
+                              *first_corresponded_type(outer_type_synonymy_chain)->get_name())
+                       << "_to_"
+                       << ((inner_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
+                              *first_corresponded_type(inner_type_synonymy_chain)->get_name())
+                       << "in_first;" << endl;
+				}
+				// FIXME: ***************I think first_corresponded_type is always the first,
+				// otherwise we wouldn't have been called with the given source_/sink_ type, no?
+   wrap_file << "    };"
+<< endl;
 				wrap_file << 
 				"    template <>"
-<< std::endl << "    struct corresponding_type_to_first<" 
-<< std::endl << "        component_pair<" 
-<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
-<< std::endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
+<< endl << "    struct corresponding_type_to_first<" 
+<< endl << "        component_pair<" 
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
                       << wrap_code.get_type_name(
-                             i_corresp->second->source == i_pair->first 
-                                ? i_corresp->second->source_data_type
-                                : i_corresp->second->sink_data_type)
-                      << ", 0, " // RuleTag
-                      << std::boolalpha << (i_corresp->second->source == i_pair->first) << ">" // DirectionIsFromFirstToSecond
-<< std::endl << "    {"
-<< std::endl << "         typedef "
+                             k.source_module == i_pair->first 
+                                ? k.source_data_type
+                                : k.sink_data_type) << ", "
+                      //<< "0, " // RuleTag
+					  //<< ", " << val_corresp_numbering[i_corresp->second] << ", "
+                      << boolalpha << (k.source_module == i_pair->first) << ">" // DirectionIsFromFirstToSecond
+<< endl << "    {"
+<< endl;
+				for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); i_p_corresp++)
+				{
+					// the template argument data type
+					shared_ptr<type_die> outer_type = 
+					(k.source_module == i_pair->second)
+						? k.sink_data_type
+						: k.source_data_type);
+					auto outer_type_synonymy_chain = type_synonymy_chain(outer_type);
+					
+					// the type to be typedef'd in the struct body
+					shared_ptr inner_type = 
+					(k.source_module == i_pair->first)
+						? k.sink_data_type
+						: k.source_data_type);
+					auto inner_type_synonymy_chain = type_synonymy_chain(outer_type);
+						
+   wrap_file << "         typedef "
                        << wrap_code.get_type_name(
-                              i_corresp->second->source == i_pair->second
-                                 ? i_corresp->second->source_data_type
-                                 : i_corresp->second->sink_data_type)
-                       << " in_second;"
-<< std::endl << "    };"
-<< std::endl;
+                              (*i_p_corresp)->source == i_pair->second
+                                 ? (*i_p_corresp)->source_data_type
+                                 : (*i_p_corresp)->sink_data_type)
+                       << " "
+                       << ( (*i_p_corresp)->init_only ? "__init_only_" : "" )
+                       << ((outer_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
+                              *first_corresponded_type(outer_type_synonymy_chain)->get_name())
+                       << "_to_"
+                       << ((inner_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
+                              *first_corresponded_type(inner_type_synonymy_chain)->get_name())
+                       << "in_second;" << endl;
+				}
+   wrap_file << "    };"
+<< endl;
 			} // end for all value corresps 
 			
 			/* Now emit the table */
@@ -993,21 +1071,22 @@ wrap_file    << "\tvoid component_pair<"
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
 				<< "::marker>::init_conv_tables()"
-<< std::endl << "\t{\n";
+<< endl << "\t{\n";
 			int hack_ctr = 0;
+			auto all_value_corresps = val_corresps.equal_range(*i_pair);
 			for (auto i_corresp = all_value_corresps.first;
 				i_corresp != all_value_corresps.second;
 				i_corresp++)
 			{
 				// HACK: instantiate all the template function instnaces we need
 				// -- will be unnecessary once gcc bug 49609 is fixed
-				std::ostringstream hack_varname;
+				ostringstream hack_varname;
 				hack_varname << "_hack_" << hack_ctr++;
 				wrap_file << "\t\tstatic ";
 				i_corresp->second->emit_cxx_function_ptr_type(hack_varname.str());
 				wrap_file << " = &(";
 				i_corresp->second->emit_function_name();
-				wrap_file << ");" << std::endl;
+				wrap_file << ");" << endl;
 				
 				if (!i_corresp->second->init_only)
 				{
@@ -1020,7 +1099,7 @@ wrap_file    << "\tvoid component_pair<"
 						wrap_file << "\t\tconv_table_second_to_first";
 					}
 
-					wrap_file << ".insert(std::make_pair((conv_table_key) {" << std::endl;
+					wrap_file << ".insert(std::make_pair((conv_table_key) {" << endl;
 					// output the fq type name as an initializer list
 					wrap_file << "\t\t\t{ ";
 					auto source_fq_name
@@ -1052,7 +1131,7 @@ wrap_file    << "\tvoid component_pair<"
 						wrap_file << "true, "; // from first to second
 					} else wrap_file << "false, "; // from first to second
 					wrap_file << /* i_corresp->second->rule_tag */ "0 " << "}, " 
-						<< std::endl << "\t\t\t (conv_table_value) {";
+						<< endl << "\t\t\t (conv_table_value) {";
 					// output the size of the object -- hey, we can use sizeof
 					wrap_file << " sizeof ( ::cake::" << namespace_name() << "::"
 						<< name_of_module(i_corresp->second->sink) << "::"
@@ -1060,12 +1139,12 @@ wrap_file    << "\tvoid component_pair<"
 					// now output the address 
 					wrap_file << "reinterpret_cast<void*(*)(void*,void*)>(&";
 					i_corresp->second->emit_function_name();
-					wrap_file << "\t\t )}));" << std::endl;
+					wrap_file << "\t\t )}));" << endl;
 
 				} // end if not init-only
 				else
 				{
-					wrap_file << "\t\t// init-only rule" << std::endl;
+					wrap_file << "\t\t// init-only rule" << endl;
 				}
 				
 				// if it's an init rule, add it to the init table
@@ -1084,7 +1163,7 @@ wrap_file    << "\tvoid component_pair<"
 						wrap_file << "\t\tinit_table_second_to_first";
 					}
 
-					wrap_file << ".insert(std::make_pair((init_table_key) {" << std::endl;
+					wrap_file << ".insert(std::make_pair((init_table_key) {" << endl;
 					// output the fq type name as an initializer list
 					wrap_file << "\t\t\t{ ";
 					auto source_fq_name
@@ -1104,12 +1183,12 @@ wrap_file    << "\tvoid component_pair<"
 						wrap_file << "true"; // from first to second
 					} else wrap_file << "false"; // from first to second
 					wrap_file << "}, " 
-						<< std::endl << "\t\t\t (init_table_value) {";
+						<< endl << "\t\t\t (init_table_value) {";
 					// output the size of the object -- hey, we can use sizeof
 					wrap_file << " sizeof ( ::cake::" << namespace_name() << "::"
 						<< name_of_module(i_corresp->second->sink) << "::"
 						<< compiler.local_name_for(i_corresp->second->sink_data_type, false) << "), ";
-					wrap_file << std::endl << "\t\t\t{ ";
+					wrap_file << endl << "\t\t\t{ ";
 					auto sink_fq_name
 					 = compiler.fq_name_parts_for(i_corresp->second->sink_data_type);
 					for (auto i_sink_name_piece = sink_fq_name.begin();
@@ -1125,17 +1204,17 @@ wrap_file    << "\tvoid component_pair<"
 					// now output the function address 
 					wrap_file << "reinterpret_cast<void*(*)(void*,void*)>(&";
 					i_corresp->second->emit_function_name();
-					wrap_file << "\t\t )}));" << std::endl;
+					wrap_file << "\t\t )}));" << endl;
 				}
 				else
 				{
-					wrap_file << "\t\t// not an init rule" << std::endl;
+					wrap_file << "\t\t// not an init rule" << endl;
 				}
 			}
 
 wrap_file  
-<< std::endl << "\t} /* end conv table initializer */" << std::endl;
-wrap_file << "extern \"C\" {" << std::endl;
+<< endl << "\t} /* end conv table initializer */" << endl;
+wrap_file << "extern \"C\" {" << endl;
 wrap_file << "void *__cake_componentpair_" 
 << name_of_module(i_pair->first).size() << name_of_module(i_pair->first)
 << "_" 
@@ -1149,7 +1228,7 @@ wrap_file << "void *__cake_componentpair_"
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
-				<< "::marker>:: init_table_first_to_second };\n" << std::endl;
+				<< "::marker>:: init_table_first_to_second };\n" << endl;
 wrap_file << "void *__cake_componentpair_" 
 << name_of_module(i_pair->first).size() << name_of_module(i_pair->first) 
 << "_" 
@@ -1163,8 +1242,8 @@ wrap_file << "void *__cake_componentpair_"
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->first]
 				<< "::marker, "
 				<< namespace_name() << "::" << r.module_inverse_tbl[i_pair->second]
-				<< "::marker>:: init_table_second_to_first };\n" << std::endl;
-wrap_file << "} /* end extern \"C\" */" << std::endl;
+				<< "::marker>:: init_table_second_to_first };\n" << endl;
+wrap_file << "} /* end extern \"C\" */" << endl;
 
 			// emit each as a value_convert template
 			for (auto i_corresp = all_value_corresps.first;
@@ -1181,14 +1260,14 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 //				 if (!opt_to_type) 
 // 				{ RAISE(i_corresp->second.corresp, 
 //					 "named sink type does not exist"); }
-// 				auto p_from_type = boost::dynamic_pointer_cast<dwarf::spec::type_die>(opt_from_type);
-// 				auto p_to_type = boost::dynamic_pointer_cast<dwarf::spec::type_die>(opt_to_type);
+// 				auto p_from_type = dynamic_pointer_cast<dwarf::spec::type_die>(opt_from_type);
+// 				auto p_to_type = dynamic_pointer_cast<dwarf::spec::type_die>(opt_to_type);
 //				 if (!p_from_type) RAISE(i_corresp->second.corresp, 
 //					 "named source of value correspondence is not a DWARF type");
 //				 if (!p_to_type) RAISE(i_corresp->second.corresp, 
 //					 "named target of value correspondence is not a DWARF type");
 
-				wrap_file << "// " << CCP(TO_STRING_TREE(i_corresp->second->corresp)) << std::endl;
+				wrap_file << "// " << CCP(TO_STRING_TREE(i_corresp->second->corresp)) << endl;
 				i_corresp->second->emit();
 				
 // 				wrap_code.emit_value_conversion(
@@ -1202,14 +1281,14 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 // 					i_corresp->second.source_is_on_left,
 // 					i_corresp->second.corresp);
 			}
-			wrap_file << "} // end namespace cake" << std::endl;
+			wrap_file << "} // end namespace cake" << endl;
 			
 		}
 
 		bool wrapped_some = false;
 		/*std::ostringstream*/
-		std::vector<std::string> linker_args;
-		std::vector<std::string> symbols_to_protect;
+		vector<string> linker_args;
+		vector<string> symbols_to_protect;
 		// output wrapped symbol names (and the wrappers, to a separate file)
 		for (wrappers_map_t::iterator i_wrap = wrappers.begin(); i_wrap != wrappers.end();
 				i_wrap++)
@@ -1222,7 +1301,7 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 			// don't emit a wrapper (because we can't provide args to invoke the __real_ function),
 			// just --defsym __wrap_ = __real_ (i.e. undo the wrapping)
 			bool can_simply_rebind = true;
-			boost::optional<std::string> symname_bound_to;
+			optional<string> symname_bound_to;
 			for (ev_corresp_pair_ptr_list::iterator i_corresp_ptr = i_wrap->second.begin();
 						i_corresp_ptr != i_wrap->second.end();
 						i_corresp_ptr++)
@@ -1232,9 +1311,9 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 				// simple expression.
 				// AND if all arguments are rep-compatible
 				// AND return value too
-				boost::optional<std::string> source_symname =
+				optional<string> source_symname =
 					source_pattern_is_simple_function_name((*i_corresp_ptr)->second.source_pattern);
-				boost::optional<std::string> sink_symname =
+				optional<string> sink_symname =
 					sink_expr_is_simple_function_name((*i_corresp_ptr)->second.sink_expr);
 				if (source_symname && sink_symname) 
 				{
@@ -1270,18 +1349,18 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 							can_simply_rebind = false;
 							break;
 						}
-						boost::shared_ptr<dwarf::spec::formal_parameter_die> source_arg, sink_arg;
-						source_arg = boost::dynamic_pointer_cast<dwarf::spec::formal_parameter_die>
+						shared_ptr<dwarf::spec::formal_parameter_die> source_arg, sink_arg;
+						source_arg = dynamic_pointer_cast<dwarf::spec::formal_parameter_die>
 							(*i_source_arg);
 						assert(source_arg && source_arg->get_type());
-						sink_arg = boost::dynamic_pointer_cast<dwarf::spec::formal_parameter_die>
+						sink_arg = dynamic_pointer_cast<dwarf::spec::formal_parameter_die>
 							(*i_sink_arg);
 						assert(sink_arg && sink_arg->get_type());
 						if (!(*source_arg->get_type())->is_rep_compatible(*sink_arg->get_type()))
 						{
-							std::cerr << "Detected that required symbol " << i_wrap->first
+							cerr << "Detected that required symbol " << i_wrap->first
 								<< " is not a simple rebinding of a required symbol "
-								<< " because arguments are not rep-compatible." << std::endl;
+								<< " because arguments are not rep-compatible." << endl;
 							can_simply_rebind = false;
 							//can't continue
 							break;
@@ -1294,11 +1373,11 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 				}
 				else 
 				{
-					std::cerr << "Detected that required symbol " << i_wrap->first
+					cerr << "Detected that required symbol " << i_wrap->first
 						<< " is not a simple rebinding of a required symbol "
 						<< " because source pattern "
 						<< CCP(TO_STRING_TREE((*i_corresp_ptr)->second.source_pattern))
-						<< " is not a simple function name." << std::endl;
+						<< " is not a simple function name." << endl;
 					can_simply_rebind = false;
 				}
 				if (sink_symname)
@@ -1309,11 +1388,11 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 				}
 				else 
 				{
-					std::cerr << "Detected that required symbol " << i_wrap->first
+					cerr << "Detected that required symbol " << i_wrap->first
 						<< " is not a simple rebinding of a required symbol "
 						<< " because sink pattern "
 						<< CCP(TO_STRING_TREE((*i_corresp_ptr)->second.sink_expr))
-						<< " is not a simple function name." << std::endl;
+						<< " is not a simple function name." << endl;
 					can_simply_rebind = false;
 				}
 				
@@ -1370,43 +1449,43 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		// If wrapped some, first add the wrapper as a dependency (and an argument)
 		if (wrapped_some)
 		{
-			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< std::endl*/;
+			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< endl*/;
 			// output the first objcopy
-			out << std::endl << '\t' << "objcopy ";
+			out << endl << '\t' << "objcopy ";
 			for (auto i_sym = symbols_to_protect.begin();
 				i_sym != symbols_to_protect.end();
 				i_sym++)
 			{
 				out << "--redefine-sym " << *i_sym << "=__cake_protect_" << *i_sym << " ";
 			}
-			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< std::endl*/;
-			out << std::endl << '\t' << "ld -r -o " << output_module->get_filename() << ' ';
+			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< endl*/;
+			out << endl << '\t' << "ld -r -o " << output_module->get_filename() << ' ';
 			for (auto i_linker_arg = linker_args.begin(); 
 				i_linker_arg != linker_args.end();
 				i_linker_arg++)
 			{
 				out << *i_linker_arg << ' ';
 			}
-			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< std::endl*/;
+			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< endl*/;
 			// add the other object files to the input file list
-			for (std::vector<module_ptr>::iterator i = input_modules.begin();
+			for (vector<module_ptr>::iterator i = input_modules.begin();
 				i != input_modules.end(); i++)
 			{
 				out << (*i)->get_filename() << ' ';
 			}
 			// output the second objcopy
-			out << std::endl << '\t' << "objcopy ";
+			out << endl << '\t' << "objcopy ";
 			for (auto i_sym = symbols_to_protect.begin();
 				i_sym != symbols_to_protect.end();
 				i_sym++)
 			{
 				out << "--redefine-sym __cake_protect_" << *i_sym << "=" << *i_sym << " ";
 			}
-			out << output_module->get_filename() << std::endl;
+			out << output_module->get_filename() << endl;
 		}  // Else just output the args
 		else 
 		{
-			out << std::endl << '\t' << "ld -r -o " << output_module->get_filename();
+			out << endl << '\t' << "ld -r -o " << output_module->get_filename();
 			for (auto i_linker_arg = linker_args.begin(); 
 				i_linker_arg != linker_args.end();
 				i_linker_arg++)
@@ -1415,12 +1494,12 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 			}
 			out << ' ';
 			// add the other object files to the input file list
-			for (std::vector<module_ptr>::iterator i = input_modules.begin();
+			for (vector<module_ptr>::iterator i = input_modules.begin();
 				i != input_modules.end(); i++)
 			{
 				out << (*i)->get_filename() << ' ';
 			}
-			out << std::endl;
+			out << endl;
 		}
 		
 		
@@ -1482,8 +1561,8 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		module_ptr right,
 		antlr::tree::Tree *corresps)
 	{
-		std::cerr << "Adding explicit corresps from block: " << CCP(TO_STRING_TREE(corresps))
-			<< std::endl;
+		cerr << "Adding explicit corresps from block: " << CCP(TO_STRING_TREE(corresps))
+			<< endl;
 		assert(GET_TYPE(corresps) == CAKE_TOKEN(CORRESP));
 		INIT;
 		FOR_ALL_CHILDREN(corresps)
@@ -1583,7 +1662,7 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 								|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW_Q)
 								|| GET_TYPE(correspHead) == CAKE_TOKEN(NAMED_VALUE_CORRESP));
 
-							std::string ruleName;
+							string ruleName;
 							if (GET_TYPE(correspHead) == CAKE_TOKEN(NAMED_VALUE_CORRESP))
 							{
 								if (GET_CHILD_COUNT(correspHead) != 2) RAISE_INTERNAL(correspHead,
@@ -1709,9 +1788,9 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		bool init_only)
 	{
 		assert(GET_TYPE(sink_expr) == CAKE_TOKEN(EVENT_SINK_AS_STUB));
-		auto key = sorted(std::make_pair(source, sink));
+		auto key = sorted(make_pair(source, sink));
 		assert(all_iface_pairs.find(key) != all_iface_pairs.end());
-		ev_corresps.insert(std::make_pair(key, 
+		ev_corresps.insert(make_pair(key, 
 						(struct ev_corresp){ /*.source = */ source, // source is the *requirer*
 							/*.source_pattern = */ source_pattern,
 							/*.source_infix_stub = */ source_infix_stub,
@@ -1724,16 +1803,16 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		/* print debugging info: what type expectations did we find in the stubs? */
 		if (sink_expr)
 		{
-			std::cerr << "stub: " << CCP(TO_STRING_TREE(sink_expr))
-				<< " implies type expectations as follows: " << std::endl;
-			std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> > out;
+			cerr << "stub: " << CCP(TO_STRING_TREE(sink_expr))
+				<< " implies type expectations as follows: " << endl;
+			multimap< string, shared_ptr<dwarf::spec::type_die> > out;
 			find_type_expectations_in_stub(sink,
-				sink_expr, boost::shared_ptr<dwarf::spec::type_die>(), // FIXME: use return type
+				sink_expr, shared_ptr<dwarf::spec::type_die>(), // FIXME: use return type
 				out);
-			if (out.size() == 0) std::cerr << "(no type expectations inferred)" << std::endl;
+			if (out.size() == 0) cerr << "(no type expectations inferred)" << endl;
 			else for (auto i_exp = out.begin(); i_exp != out.end(); i_exp++)
 			{
-				std::cerr << i_exp->first << " as " << *i_exp->second << std::endl;
+				cerr << i_exp->first << " as " << *i_exp->second << endl;
 			}
 			
 		}
@@ -1757,12 +1836,12 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 	)
 	{
 		auto source_mn = read_definite_member_name(source_data_type_mn);
-		auto source_data_type_opt = boost::dynamic_pointer_cast<dwarf::spec::type_die>(
+		auto source_data_type_opt = dynamic_pointer_cast<dwarf::spec::type_die>(
 			source->get_ds().toplevel()->visible_resolve(
 			source_mn.begin(), source_mn.end()));
 		if (!source_data_type_opt) RAISE(corresp, "could not resolve source data type");
 		auto sink_mn = read_definite_member_name(sink_data_type_mn);
-		auto sink_data_type_opt = boost::dynamic_pointer_cast<dwarf::spec::type_die>(
+		auto sink_data_type_opt = dynamic_pointer_cast<dwarf::spec::type_die>(
 			sink->get_ds().toplevel()->visible_resolve(
 			sink_mn.begin(), sink_mn.end()));
 		if (!sink_data_type_opt) RAISE(corresp, "could not resolve sink data type");
@@ -1772,18 +1851,18 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 			sink, 
 			sink_data_type_opt, 
 			sink_infix_stub,
-			refinement, source_is_on_left, corresp);
+			refinement, source_is_on_left, corresp, init_only);
 	}
 	
 	/* This version is used to add implicit dependencies. There is no
 	 * refinement or corresp or any of the other syntactic stuff. */
 	bool link_derivation::ensure_value_corresp(module_ptr source, 
-		boost::shared_ptr<dwarf::spec::type_die> source_data_type,
+		shared_ptr<dwarf::spec::type_die> source_data_type,
 		module_ptr sink,
-		boost::shared_ptr<dwarf::spec::type_die> sink_data_type,
+		shared_ptr<dwarf::spec::type_die> sink_data_type,
 		bool source_is_on_left)
 	{
-		auto key = sorted(std::make_pair(wrap_code.module_of_die(source_data_type), 
+		auto key = sorted(make_pair(wrap_code.module_of_die(source_data_type), 
 			wrap_code.module_of_die(sink_data_type)));
 		assert(all_iface_pairs.find(key) != all_iface_pairs.end());
 		assert(source_data_type);
@@ -1822,10 +1901,10 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 	/* This is the "canonical" version, called from implicit name-matching */
 	void link_derivation::add_value_corresp(
 		module_ptr source, 
-		boost::shared_ptr<dwarf::spec::type_die> source_data_type,
+		shared_ptr<dwarf::spec::type_die> source_data_type,
 		antlr::tree::Tree *source_infix_stub,
 		module_ptr sink,
-		boost::shared_ptr<dwarf::spec::type_die> sink_data_type,
+		shared_ptr<dwarf::spec::type_die> sink_data_type,
 		antlr::tree::Tree *sink_infix_stub,
 		antlr::tree::Tree *refinement,
 		bool source_is_on_left,
@@ -1833,7 +1912,7 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		bool init_only
 	)
 	{
-// 		std::cerr << "Adding value corresp from source module @" << &*source
+// 		cerr << "Adding value corresp from source module @" << &*source
 // 			<< " source data type @" << &*source_data_type << " " << *source_data_type
 // 			<< " source infix stub @" << source_infix_stub
 // 			<< " to sink module @" << &*sink
@@ -1841,7 +1920,7 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 // 			<< " sink infix stub @" << sink_infix_stub
 // 			<< " refinement @" << refinement
 // 			<< " source on " << (source_is_on_left ? "left" : "right")
-// 			<< " corresp @" << corresp << std::endl;
+// 			<< " corresp @" << corresp << endl;
 	
 		/* Handling dependencies:
 		 * Value correspondences may have dependencies on other value correspondences. 
@@ -1858,11 +1937,11 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		 * all the dependencies.
 		 */
 		
-		auto key = sorted(std::make_pair(source, sink));
+		auto key = sorted(make_pair(source, sink));
 		assert(all_iface_pairs.find(key) != all_iface_pairs.end());
 		assert(source_data_type);
 		assert(sink_data_type);
-//     	val_corresps.insert(std::make_pair(key,
+//     	val_corresps.insert(make_pair(key,
 
 		auto basic = (struct basic_value_conversion){ /* .source = */ source,
 							/* .source_data_type = */ source_data_type,
@@ -1882,14 +1961,14 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		if (!(source_concrete_type && compiler.cxx_is_complete_type(source_concrete_type))
 		|| !(sink_concrete_type && compiler.cxx_is_complete_type(sink_concrete_type)))
 		{
-			std::cerr << "Warning: skipping value conversion from " << wrap_code.get_type_name(source_data_type)
+			cerr << "Warning: skipping value conversion from " << wrap_code.get_type_name(source_data_type)
 				<< " to " << wrap_code.get_type_name(sink_data_type)
-				<< " because one or other is an incomplete type." << std::endl;
-			//m_out << "// (skipped because of incomplete type)" << std::endl << std::endl;
-			val_corresps.insert(std::make_pair(key, 
-				boost::dynamic_pointer_cast<value_conversion>(
-					boost::make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
-					basic, std::string("incomplete type")))));
+				<< " because one or other is an incomplete type." << endl;
+			//m_out << "// (skipped because of incomplete type)" << endl << endl;
+			val_corresps.insert(make_pair(key, 
+				dynamic_pointer_cast<value_conversion>(
+					make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
+					basic, string("incomplete type")))));
 			return;
 		}
 		
@@ -1903,13 +1982,13 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		|| source_concrete_type->get_tag() == DW_TAG_reference_type
 		|| sink_concrete_type->get_tag() == DW_TAG_reference_type)
 		{
-			std::cerr << "Warning: skipping value conversion from " << from_typename
+			cerr << "Warning: skipping value conversion from " << from_typename
 				<< " to " << to_typename
-				<< " because one or other is an pointer or reference type." << std::endl;
-			//m_out << "// (skipped because of pointer or reference type)" << std::endl << std::endl;
-			val_corresps.insert(std::make_pair(key, 
-				boost::dynamic_pointer_cast<value_conversion>(
-					boost::make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
+				<< " because one or other is an pointer or reference type." << endl;
+			//m_out << "// (skipped because of pointer or reference type)" << endl << endl;
+			val_corresps.insert(make_pair(key, 
+				dynamic_pointer_cast<value_conversion>(
+					make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
 					basic, "pointer or reference type"))));
 			return;
 		}
@@ -1917,19 +1996,19 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		if (source_concrete_type->get_tag() == DW_TAG_subroutine_type
 		|| sink_concrete_type->get_tag() == DW_TAG_subroutine_type)
 		{
-			std::cerr << "Warning: skipping value conversion from " << from_typename
+			cerr << "Warning: skipping value conversion from " << from_typename
 				<< " to " << to_typename
-				<< " because one or other is a subroutine type." << std::endl;
-			//m_out << "// (skipped because of subroutine type)" << std::endl << std::endl;
-			val_corresps.insert(std::make_pair(key, 
-				boost::dynamic_pointer_cast<value_conversion>(
-					boost::make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
+				<< " because one or other is a subroutine type." << endl;
+			//m_out << "// (skipped because of subroutine type)" << endl << endl;
+			val_corresps.insert(make_pair(key, 
+				dynamic_pointer_cast<value_conversion>(
+					make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
 					basic, "subroutine type"))));
 			return;
 		}
 		
 		// from this point, we will generate a candidate for an init rule
-		boost::shared_ptr<value_conversion> init_candidate;
+		shared_ptr<value_conversion> init_candidate;
 			
 		bool emit_as_reinterpret = false;
 		if (source_concrete_type->is_rep_compatible(sink_concrete_type)
@@ -1938,22 +2017,26 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 			// two rep-compatible cases
 			if (compiler.cxx_assignable_from(sink_concrete_type, source_concrete_type))
 			{
-				std::cerr << "Skipping generation of value conversion from "
+				cerr << "Skipping generation of value conversion from "
 					<< from_typename << " to " << to_typename
-					<< " because of rep-compatibility and C++-assignability." << std::endl;
-				//m_out << "// (skipped because of rep-compatibility and C++-assignability)" << std::endl << std::endl;
-				val_corresps.insert(std::make_pair(key, 
-					init_candidate = boost::dynamic_pointer_cast<value_conversion>(
-						boost::make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
-						basic, "rep-compatibility and C++-assignability"))));
+					<< " because of rep-compatibility and C++-assignability." << endl;
+				//m_out << "// (skipped because of rep-compatibility and C++-assignability)" << endl << endl;
+				val_corresps.insert(make_pair(key, 
+					init_candidate = dynamic_pointer_cast<value_conversion>(
+						make_shared<skipped_value_conversion>(
+							wrap_code, wrap_code.m_out, basic, 
+							"rep-compatibility and C++-assignability"
+						)
+					)
+				));
 				//return;
 				goto add_init_candidate;
 			}			
 			else
 			{
-				std::cerr << "Generating a reinterpret_cast value conversion from "
+				cerr << "Generating a reinterpret_cast value conversion from "
 					<< from_typename << " to " << to_typename
-					<< " as they are rep-compatible but not C++-assignable." << std::endl;
+					<< " as they are rep-compatible but not C++-assignable." << endl;
 				emit_as_reinterpret = true;
 			}
 		}
@@ -1962,9 +2045,9 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 			// rep-incompatible cases are the same in effect but we report them individually
 			if (!refinement || GET_CHILD_COUNT(refinement) == 0)
 			{
-				std::cerr << "Generating value conversion from "
+				cerr << "Generating value conversion from "
 					<< from_typename << " to " << to_typename
-					<< " as they are not rep-compatible." << std::endl;
+					<< " as they are not rep-compatible." << endl;
 			}
 			else
 			{
@@ -1973,9 +2056,9 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 				// should use reinterpret conversion in these cases
 				// + propagate to run-time by generating artificial matching field names
 				// for fields whose renaming enables rep-compatibility
-				std::cerr << "Generating value conversion from "
+				cerr << "Generating value conversion from "
 					<< from_typename << " to " << to_typename
-					<< " as they have nonempty refinement." << std::endl;
+					<< " as they have nonempty refinement." << endl;
 			}
 		}
 
@@ -1989,14 +2072,29 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 				case TAG_PAIR(DW_TAG_structure_type, DW_TAG_structure_type):
 					//emit_structural_conversion_body(source_data_type, sink_data_type,
 					//	refinement, source_is_on_left);
-					val_corresps.insert(std::make_pair(key, 
-						init_candidate = boost::dynamic_pointer_cast<value_conversion>(
-							boost::make_shared<structural_value_conversion>(wrap_code, wrap_code.m_out, 
-							basic))));
+					bool init_is_identical;
+					val_corresps.insert(make_pair(key, 
+						init_candidate = dynamic_pointer_cast<value_conversion>(
+							make_shared<structural_value_conversion>(
+								wrap_code, wrap_code.m_out, basic, false, init_is_identical
+							)
+						)
+					));
+					// if we need to generate a separate init rule, do so, overriding init_candidate
+					if (!init_is_identical)
+					{
+						val_corresps.insert(make_pair(key, 
+							init_candidate = dynamic_pointer_cast<value_conversion>(
+								make_shared<structural_value_conversion>(
+									wrap_code, wrap_code.m_out, basic, true, init_is_identical
+								)
+							)
+						));
+					}
 				break;
 				default:
-					std::cerr << "Warning: didn't know how to generate conversion between "
-						<< *source_data_type << " and " << *sink_data_type << std::endl;
+					cerr << "Warning: didn't know how to generate conversion between "
+						<< *source_data_type << " and " << *sink_data_type << endl;
 				return;
 			}
 	#undef TAG_PAIR
@@ -2004,9 +2102,9 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		else
 		{
 			//emit_reinterpret_conversion_body(source_data_type, sink_data_type);
-			val_corresps.insert(std::make_pair(key, 
-				init_candidate = boost::dynamic_pointer_cast<value_conversion>(
-					boost::make_shared<reinterpret_value_conversion>(wrap_code, wrap_code.m_out, 
+			val_corresps.insert(make_pair(key, 
+				init_candidate = dynamic_pointer_cast<value_conversion>(
+					make_shared<reinterpret_value_conversion>(wrap_code, wrap_code.m_out, 
 					basic))));
 		}
 		
@@ -2017,7 +2115,7 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 				init_candidate->source_data_type
 			};
 		candidate_init_rules_tbl_keys[key].insert(init_tbl_key);
-		candidate_init_rules[key].insert(std::make_pair(
+		candidate_init_rules[key].insert(make_pair(
 			init_tbl_key,
 			init_candidate
 		));
@@ -2026,9 +2124,9 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 	// Get the names of all functions provided by iface1
 	void link_derivation::add_implicit_corresps(iface_pair ifaces)
 	{
-		std::cerr << "Adding implicit correspondences between module " 
+		cerr << "Adding implicit correspondences between module " 
 			<< ifaces.first->get_filename() << " and " << ifaces.second->get_filename()
-			<< std::endl;
+			<< endl;
 	  	
 		// find functions required by iface1 and provided by iface2
 		name_match_required_and_provided(ifaces, ifaces.first, ifaces.second);
@@ -2047,32 +2145,89 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		assert((requiring_iface == ifaces.first && providing_iface == ifaces.second)
 			|| (requiring_iface == ifaces.second && providing_iface == ifaces.first));
 			
-		/* Search dwarf info*/
-		dwarf::encap::Die_encap_all_compile_units& requiring_info
-			= requiring_iface->all_compile_units();
+		/* Search dwarf info */
+//		shared_ptr<encap::fiile_toplevel_die> requiring_info
+//			= requiring_iface->all_compile_units();
 
-		dwarf::encap::Die_encap_all_compile_units& providing_info
-			= providing_iface->all_compile_units();
-			
+//		shared_ptr<encap::file_toplevel_die> providing_info
+//			= providing_iface->all_compile_units();
+		
+		auto r_toplevel = requiring_iface->all_compile_units();
+		auto r_cus = make_pair(r_toplevel->compile_unit_children_begin(),
+			r_toplevel->compile_unit_children_end());
+		auto r_subprograms = make_shared<
+			srk31::conjoining_sequence<
+				spec::compile_unit_die::subprogram_iterator
+				>
+			>();
+		for (auto i_cu = r_cus.first; i_cu != r_cus.second; i_cu++)
+		{
+			assert(!(*i_cu)->subprogram_children_end().base().base().base().m_policy.is_undefined());
+			r_subprograms->append(
+				(*i_cu)->subprogram_children_begin(),
+				(*i_cu)->subprogram_children_end());
+		}
+		pair<subprograms_in_file_iterator, subprograms_in_file_iterator> r_subprograms_seq
+			= make_pair(
+				r_subprograms->begin(/*r_subprograms*/), 
+				r_subprograms->end(/*r_subprograms*/)
+				);
+
+		auto p_toplevel = providing_iface->all_compile_units();
+		auto p_cus = make_pair(p_toplevel->compile_unit_children_begin(),
+			p_toplevel->compile_unit_children_end());
+		auto p_subprograms = make_shared<
+			srk31::conjoining_sequence<
+				spec::compile_unit_die::subprogram_iterator
+				>
+			>();
+		for (auto i_cu = p_cus.first; i_cu != p_cus.second; i_cu++)
+		{
+			assert(!(*i_cu)->subprogram_children_end().base().base().base().m_policy.is_undefined());
+			p_subprograms->append(
+				(*i_cu)->subprogram_children_begin(),
+				(*i_cu)->subprogram_children_end());
+			assert(
+				(*i_cu)->subprogram_children_end()
+			==  p_subprograms->end().base());
+		}
+		pair<subprograms_in_file_iterator, subprograms_in_file_iterator> p_subprograms_seq
+			= make_pair(
+				p_subprograms->begin(/*p_subprograms*/),
+				p_subprograms->end(/*p_subprograms*/)
+				);
+		
+		/* */
+		required_funcs_iter r_iter(
+			r_subprograms_seq.first,
+			r_subprograms_seq.second
+			);
 		required_funcs_iter r_end(
-			requiring_info.subprograms_begin(), requiring_info.subprograms_end(),
-			requiring_info.subprograms_end());
+			//r_subprograms->begin(r_subprograms), // requiring_info->subprogram_children_begin(),
+			r_subprograms_seq.second,//requiring_info->subprogram_children_end(),
+			r_subprograms_seq.second//requiring_info->subprogram_children_end()
+			);
 		provided_funcs_iter p_iter(
-			providing_info.subprograms_begin(), providing_info.subprograms_end());
+			p_subprograms_seq.first, //providing_info->subprogram_children_begin(), 
+			p_subprograms_seq.second//providing_info->subprogram_children_end());
+			);
 		provided_funcs_iter p_end(
-			providing_info.subprograms_begin(), providing_info.subprograms_end(),
-			providing_info.subprograms_end());
+			//p_subprograms->begin(p_subprograms),
+			p_subprograms_seq.second,
+			p_subprograms_seq.second 	// FIXME: rationalise this nonsense
+												// using enable_shared_from_this
+			//providing_info->subprogram_children_begin(), 
+			//providing_info->subprogram_children_end(),
+			//providing_info->subprogram_children_end()
+			);
 	
-		for (required_funcs_iter r_iter(
-				requiring_info.subprograms_begin(), 
-				requiring_info.subprograms_end()); r_iter != r_end; r_iter++)
+		// FIXME: below....
+		for (; r_iter != r_end; r_iter++)
 		{        
-			std::cerr << "Found a required subprogram!" << std::endl;
-			std::cerr << **r_iter;
+			cerr << "Found a required subprogram!" << endl;
+			cerr << **r_iter;
 			
-			for (provided_funcs_iter p_iter(
-					providing_info.subprograms_begin(), 
-					providing_info.subprograms_end()); p_iter != p_end; p_iter++) 
+			for (; p_iter != p_end; p_iter++) 
 			{
 				if ((*r_iter)->get_name() == (*p_iter)->get_name())
 				{
@@ -2083,18 +2238,18 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 					 * that. */
 					 
 					// add a correspondence
-					std::cerr << "Matched name " << *((*r_iter)->get_name())
-						<< " in modules " << *((*r_iter)->parent().get_name())
-						<< " and " << *((*p_iter)->parent().get_name())
-						<< std::endl;
+					cerr << "Matched name " << *((*r_iter)->get_name())
+						<< " in modules " << *((*r_iter)->get_parent()->get_name())
+						<< " and " << *((*p_iter)->get_parent()->get_name())
+						<< endl;
 					// don't add if explicit rules have touched this event
 					if (touched_events[requiring_iface].find(
-							definite_member_name(std::vector<std::string>(1, *(*r_iter)->get_name())))
+							definite_member_name(vector<string>(1, *(*r_iter)->get_name())))
 						!= touched_events[requiring_iface].end())
 					{
-						std::cerr << "Matched name " << *((*r_iter)->get_name())
+						cerr << "Matched name " << *((*r_iter)->get_name())
 							<< " already touched by an explicit correspondence, so skipping."
-							<< std::endl;
+							<< endl;
 						continue;
 					}
 
@@ -2103,7 +2258,7 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 							*((*r_iter)->get_name()));
 					antlr::tree::Tree *tmp_sink_pattern = 
 						make_simple_sink_expression_for_event_name(
-							std::string(*((*p_iter)->get_name())) /*+ std::string("(...)")*/);
+							string(*((*p_iter)->get_name())) /*+ string("(...)")*/);
 					// we should have just generated an event pattern and a function invocation
 					assert(GET_TYPE(tmp_source_pattern) == CAKE_TOKEN(EVENT_PATTERN));
 					assert(GET_TYPE(tmp_sink_pattern) == CAKE_TOKEN(EVENT_SINK_AS_STUB));
@@ -2122,7 +2277,7 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 	}
 	
 	void link_derivation::extract_type_synonymy(module_ptr module,
-		std::map<std::vector<std::string>, boost::shared_ptr<dwarf::spec::type_die> >& synonymy)
+		map<vector<string>, shared_ptr<dwarf::spec::type_die> >& synonymy)
 	{
 		// synonymy map is from synonym to concrete
 		
@@ -2130,36 +2285,36 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 			i_die != module->get_ds().end();
 			i_die++)
 		{
-			auto p_typedef = boost::dynamic_pointer_cast<dwarf::spec::typedef_die>(*i_die);
+			auto p_typedef = dynamic_pointer_cast<dwarf::spec::typedef_die>(*i_die);
 			if (!p_typedef) continue;
 			if (p_typedef == p_typedef->get_concrete_type()) continue;
 			
 			if (!p_typedef->get_concrete_type())
 			{
-				std::cerr << "FIXME: typedef "
+				cerr << "FIXME: typedef "
 					<< *p_typedef
 					<< " has no concrete type -- we should add it to synonymy map,"
 					<< " but skipping for now." 
-					<< std::endl;
+					<< endl;
 			}
 			else
 			{
-				synonymy.insert(std::make_pair(
+				synonymy.insert(make_pair(
 					*p_typedef->ident_path_from_cu(), 
 					p_typedef->get_concrete_type()));
-				std::cerr << "synonymy within " << module->filename << ": "
+				cerr << "synonymy within " << module->filename << ": "
 					<< definite_member_name(*p_typedef->ident_path_from_cu())
-					<< " ----> " << *p_typedef->get_concrete_type() << std::endl;
+					<< " ----> " << *p_typedef->get_concrete_type() << endl;
 			}
 		}
 	}
 	
-	boost::optional<link_derivation::val_corresp_map_t::iterator>
+	optional<link_derivation::val_corresp_map_t::iterator>
 	link_derivation::find_value_correspondence(
-		module_ptr source, boost::shared_ptr<dwarf::spec::type_die> source_type,
-		module_ptr sink, boost::shared_ptr<dwarf::spec::type_die> sink_type)
+		module_ptr source, shared_ptr<dwarf::spec::type_die> source_type,
+		module_ptr sink, shared_ptr<dwarf::spec::type_die> sink_type)
 	{
-		auto iter_pair = val_corresps.equal_range(sorted(std::make_pair(source, sink)));
+		auto iter_pair = val_corresps.equal_range(sorted(make_pair(source, sink)));
 		for (auto i = iter_pair.first; i != iter_pair.second; i++)
 		{
 			if (i->second->source == source && i->second->sink == sink &&
@@ -2200,14 +2355,14 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		struct found_type 
 		{ 
 			module_ptr module;
-			boost::shared_ptr<dwarf::spec::type_die> t;
+			shared_ptr<dwarf::spec::type_die> t;
 		};
-		std::multimap<std::vector<std::string>, found_type> found_types;
-		std::set<std::vector<std::string> > keys;
+		multimap<vector<string>, found_type> found_types;
+		std::set<vector<string> > keys;
 		
-		std::map<std::vector<std::string>, boost::shared_ptr<dwarf::spec::type_die> > first_synonymy;
+		map<vector<string>, shared_ptr<dwarf::spec::type_die> > first_synonymy;
 		extract_type_synonymy(ifaces.first, first_synonymy);
-		std::map<std::vector<std::string>, boost::shared_ptr<dwarf::spec::type_die> > second_synonymy;		
+		map<vector<string>, shared_ptr<dwarf::spec::type_die> > second_synonymy;		
 		extract_type_synonymy(ifaces.second, second_synonymy);
 		
 		// traverse whole dieset depth-first, remembering DIEs that 
@@ -2221,30 +2376,30 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 				i_die != i_mod->get_ds().end();
 				i_die++)
 			{
-				auto p_type = boost::dynamic_pointer_cast<dwarf::spec::type_die>(*i_die);
+				auto p_type = dynamic_pointer_cast<dwarf::spec::type_die>(*i_die);
 				if (!p_type) continue;
 
 				auto opt_path = p_type->ident_path_from_cu();
 				if (!opt_path) continue;
 
-				found_types.insert(std::make_pair(*opt_path, (found_type){ i_mod, p_type }));
+				found_types.insert(make_pair(*opt_path, (found_type){ i_mod, p_type }));
 				keys.insert(*opt_path);
 			}
 		}
 		
-		std::set< boost::shared_ptr<dwarf::spec::type_die> > seen_concrete_types;
+		set< shared_ptr<dwarf::spec::type_die> > seen_concrete_types;
 
-		std::set< std::pair< // this is any pair which is  a base type -- needn't both be base
+		set< pair< // this is any pair which is  a base type -- needn't both be base
 			              dwarf::tool::cxx_compiler::base_type,
-			              boost::shared_ptr<dwarf::spec::type_die> 
+			              shared_ptr<dwarf::spec::type_die> 
 			              >
 			    > seen_first_base_type_pairs;
-		std::set< std::pair< // this is any pair *involving* a base type -- needn't both be base
-			               boost::shared_ptr<dwarf::spec::type_die> ,
+		set< pair< // this is any pair *involving* a base type -- needn't both be base
+			               shared_ptr<dwarf::spec::type_die> ,
 			               dwarf::tool::cxx_compiler::base_type
 			               >
 			    > seen_second_base_type_pairs;
-		std::set< std::pair< dwarf::tool::cxx_compiler::base_type,
+		set< pair< dwarf::tool::cxx_compiler::base_type,
 			                 dwarf::tool::cxx_compiler::base_type 
 			               >
 			    > seen_base_base_pairs;
@@ -2277,9 +2432,9 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 			   // and these are distinct in DWARF-land but not in C++-land
 				(
 					iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_base_type
-					|| seen_first_base_type_pairs.find(std::make_pair(
+					|| seen_first_base_type_pairs.find(make_pair(
 						dwarf::tool::cxx_compiler::base_type(
-							boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+							dynamic_pointer_cast<dwarf::spec::base_type_die>(
 								iter_pair.first->second.t->get_concrete_type())),
 							iter_pair.second->second.t->get_concrete_type())) ==
 							seen_first_base_type_pairs.end()
@@ -2287,22 +2442,22 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 			&&
 				(
 					iter_pair.second->second.t->get_concrete_type()->get_tag() != DW_TAG_base_type
-					|| seen_second_base_type_pairs.find(std::make_pair(
+					|| seen_second_base_type_pairs.find(make_pair(
 						iter_pair.first->second.t->get_concrete_type(),
 						dwarf::tool::cxx_compiler::base_type(
-							boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+							dynamic_pointer_cast<dwarf::spec::base_type_die>(
 								iter_pair.second->second.t->get_concrete_type()))))
 						== seen_second_base_type_pairs.end()
 				)
 			&& (!(iter_pair.first->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type &&
 				  iter_pair.second->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type)
 				 || seen_base_base_pairs.find(
-				 	std::make_pair(
+				 	make_pair(
 						dwarf::tool::cxx_compiler::base_type(
-							boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+							dynamic_pointer_cast<dwarf::spec::base_type_die>(
 								iter_pair.first->second.t->get_concrete_type())),
 						dwarf::tool::cxx_compiler::base_type(
-							boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+							dynamic_pointer_cast<dwarf::spec::base_type_die>(
 								iter_pair.second->second.t->get_concrete_type()))
 					))
 					== seen_base_base_pairs.end()
@@ -2312,40 +2467,40 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 				&& !compiler.is_builtin(iter_pair.second->second.t->get_concrete_type())
 			)
 			{
-				std::cerr << "data type " << definite_member_name(*i_k)
-					<< " exists in both modules" << std::endl;
+				cerr << "data type " << definite_member_name(*i_k)
+					<< " exists in both modules" << endl;
 				seen_concrete_types.insert(iter_pair.first->second.t->get_concrete_type());
 				seen_concrete_types.insert(iter_pair.second->second.t->get_concrete_type());
 				if (iter_pair.first->second.t->get_tag() == DW_TAG_base_type)
 					seen_first_base_type_pairs.insert(
-						std::make_pair(
+						make_pair(
 							dwarf::tool::cxx_compiler::base_type(
-								boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+								dynamic_pointer_cast<dwarf::spec::base_type_die>(
 									iter_pair.first->second.t->get_concrete_type())),
 								iter_pair.second->second.t->get_concrete_type())
 							);
 				if (iter_pair.second->second.t->get_tag() == DW_TAG_base_type)
 					seen_second_base_type_pairs.insert(
-						std::make_pair(
+						make_pair(
 							iter_pair.first->second.t->get_concrete_type(),
 							dwarf::tool::cxx_compiler::base_type(
-								boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+								dynamic_pointer_cast<dwarf::spec::base_type_die>(
 									iter_pair.second->second.t->get_concrete_type()))));
 				if (iter_pair.first->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type &&
 				  iter_pair.second->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type)
 				{
-					std::cerr << "remembering a base-base pair " 
+					cerr << "remembering a base-base pair " 
 						<< definite_member_name(*i_k) << "; size was " 
 						<< seen_base_base_pairs.size();
-				 	seen_base_base_pairs.insert(std::make_pair(
+				 	seen_base_base_pairs.insert(make_pair(
 						dwarf::tool::cxx_compiler::base_type(
-							boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+							dynamic_pointer_cast<dwarf::spec::base_type_die>(
 								iter_pair.first->second.t->get_concrete_type())),
 						dwarf::tool::cxx_compiler::base_type(
-							boost::dynamic_pointer_cast<dwarf::spec::base_type_die>(
+							dynamic_pointer_cast<dwarf::spec::base_type_die>(
 								iter_pair.second->second.t->get_concrete_type()))
 					));
-					std::cerr << "; now " << seen_base_base_pairs.size() << std::endl;
+					cerr << "; now " << seen_base_base_pairs.size() << endl;
 				}
 					
 				// iter_pair points to a pair of like-named types in differing modules
@@ -2361,55 +2516,55 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 				// instead of using ident_path_from_cu -- FIXME: what?
 				
 				// two-iteration for loop
-				for (std::pair<module_ptr, module_ptr> source_sink_pair = 
-						std::make_pair(ifaces.first, ifaces.second), orig_source_sink_pair = source_sink_pair;
-						source_sink_pair != std::pair<module_ptr, module_ptr>();
+				for (pair<module_ptr, module_ptr> source_sink_pair = 
+						make_pair(ifaces.first, ifaces.second), orig_source_sink_pair = source_sink_pair;
+						source_sink_pair != pair<module_ptr, module_ptr>();
 						source_sink_pair =
 							(source_sink_pair == orig_source_sink_pair) 
-								? std::make_pair(ifaces.second, ifaces.first) : std::make_pair(module_ptr(), module_ptr()))
+								? make_pair(ifaces.second, ifaces.first) : make_pair(module_ptr(), module_ptr()))
 				{
 					// each of these maps a set of synonyms mapping to their concrete type
-					std::map<std::vector<std::string>, boost::shared_ptr<dwarf::spec::type_die> > &
+					map<vector<string>, shared_ptr<dwarf::spec::type_die> > &
 						source_synonymy = (source_sink_pair.first == ifaces.first) ? first_synonymy : second_synonymy;
-					std::map<std::vector<std::string>, boost::shared_ptr<dwarf::spec::type_die> > &
+					map<vector<string>, shared_ptr<dwarf::spec::type_die> > &
 						sink_synonymy = (source_sink_pair.second == ifaces.first) ? first_synonymy : second_synonymy;
 					
 
 					bool source_is_synonym = false;
-					boost::shared_ptr<dwarf::spec::basic_die> source_found;
+					shared_ptr<dwarf::spec::basic_die> source_found;
 					bool sink_is_synonym = false;
-					boost::shared_ptr<dwarf::spec::basic_die> sink_found;
+					shared_ptr<dwarf::spec::basic_die> sink_found;
 					/* If the s... data type is a synonym, we will set s..._type
 					 * to the *concrete* type and set the flag. 
 					 * Otherwise we will try to get the data type DIE by name lookup. */
 					auto source_type = (source_synonymy.find(*i_k) != source_synonymy.end()) ?
 							(source_is_synonym = true, source_synonymy[*i_k]) : /*, // *i_k, // */ 
-							boost::dynamic_pointer_cast<dwarf::spec::type_die>(
+							dynamic_pointer_cast<dwarf::spec::type_die>(
 								source_found = source_sink_pair.first->get_ds().toplevel()->visible_resolve(
 									i_k->begin(), i_k->end()));
 					auto sink_type = (sink_synonymy.find(*i_k) != sink_synonymy.end()) ?
 							(sink_is_synonym = true, sink_synonymy[*i_k]) : /*, // *i_k, // */ 
-							boost::dynamic_pointer_cast<dwarf::spec::type_die>(
+							dynamic_pointer_cast<dwarf::spec::type_die>(
 								sink_found = source_sink_pair.second->get_ds().toplevel()->visible_resolve(
 									i_k->begin(), i_k->end()));
 					const char *matched_name = i_k->at(0).c_str();
 					
-// 					std::cerr << "Two-cycle for loop: source module @" << &*source_sink_pair.first << std::endl;
-// 					std::cerr << "Two-cycle for loop: sink module @" << &*source_sink_pair.second << std::endl;
-// 					std::cerr << "Two-cycle for loop: source synonymy @" << &source_synonymy << std::endl;
-// 					std::cerr << "Two-cycle for loop: sink synonymy @" << &sink_synonymy << std::endl;
+// 					cerr << "Two-cycle for loop: source module @" << &*source_sink_pair.first << endl;
+// 					cerr << "Two-cycle for loop: sink module @" << &*source_sink_pair.second << endl;
+// 					cerr << "Two-cycle for loop: source synonymy @" << &source_synonymy << endl;
+// 					cerr << "Two-cycle for loop: sink synonymy @" << &sink_synonymy << endl;
 					
 					// this happens if name lookup fails 
 					// (e.g. not visible (?))
 					// or doesn't yield a type
 					if (!source_type || !sink_type)
 					{
-						boost::shared_ptr<dwarf::spec::basic_die> source_synonym;
-						boost::shared_ptr<dwarf::spec::basic_die> sink_synonym;
+						shared_ptr<dwarf::spec::basic_die> source_synonym;
+						shared_ptr<dwarf::spec::basic_die> sink_synonym;
 						if (source_is_synonym) source_synonym = source_synonymy[*i_k];
 						if (sink_is_synonym) sink_synonym = sink_synonymy[*i_k];
 
-						std::cerr << "Skipping correspondence for matched data type named " 
+						cerr << "Skipping correspondence for matched data type named " 
 						<< definite_member_name(*i_k)
 						<< " because (FIXME) the type is probably incomplete"
 						<< " where source " << *i_k 
@@ -2418,11 +2573,11 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 						<< " and sink " << *i_k 
 						<< (sink_is_synonym ? " was found to be a synonym " : " was not resolved to a type ")
 						<< ((!sink_is_synonym && sink_found) ? " but was resolved to a non-type" : "")
-						<< std::endl;
-						if (source_synonym) std::cerr << "source synonym: " << source_synonym
-							<< std::endl;
-						if (sink_synonym) std::cerr << "sink synonym: " << sink_synonym
-							<< std::endl;
+						<< endl;
+						if (source_synonym) cerr << "source synonym: " << source_synonym
+							<< endl;
+						if (sink_synonym) cerr << "sink synonym: " << sink_synonym
+							<< endl;
 						assert(definite_member_name(*i_k).at(0) != "int");
 						continue;
 					}	
@@ -2434,10 +2589,10 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 							source_sink_pair.second, 
 							sink_type))
 					{
-		std::cerr << "Adding value corresp from source module @" << source_sink_pair.first.get()
+		cerr << "Adding value corresp from source module @" << source_sink_pair.first.get()
 			<< " source data type " << *source_type << " " 
 			<< " to sink module @" << source_sink_pair.second.get()
-			<< " sink data type " << *sink_type << std::endl;
+			<< " sink data type " << *sink_type << endl;
 	
 						add_value_corresp(
 							source_sink_pair.first,
@@ -2451,25 +2606,25 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 							make_simple_corresp_expression(*i_k) // corresp
 						);
 					} // end if not already exist
-						else std::cerr << "Skipping correspondence for matched data type named " 
+						else cerr << "Skipping correspondence for matched data type named " 
 							<< definite_member_name(*i_k)
 							<< " because type synonyms processed earlier already defined a correspondence"
-							<< std::endl;
+							<< endl;
 				} // end two-cycle for loop
 			}
-			else std::cerr << "data type " << definite_member_name(*i_k)
-					<< " exists only in one module" << std::endl;
+			else cerr << "data type " << definite_member_name(*i_k)
+					<< " exists only in one module" << endl;
 		}
 	}
 
- 	std::vector<boost::shared_ptr<dwarf::spec::type_die> >
+ 	vector<shared_ptr<dwarf::spec::type_die> >
 	link_derivation::
-	corresponding_dwarf_types(boost::shared_ptr<dwarf::spec::type_die> type,
+	corresponding_dwarf_types(shared_ptr<dwarf::spec::type_die> type,
 		module_ptr corresp_module,
 		bool flow_from_type_module_to_corresp_module)
 	{
-		std::vector<boost::shared_ptr<dwarf::spec::type_die> > found;
-		auto ifaces = sorted(std::make_pair(corresp_module,
+		vector<shared_ptr<dwarf::spec::type_die> > found;
+		auto ifaces = sorted(make_pair(corresp_module,
 			wrap_code.module_of_die(type)));
 		auto iters = val_corresps.equal_range(ifaces);
 		for (auto i_corresp = iters.first;
@@ -2487,9 +2642,9 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		}
 		return found;
 	}	
-	boost::shared_ptr<dwarf::spec::type_die>
+	shared_ptr<dwarf::spec::type_die>
 	link_derivation::unique_corresponding_dwarf_type(
-		boost::shared_ptr<dwarf::spec::type_die> type,
+		shared_ptr<dwarf::spec::type_die> type,
 		module_ptr corresp_module,
 		bool flow_from_type_module_to_corresp_module)
 	{
@@ -2498,7 +2653,7 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 			corresp_module,
 			flow_from_type_module_to_corresp_module);
 		if (result.size() == 1) return result.at(0);
-		else return boost::shared_ptr<dwarf::spec::type_die>();
+		else return shared_ptr<dwarf::spec::type_die>();
 	}
 
 	void link_derivation::compute_wrappers() 
@@ -2524,13 +2679,68 @@ wrap_file << "} /* end extern \"C\" */" << std::endl;
 		for (ev_corresp_map_t::iterator i_ev = ev_corresps.begin();
 				i_ev != ev_corresps.end(); i_ev++)
 		{
-			std::string called_function_name = get_event_pattern_call_site_name(
+			string called_function_name = get_event_pattern_call_site_name(
 				i_ev->second.source_pattern);
 			
-			std::cerr << "Function " << called_function_name << " may be wrapped!" << std::endl;
+			cerr << "Function " << called_function_name << " may be wrapped!" << endl;
 			wrappers[called_function_name].push_back(
 					&(*i_ev) // push a pointer to the ev_corresp map entry
 				);
+		}
+	}
+	
+	// explicit instantiations
+	//class hash<module_ptr>;
+	//class hash<shared_ptr<type_die> >;
+	
+	void link_derivation::assign_value_corresp_numbers()
+	{
+		auto hash_function = [](const val_corresp_group_key& k) {
+//		struct h
+//		{ unsigned operator()(const key& k) const {
+			//hash<module_ptr> h1;
+			//hash<shared_ptr<type_die> > h2;
+			
+			// try to force instantiation of these functions
+			//&hash<module_ptr>::operator() ;
+			//&hash<shared_ptr<type_die> >::operator() ; 
+			
+			// return h1(k.source_module) ^ h1(k.sink_module) ^ h2(k.source_type) ^ h2(k.sink_type);
+			
+			// HACK: avoid probable g++ bug (link error for these instances of hash::operator())
+			return reinterpret_cast<unsigned long>(k.source_module.get())
+				^  reinterpret_cast<unsigned long>(k.sink_module.get())
+				^  reinterpret_cast<unsigned long>(k.source_data_type.get())
+				^  reinterpret_cast<unsigned long>(k.sink_data_type.get());
+//		} } hash_function;
+		};
+		
+		unordered_map<val_corresp_group_key, int, __typeof(hash_function)> counts(100, hash_function);
+		
+		for (auto i = val_corresps.begin(); i != val_corresps.end(); i++)
+		{
+			auto p_c = i->second;
+			auto k = (val_corresp_group_key)
+			{ p_c->source, p_c->sink, p_c->source_data_type, p_c->sink_data_type };
+			
+			// 1. put it in the group table
+			auto ifaces = sorted(make_pair(p_c->source, p_c->sink));
+			
+			val_corresp_group_tbl_t& group_tbl = val_corresp_groups[ifaces];
+			vector<val_corresp *>& vec = group_tbl[k];
+			vec.push_back(p_c.get());
+			
+			// the two counts are now redundant, but sanity-check for now
+			int assigned = counts[k]++;
+			assert(vec.size() == counts[k]);
+			
+			cerr << "Assigned number " << assigned
+				<< " to rule relating source data type "
+				<< p_c->source_data_type
+				<< " with sink data type "
+				<< p_c->sink_data_type
+				<< " where counts[...] is now " << counts[k] << endl;
+			val_corresp_numbering.insert(make_pair(p_c, assigned));
 		}
 	}
 

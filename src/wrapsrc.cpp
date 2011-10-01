@@ -10,6 +10,7 @@
 using boost::dynamic_pointer_cast;
 using namespace dwarf::spec;
 using boost::shared_ptr;
+using std::ostringstream;
 
 namespace cake
 {
@@ -383,7 +384,7 @@ assert(false);
 		// get the subprogram description of the wrapped function in an arbitrary source module
 		auto subp = 
 			corresps.at(0)->second.source->all_compile_units() 
-				.visible_named_child(wrapped_symname);
+				->visible_named_child(wrapped_symname);
 		if (!subp) 
 		{
 			std::cerr << "Bailing from wrapper generation -- no subprogram!" << std::endl; 
@@ -742,9 +743,9 @@ assert(false);
 
 	wrapper_file::environment 
 	wrapper_file::crossover_environment(
-		module_ptr old_module_context,
+		module_ptr old_module,
 		const environment& env,
-		module_ptr new_module_context,
+		module_ptr new_module,
 		const std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& constraints
 		)
 	{
@@ -831,7 +832,7 @@ assert(false);
 			{
 				auto i_binding = env.find(*i_binding_name);
 				assert(i_binding != env.end());
-				assert(i_binding->second.valid_in_module == old_module_context);
+				assert(i_binding->second.valid_in_module == old_module);
 			}
 			
 			
@@ -858,7 +859,7 @@ assert(false);
 
 			/* Work out the target type expectations, using constraints */
 			boost::shared_ptr<dwarf::spec::type_die> precise_to_type;
-			int rule_tag = 0; // FIXME: handle annotations / typedefs in the *source*
+			
 			// get the constraints defined for this Cake name
 			//auto iter_pair = constraints.equal_range(i_binding->first);
 			for (auto i_type = all_constraints.begin(); i_type != all_constraints.end(); i_type++)
@@ -922,14 +923,14 @@ assert(false);
 			if (is_a_pointer)
 			{
 				m_out << "ensure_co_objects_allocated(REP_ID("
-					<< m_d.name_of_module(old_module_context) << "), ";
+					<< m_d.name_of_module(old_module) << "), ";
 				// make sure we invoke the pointer specialization
 				/*if (is_a_pointer_this_time)*/ m_out <<
 					"ensure_is_a_pointer(";
 				m_out << i_cxxname->first; 
 				/*if (is_a_pointer_this_time)*/ m_out << ")";
 				m_out << ", REP_ID("
-					<< m_d.name_of_module(new_module_context)
+					<< m_d.name_of_module(new_module)
 					<<  "));" << std::endl;
 			}
 // 			/* Now insert code to ensure co-objects are allocated. We might pass
@@ -955,14 +956,14 @@ assert(false);
 // 					!was_a_pointer_last_time && is_a_pointer_this_time))
 // 				{
 // 					m_out << "ensure_co_objects_allocated(REP_ID("
-// 						<< m_d.name_of_module(old_module_context) << "), ";
+// 						<< m_d.name_of_module(old_module) << "), ";
 // 					// make sure we invoke the pointer specialization
 // 					if (is_a_pointer_this_time) m_out <<
 // 						"ensure_is_a_pointer(";
 // 					m_out << i_binding->second.cxx_name;
 // 					if (is_a_pointer_this_time) m_out << ")";
 // 					m_out << ", REP_ID("
-// 						<< m_d.name_of_module(new_module_context)
+// 						<< m_d.name_of_module(new_module)
 // 						<<  "));" << std::endl;
 // 				}
 // 			}
@@ -971,8 +972,8 @@ assert(false);
 			// output its initialization
 			m_out << "auto " << ident << " = ";
 			open_value_conversion(
-				link_derivation::sorted(new_module_context, i_first_binding->second.valid_in_module),
-				rule_tag, // defaults to 0, but may have been set above
+				link_derivation::sorted(new_module, i_first_binding->second.valid_in_module),
+				//rule_tag, // defaults to 0, but may have been set above
 				boost::shared_ptr<dwarf::spec::type_die>(), // no precise from type
 				precise_to_type, // defaults to no precise to type, but may have been set above
 				(is_a_pointer ? std::string("((void*)0)") : *collected_cxx_typeof), 
@@ -981,7 +982,7 @@ assert(false);
 				   // It's not clear how we'd get this here -- scan future uses of each xover'd binding?
 				   // i.e. we only get it *later* when we try to emit some stub logic that uses this binding
 				i_first_binding->second.valid_in_module, // from_module is 
-				new_module_context
+				new_module
 			);
 			
 			/* Specifying value conversions:
@@ -1021,7 +1022,7 @@ assert(false);
 				new_env[*i_cakename] = (bound_var_info) {
 					ident,
 					ident,
-					new_module_context
+					new_module
 				};
 			}
 		}
@@ -1361,7 +1362,7 @@ assert(false);
     
 	void wrapper_file::open_value_conversion(
 		link_derivation::iface_pair ifaces,
-		int rule_tag,
+		//int rule_tag,
 		boost::shared_ptr<dwarf::spec::type_die> from_type, // most precise
 		boost::shared_ptr<dwarf::spec::type_die> to_type, 
 		boost::optional<std::string> from_typeof /* = boost::optional<std::string>()*/, // mid-precise
@@ -1403,15 +1404,131 @@ assert(false);
         	// nowe we ALWAYS use the function template
             //m_out << component_pair_classname(ifaces);
 			
+			//ostringstream rule_tag_str; rule_tag_str << rule_tag;
 			std::string to_typestring;
 			if (to_type) to_typestring = get_type_name(to_type);
 			else if (to_typeof) to_typestring = "__typeof(" + *to_typeof + ")";
 			else
 			{
 				to_typestring = std::string("::cake::") + "corresponding_type_to_"
-					+ ((to_module == ifaces.first) ? ("second< " + component_pair_classname(ifaces) + ", " + from_typestring + ", 0, true>::in_first")
-					                               : ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", 0, true>::in_second"));
+					+ ((to_module == ifaces.first) ? ("second< " + component_pair_classname(ifaces) + ", " + from_typestring + /*", " + rule_tag_str.str() +*/ ", true>::in_first")
+					                               : ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + /*", " + rule_tag_str.str() +*/ ", true>::in_second"));
 			}
+			
+			/* This is messed up.
+			 * Since we rely on __typeof, we don't know the DWARF types of
+			 * some variables. This means we can't use DWARF types to lookup
+			 * the artificial data types.
+			 * How should it work?
+			 * We generate (and number) all the rules we can.
+			 * Then we associate with each *ident* an (optional) artificial interpretation string,
+			 * as we bind it?
+			 * I think this will work, because even if we have "as" applied to arbitrary expressions,
+			 * the effect of this is just to bind a new ident and store the artificial string in *that*.
+			 * We need some way to map from __typeof() and artificial ident strings 
+			 * to rule tags at runtime. 
+			 * So our generated code will be rule_tag<T>::some_ident
+			 *                          concrete type-^   ^-- artificial tag
+			 * Seems like we can extend the corresponding_type_to_first (etc.) classes here.
+			 * What do we do for typedefs? What are their artificial tags?
+			 * Can we use the DWARF offset? i.e. typedef some_concrete_type __dwarf_typedef_at_0xbeef?
+			 * YES. Then we assign the artificial string "__dwarf_typedef_at_0xbeef" to the ident
+			 * whose type is typedef'd in the object file. 
+			 * Actually our code will look like
+			 * class rule_tag<T> { // or actually corresponding_type_to_second 
+			 *  enum { 
+			 *     some_artificial_ident = TAG; 
+			 *  // ...
+			 *   };
+			 * };*/
+			//int rule_tag; // = 0; // FIXME: handle annotations / typedefs in the *source*
+			/* How do we choose the rule tag? 
+			 * - from our source and sink types, if they are typedefs; 
+			 * - from "as" annotations in the originating rules. 
+			 *   How do we find out about these?
+			 *   - If there are any, they will be attached to bound args/values (in event corresps)
+			 *                                                or fields (in value corresps)
+			 * ... in the AST. 
+			 * The cxx types don't distinguish; by definition, they're the concrete types, which
+			 * are all the same for all values of rule_tag. */
+			
+			/* What are these source_artificial_identifier and sink_artificial_identifier?
+			 * Roughly, they're the ident used with "as", or an identifier for a typedef. 
+			 * They're different across the two modules, because 
+			 * they might be corresponded explicitly
+			 * rather than by name-matching.
+			 * them. */
+			
+			optional<string> source_artificial_identifier;// = extract_artificial_data_type(
+				///*source_expr*/ 0, ctxt);
+			optional<string> sink_artificial_identifier; // = extract_artificial_data_type(
+				///*sink_expr*/ 0, ctxt);
+			
+			// PROBLEM: we need ctxt to tell us exactly which syntactic fragment
+			// the current crossover is handling, so that we can scan the AST for
+			// which "as" expressions are relevant. And what if no "as" expressions
+			// are relevant, but instead, the DWARF typedefs bound to each identifer?
+			
+			// PROBLEM: we need to propagate type information through expressions.
+			// Otherwise, how are we going to handle
+			//          foo(a as LengthInMetres) --> bar(a+1); // bar(padded_length: LengthInCm)
+			// What does this mean? 
+			// When 'a' is introduced to the environment, it should be associated with its DWARF element,
+			// hence its typedef.
+			// When we do 
+			// new_ident = a + 1;
+			// we want to propagate the information to new_ident
+			// What about if we had 
+			// a+b?  (and only one of them was a typedef, the other being the corresponding concrete type)?
+			// In other words,
+			// we need to propagate type info through an environment somehow -- be it statically or dynamically.
+			// The properly Cake-like way to do it is dynamically, if we are a dynamic language.
+			// Save a full version of this for the DwarfPython / PIE version of Cake
+			// This definitely needs tackling there.
+			// Specifically, we need *rules for how typedefs propagate dynamically*!
+			// This definitely isn't handled already.
+			// Some strawman examples: always discard; use synonym dependency as specificity relation
+			// and tie-break on leftmore operands of binary operations; others?
+			// FOR NOW: 
+			// we commit the horrible HACK of 
+			// basically doing "always discard"
+			// and extending bound_var_info with an "origin" field
+			// that is a has_type_describing_layout DIE.
+			// What about propagating this across crossovers (and through __cake_it)? Do we need to?
+			// We're in the middle of a crossover when we get called right here. 
+			// YES we want to propagate e.g. the typedef that the crossed-over a corresponds to
+			// -- if there is one! There might not be, for artificial data types. OH, but there will be a
+			// corresponding data type, and that might be artificial.
+			
+			
+			string source_artificial_fragment = source_artificial_identifier ? 
+				*source_artificial_identifier : "__cake_default";
+			string sink_artificial_fragment = sink_artificial_identifier ? 
+				*sink_artificial_identifier : "__cake_default";
+				
+			bool target_is_in_first = (to_module == ifaces.first);
+			std::string rule_tag_str = std::string(" ::cake::") + "corresponding_type_to_"
+				+ (target_is_in_first ? 
+					("second< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>")
+				  : ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"))
+				+ "::rule_tag_in_" + (target_is_in_first ? "first" : "second" ) 
+				+ "_given_" + (target_is_in_first ? "second" : "first" ) + "_artificial_name_"
+				+ source_artificial_fragment
+				+ "::" + sink_artificial_fragment;
+			
+			/* GAH: we can't use template specialisation to give us defaults
+			 * for which typedef to use, because template specialisation is insensitive to typedefs. 
+			 * Can we specialise on DWARF offsets, and give each "as" a fake DWARF offset? 
+			 * Maybe, but there will be many DWARF offsets for a given typedef. */
+				
+			//(target_is_in_first ? "::in_first" : "::in_second")
+			//lookup_rule_tag(
+			//	source_data_type,
+			//	sink_data_type,
+			//	source_artificial_identifier,
+			//	sink_artificial_identifier,
+			//	false // is_init
+			//);
 //             
 //             if (ifaces.first == from_module)
 //             {
@@ -1425,7 +1542,7 @@ assert(false);
 					<< "\t/* to type: */ " << to_typestring << ", " << std::endl
 					<< "\t/* FromComponent: */ " << ns_prefix + "::" + m_d.name_of_module(from_module) << "::marker," << std::endl
 					<< "\t/* ToComponent: */ " << ns_prefix + "::" + m_d.name_of_module(to_module) << "::marker, " << std::endl
-					<< "\t/* rule tag: */ " << rule_tag << std::endl
+					<< "\t/* rule tag: */ " << rule_tag_str << std::endl
 					<<  ">()(";
 //             }
 //             else 
@@ -1512,7 +1629,7 @@ assert(false);
 			case CAKE_TOKEN(STRING_LIT):
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
-				m_out << "cake::style_traits<0>::string_lit(\"" << CCP(GET_TEXT(expr)) << "\");" << std::endl;
+				m_out << "cake::style_traits<0>::string_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
 				return (post_emit_status){ident, "true", environment()};
 			case CAKE_TOKEN(INT):
 				ident = new_ident("temp");
@@ -1720,6 +1837,12 @@ assert(false);
 			case CAKE_TOKEN(KEYWORD_OUT_ARGS):
 				/* ditto */
 				 RAISE(expr, "cannot use out_args outside an argument eval context");
+			case CAKE_TOKEN(KEYWORD_CONST): {
+				ident = new_ident("temp");
+				m_out << "auto " << ident << " = ";
+				m_out << constant_expr_eval_and_cxxify(ctxt, expr)  << ";" << std::endl;
+				return (post_emit_status){ident, "true", environment()};
+			}
 			default:
 				assert(false);
 		}
@@ -2346,4 +2469,13 @@ assert(false);
             //         )
             //     );
     }
+	
+	optional<string> 
+	wrapper_file::extract_artificial_data_type(
+		shared_ptr<spec::type_die> source_data_type, 
+		const context& ctxt)
+	{
+		return optional<string>();
+	}
+	
 }

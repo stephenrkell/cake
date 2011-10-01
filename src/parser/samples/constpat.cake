@@ -1,0 +1,1 @@
+../../../examples/constpat/constpat.cake

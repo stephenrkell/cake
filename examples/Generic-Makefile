@@ -13,10 +13,13 @@ $(warning OBJS are $(OBJS))
 BASENAME := $(shell basename $(shell readlink -f $(shell pwd)))
 
 
-default: $(BASENAME).o
+default: $(BASENAME).o 
 
-$(BASENAME).o:: cake-generated.mk
-	$(MAKE) CXXFLAGS="$(CXXFLAGS)" -f cake-generated.mk "$@"
+-include cake-generated.mk
+
+$(BASENAME).o:: $(BASENAME).cake $(CAKE) cake-generated.mk
+
+#	$(MAKE) CXXFLAGS="$(CXXFLAGS)" -f cake-generated.mk "$@"
 
 # cancel builtin rule
 $(BASENAME): $(BASENAME).o
@@ -27,10 +30,10 @@ $(BASENAME): $(BASENAME).o
 	$(CXX) -o $(BASENAME) $(BASENAME).o $(LDFLAGS)
 
 ifeq ($(DEBUG),)
-cake-generated.mk $(BASENAME).o_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
+cake-generated.mk $(BASENAME)_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
 	$(CAKE) $(BASENAME).cake > "$@"
 else
-cake-generated.mk $(BASENAME).o_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
+cake-generated.mk $(BASENAME)_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
 	gdb --eval-command "break main" --eval-command "run $(BASENAME).cake -o $@" $(CAKE) #> "$@"
 endif
 
@@ -40,5 +43,3 @@ clean::
 	rm -f *_wrap.cpp* *_wrap.o *_wrap.d
 	rm -f $(BASENAME) $(BASENAME).o
 	rm -f cake-generated.mk
-
--include cake-generated.mk

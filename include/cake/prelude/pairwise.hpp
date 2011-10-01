@@ -9,30 +9,30 @@ extern "C" {
     template <
         typename ComponentPair, 
         typename InFirst, 
-        int RuleTag,
+//        int RuleTag,
         bool DirectionIsFromFirstToSecond
     > struct corresponding_type_to_first
     {}; /* we specialize this for various InSeconds */ 
     template <
         typename ComponentPair, 
         typename InSecond, 
-        int RuleTag,
+//        int RuleTag,
         bool DirectionIsFromSecondToFirst
     > struct corresponding_type_to_second
     {}; /* we specialize this for various InFirsts */ 
     template <
         typename ComponentPair, 
         typename InFirstIsAPtr, 
-        int RuleTag,
+//        int RuleTag,
         bool DirectionIsFromFirstToSecond
-    > struct corresponding_type_to_first <ComponentPair, InFirstIsAPtr*, RuleTag, DirectionIsFromFirstToSecond>
+    > struct corresponding_type_to_first <ComponentPair, InFirstIsAPtr*, /*RuleTag, */ DirectionIsFromFirstToSecond>
     { typedef void *in_second; }; /* we specialize this for various InSeconds */ 
     template <
         typename ComponentPair, 
         typename InSecondIsAPtr, 
-        int RuleTag,
+//        int RuleTag,
         bool DirectionIsFromSecondToFirst
-    > struct corresponding_type_to_second<ComponentPair, InSecondIsAPtr*, RuleTag, DirectionIsFromSecondToFirst> 
+    > struct corresponding_type_to_second<ComponentPair, InSecondIsAPtr*, /*RuleTag, */ DirectionIsFromSecondToFirst> 
     { typedef void *in_first; }; /* we specialize this for various InFirsts */ 
 
 namespace cake
@@ -43,7 +43,7 @@ namespace cake
     template < \
         typename ComponentPair,  \
         typename InFirst_typename,  \
-        int RuleTag, \
+/*        int RuleTag,*/ \
         bool DirectionIsFromFirstToSecond \
     > struct corresponding_type_to_first 
 
@@ -51,21 +51,21 @@ namespace cake
     template < \
         typename ComponentPair,  \
         typename InSecond_typename,  \
-        int RuleTag, \
+/*        int RuleTag,*/ \
         bool DirectionIsFromSecondToFirst \
     > struct corresponding_type_to_second 
 	
 #define template_head3_map_keyed_on_first_module \
     template < \
         typename ComponentPair,  \
-        int RuleTag, \
+/*        int RuleTag,*/ \
         bool DirectionIsFromFirstToSecond \
     > struct corresponding_type_to_first 
 
 #define template_head3_map_keyed_on_second_module \
     template < \
         typename ComponentPair,  \
-        int RuleTag, \
+/*        int RuleTag,*/ \
         bool DirectionIsFromSecondToFirst \
     > struct corresponding_type_to_second 
 
@@ -76,14 +76,14 @@ template_head4_map_keyed_on_second_module(InSecond) {};
 	
 // mappings for pointers -- by default, all pointer types correspond to void*
 template_head4_map_keyed_on_first_module(InFirstIsAPtr)
-<ComponentPair, InFirstIsAPtr*, RuleTag, DirectionIsFromFirstToSecond>
-: public corresponding_type_to_first<ComponentPair, void, RuleTag,
+<ComponentPair, InFirstIsAPtr*, /*RuleTag,*/ DirectionIsFromFirstToSecond>
+: public corresponding_type_to_first<ComponentPair, void, /*RuleTag,*/
 	DirectionIsFromFirstToSecond> {
 	typedef void *in_second;
 };	
 template_head4_map_keyed_on_second_module(InSecondIsAPtr)
-<ComponentPair, InSecondIsAPtr*, RuleTag, DirectionIsFromSecondToFirst>
-: public corresponding_type_to_second<ComponentPair, void, RuleTag,
+<ComponentPair, InSecondIsAPtr*, /*RuleTag,*/ DirectionIsFromSecondToFirst>
+: public corresponding_type_to_second<ComponentPair, void, /*RuleTag,*/
 	DirectionIsFromSecondToFirst> {
 typedef void *in_first;
 };
@@ -91,14 +91,14 @@ typedef void *in_first;
 // mappings for base types -- by default, all base types correspond to themselves
 #define pair_of_mappings(base_type) \
 template_head3_map_keyed_on_first_module \
-<ComponentPair, base_type, RuleTag, DirectionIsFromFirstToSecond> \
-: public corresponding_type_to_first<ComponentPair, void, RuleTag, \
+<ComponentPair, base_type, /*RuleTag,*/ DirectionIsFromFirstToSecond> \
+: public corresponding_type_to_first<ComponentPair, void, /*RuleTag,*/ \
 	DirectionIsFromFirstToSecond> { \
 	typedef base_type in_second; \
 };	 \
 template_head3_map_keyed_on_second_module \
-<ComponentPair, base_type, RuleTag, DirectionIsFromSecondToFirst> \
-: public corresponding_type_to_second<ComponentPair, void, RuleTag, \
+<ComponentPair, base_type, /*RuleTag,*/ DirectionIsFromSecondToFirst> \
+: public corresponding_type_to_second<ComponentPair, void, /*RuleTag,*/ \
 	DirectionIsFromSecondToFirst> { \
 	typedef base_type in_first; \
 }
@@ -114,6 +114,14 @@ pair_of_mappings(unsigned long);
 pair_of_mappings(float);
 pair_of_mappings(double);
 pair_of_mappings(long double);
+
+/* Now we can define the template specialization for base types.
+ * Note that this works because we index these templates at the 
+ * point of use, specifying a ComponentPair and all the other stuff.
+ * In particular, we don't define a partial specialization for *just*
+ * the ComponentPair -- whenever we specify a ComponentPair, we also specify
+ * a type. So these will get overridden effectively only if a ComponentPair
+ * defines its own rules for a particular type */
 
 	/* All value_convert operator()s MUST have the same ABI!
 	 * Pointer or reference "from", then pointer "to". 

@@ -15,7 +15,7 @@ int main(void)
 }
 
 /* FIXME: we can't call this just "wider_still" because then the compiler
- * will omit an internal reference which is impervious to the linker's
+ * will emit an internal reference which is impervious to the linker's
  * --wrap option, so our wrapper code won't get run. By avoiding name-
  * -matching in this compilation unit, we can defer the binding until 
  * link time. A better Cake compiler would emit make rules that undid the

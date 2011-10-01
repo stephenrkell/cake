@@ -11,14 +11,14 @@
 #include "util.hpp"
 #include "module.hpp"
 #include <dwarfpp/encap.hpp>
-#include <boost/filesystem/path.hpp>
+#include <boost/filesystem.hpp>
 #include <stdio.h>
 #include <ext/stdio_filebuf.h>
 
 namespace cake
 {
-    void request::add_exists(antlr::tree::Tree *n)
-    {
+	void request::add_exists(antlr::tree::Tree *n)
+	{
 		INIT;
 		BIND2(n, objectSpec);
 		BIND3(n, existsBody, EXISTS_BODY);
@@ -72,21 +72,21 @@ namespace cake
 	}
 
 	module_ptr::pointer request::create_existing_module(std::string& constructor,
-    	std::string& filename)
-    {
-    	std::string unescaped_filename = unescape_string_lit(filename);
+		std::string& filename)
+	{
+		std::string unescaped_filename = unescape_string_lit(filename);
 		#define CASE(s, f, ...) (constructor == #s ) ? static_cast<module_ptr::pointer>(new s ## _module((f) , ##__VA_ARGS__))
-        return	
+		return	
 			CASE(elf_external_sharedlib, lookup_solib(unescaped_filename), unescaped_filename)
 		:	CASE(elf_reloc, make_absolute_pathname(unescaped_filename), unescaped_filename)
 		:	0;
 		#undef CASE
-        
+		
 		// the code above appears to be exception-safe, because the only possibly-throwing thing
 		// we do, no matter which arm of the conditional we take, is the new() -- we don't have to
 		// worry about interleaving of different (sub)expressions.
-        // (see Herb Sutter article about exception safety...)
-    }
+		// (see Herb Sutter article about exception safety...)
+	}
 
 	void request::add_existing_module(std::string& constructor,
 		std::string& filename,
@@ -98,24 +98,24 @@ namespace cake
 			
 		/* Add a module to the module table. */
 		module_tbl[module_ident] = module_ptr(
-        	create_existing_module(constructor, filename));
-        module_inverse_tbl[module_tbl[module_ident]] = module_ident;
+			create_existing_module(constructor, filename));
+		module_inverse_tbl[module_tbl[module_ident]] = module_ident;
 	}	
-    
-    std::string request::make_absolute_pathname(std::string ref)
-    {
-    	boost::filesystem::path p(ref);
-    	if (p.root_directory().size() > 0)
-        {
-        	// this means p is absolute, so return it
-        	return ref;
-        }
-        else
-        {
-        	// this means p is relative, so prepend the Cake file's dirname
-        	return (boost::filesystem::path(in_filename).branch_path() 
-            	/ boost::filesystem::path(ref)).string();
-        }
-    }
+	
+	std::string request::make_absolute_pathname(std::string ref)
+	{
+		boost::filesystem::path p(ref);
+		if (!p.root_directory().empty())
+		{
+			// this means p is absolute, so return it
+			return ref;
+		}
+		else
+		{
+			// this means p is relative, so prepend the Cake file's dirname
+			return (boost::filesystem::path(in_filename).branch_path() 
+				/ boost::filesystem::path(ref)).string();
+		}
+	}
 }
 
