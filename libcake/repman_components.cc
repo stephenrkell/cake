@@ -10,13 +10,10 @@ extern "C"
 
 #include <dwarfpp/spec_adt.hpp>
 #include <dwarfpp/cxx_compiler.hpp>
-#include <processimage/process.hpp>
-
-/* process image */
+#include <libreflect.hpp>
 #include <map>
 #include <string>
 #include <sstream>
-#include <processimage/process.hpp>
 #include <dwarfpp/spec_adt.hpp>
 
 extern "C"
@@ -27,7 +24,7 @@ int component_pairs_table_inited;
 
 namespace cake {
 
-process_image image(-1);
+//process_image image(-1); // now in libreflect
 dwarf::tool::cxx_compiler compiler(std::vector<std::string>(1, "g++"));
 
 }
@@ -35,6 +32,8 @@ dwarf::tool::cxx_compiler compiler(std::vector<std::string>(1, "g++"));
 using boost::dynamic_pointer_cast;
 using dwarf::spec::compile_unit_die;
 using dwarf::spec::type_die;
+using pmirror::process_image;
+using pmirror::self;
 
 /* the actual tables -- type-correct aliases */
 typedef std::map<dwarf::spec::abstract_dieset::position, int> components_table_t;
@@ -77,9 +76,9 @@ void init_components_table(void)
 	 * where a conversions-table*/
 	using namespace cake;	
 	
-	for (auto i_file = image.files.begin(); i_file != image.files.end(); i_file++)
+	for (auto i_file = self.files.begin(); i_file != self.files.end(); i_file++)
 	{
-		auto symbols = image.all_symbols(i_file);
+		auto symbols = self.all_symbols(i_file);
 		std::cerr << "Looking for Cake component definitions in symbols of file " << i_file->first
 			<< std::endl;
 		for (auto i_sym = symbols.first; i_sym != symbols.second; i_sym++)
@@ -97,7 +96,7 @@ void init_components_table(void)
 				/* Found it! Grab the component name. */
 				std::string component_name = name.substr(std::string("__cake_component_").length());
 				/* Now grab the string. */
-				process_image::addr_t base = image.get_dieset_base(*i_file->second.p_ds);
+				process_image::addr_t base = self.get_dieset_base(*i_file->second.p_ds);
 				std::string sym_data(*reinterpret_cast<const char**>((char*)base + i_sym->st_value));
 					
 				/* Now populate this component's compile units list 
@@ -123,7 +122,7 @@ void init_components_table(void)
 					i_cu++)
 				{
 					if (
-						(*i_cu)->get_name() && *(*i_cu)->get_name() == source_fname
+					    (*i_cu)->get_name() && *(*i_cu)->get_name() == source_fname
 					&&  (*i_cu)->get_comp_dir() && *(*i_cu)->get_comp_dir() == compile_dir
 					&&  (*i_cu)->get_producer() && *(*i_cu)->get_producer() == producer
 					)
@@ -134,6 +133,10 @@ void init_components_table(void)
 						(*p_components)[i_cu.base().base().base()] = component_rep;
 						success = true;
 						break;
+					}
+					else
+					{
+						std::cerr << "Skipping CU: " << **i_cu << std::endl;
 					}
 				}
 				assert(success);
@@ -155,9 +158,9 @@ void init_component_pairs_table(void)
 	// FIXME: delete this object
 	
 	/* We're building a table of component pairs, pointing to their conversion table. */
-	for (auto i_file = image.files.begin(); i_file != image.files.end(); i_file++)
+	for (auto i_file = self.files.begin(); i_file != self.files.end(); i_file++)
 	{
-		auto symbols = image.all_symbols(i_file);
+		auto symbols = self.all_symbols(i_file);
 		for (auto i_sym = symbols.first; i_sym != symbols.second; i_sym++)
 		{
 			std::string name = elf_strptr(i_sym.base().origin->elf,
@@ -229,7 +232,7 @@ void init_component_pairs_table(void)
 				else assert(false);
 
 				// search for this symbols, then we can terminate
-				process_image::addr_t base = image.get_dieset_base(*i_file->second.p_ds);
+				process_image::addr_t base = self.get_dieset_base(*i_file->second.p_ds);
 				for (auto i_othersym = i_sym; i_othersym != symbols.second; i_othersym++)
 				{
 					std::string name = elf_strptr(i_othersym.base().origin->elf,
@@ -268,7 +271,7 @@ get_init_table_entry(void *obj, int obj_rep, int co_obj_rep)
 {
 	using namespace cake;
 	
-	auto discovered = image.discover_object_descr((process_image::addr_t) obj);
+	auto discovered = self.discover_object_descr((process_image::addr_t) obj);
 	
 	component_pairs_table_t::iterator i;
 	init_table_t *p_table;
@@ -328,7 +331,7 @@ void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_r
 				if (found_type)
 				{
 					// found it!
-					cake::image.inform_heap_object_descr(
+					pmirror::self.inform_heap_object_descr(
 						(process_image::addr_t) co_object, found_type);
 					return;
 				}
@@ -344,10 +347,10 @@ void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_r
 
 conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, void *target_object)
 {
-	using cake::image;
+	using pmirror::self;
 	
-	auto discovered_source = image.discover_object_descr((process_image::addr_t) source_object);
-	auto discovered_target = image.discover_object_descr((process_image::addr_t) target_object);
+	auto discovered_source = self.discover_object_descr((process_image::addr_t) source_object);
+	auto discovered_target = self.discover_object_descr((process_image::addr_t) target_object);
 	
 	auto discovered_source_type = dynamic_pointer_cast<type_die>(discovered_source);
 	assert(discovered_source_type);
@@ -358,10 +361,10 @@ conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, voi
 	 * co-object group. */
 	
 	std::cerr << "Getting rep conv func from object: ";
-	image.print_object(std::cerr, source_object);
+	self.print_object(std::cerr, source_object);
 	std::cerr << *discovered_source
 		<< " to object: ";
-	image.print_object(std::cerr, target_object);
+	self.print_object(std::cerr, target_object);
 	std::cerr << *discovered_target
 		<< std::endl;
 	
@@ -392,9 +395,9 @@ conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, voi
 
 conv_func_t get_init_func(int from_rep, int to_rep, void *source_object, void *target_object)
 {
-	using cake::image;
+	using pmirror::self;
 	
-	auto discovered_source = image.discover_object_descr((process_image::addr_t) source_object);
+	auto discovered_source = self.discover_object_descr((process_image::addr_t) source_object);
 	auto discovered_source_type = dynamic_pointer_cast<type_die>(discovered_source);
 	assert(discovered_source_type);
 	
@@ -402,10 +405,10 @@ conv_func_t get_init_func(int from_rep, int to_rep, void *source_object, void *t
 	 * co-object group. */
 	
 	std::cerr << "Getting init func from object: ";
-	image.print_object(std::cerr, source_object);
+	self.print_object(std::cerr, source_object);
 	std::cerr << *discovered_source
 		<< " to object: ";
-	image.print_object(std::cerr, target_object);
+	self.print_object(std::cerr, target_object);
 	std::cerr << " (NEW INIT)"
 		<< std::endl;
 	

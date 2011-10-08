@@ -19,6 +19,10 @@
 
 namespace cake
 {
+	using boost::shared_ptr;
+	using dwarf::spec::type_die;
+	using std::vector;
+
 	extern const char *guessed_system_library_path;
 	extern const char *guessed_system_library_prefix;
 	std::string new_anon_ident();	
@@ -71,6 +75,9 @@ namespace cake
     boost::optional<std::string> pattern_is_simple_function_name(antlr::tree::Tree *t);
     boost::optional<std::string> source_pattern_is_simple_function_name(antlr::tree::Tree *t);
     boost::optional<std::string> sink_expr_is_simple_function_name(antlr::tree::Tree *t);
+	
+	vector<shared_ptr<type_die> > 
+	type_synonymy_chain(shared_ptr<type_die> d);
 
     //boost::optional<definite_member_name> 
     //dwarf_fq_member_name(dwarf::abstract::Die_abstract_base<>& d);

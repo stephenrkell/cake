@@ -825,38 +825,38 @@ namespace cake
 
 			// FIXME: emit mapping
 			wrap_file 
-<< endl << "        template <"
-<< endl << "            typename To,"
-<< endl << "            typename From /* = ::cake::unspecified_wordsize_type */, "
-<< endl << "            int RuleTag = 0"
-<< endl << "        >"
-<< endl << "        static"
-<< endl << "        To"
-<< endl << "        value_convert_from_first_to_second(const From& arg)"
-<< endl << "        {"
-<< endl << "            return value_convert<From, "
-<< endl << "                To,"
-<< endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker,"
-<< endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker,"
-<< endl << "                RuleTag"
-<< endl << "                >().operator()(arg);"
-<< endl << "        }"
-<< endl << "        template <"
-<< endl << "            typename To,"
-<< endl << "            typename From /* = ::cake::unspecified_wordsize_type */, "
-<< endl << "            int RuleTag = 0"
-<< endl << "        >"
-<< endl << "        static "
-<< endl << "        To"
-<< endl << "        value_convert_from_second_to_first(const From& arg)"
-<< endl << "        {"
-<< endl << "            return value_convert<From, "
-<< endl << "                To,"
-<< endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker,"
-<< endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker,"
-<< endl << "                RuleTag"
-<< endl << "                >().operator()(arg);"
-<< endl << "        }	"
+// << endl << "        template <"
+// << endl << "            typename To,"
+// << endl << "            typename From /* = ::cake::unspecified_wordsize_type */, "
+// << endl << "            int RuleTag = 0"
+// << endl << "        >"
+// << endl << "        static"
+// << endl << "        To"
+// << endl << "        value_convert_from_first_to_second(const From& arg)"
+// << endl << "        {"
+// << endl << "            return value_convert<From, "
+// << endl << "                To,"
+// << endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker,"
+// << endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker,"
+// << endl << "                RuleTag"
+// << endl << "                >().operator()(arg);"
+// << endl << "        }"
+// << endl << "        template <"
+// << endl << "            typename To,"
+// << endl << "            typename From /* = ::cake::unspecified_wordsize_type */, "
+// << endl << "            int RuleTag = 0"
+// << endl << "        >"
+// << endl << "        static "
+// << endl << "        To"
+// << endl << "        value_convert_from_second_to_first(const From& arg)"
+// << endl << "        {"
+// << endl << "            return value_convert<From, "
+// << endl << "                To,"
+// << endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker,"
+// << endl << "                " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker,"
+// << endl << "                RuleTag"
+// << endl << "                >().operator()(arg);"
+// << endl << "        }	"
 << endl << "        static conv_table_t conv_table_first_to_second;"
 << endl << "        static conv_table_t conv_table_second_to_first;"
 << endl << "        static init_table_t init_table_first_to_second;"
@@ -904,7 +904,7 @@ namespace cake
                       //<< "0, " // RuleTag
                       << "true" << ">" // DirectionIsFromSecondToFirst
 << endl << "    {"
-<< endl << "         typedef ::cake::unspecified_wordsize_type in_first;"
+<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default__to___cake_default_in_first;"
 << endl << "    };"
 << endl;
 				wrap_file << 
@@ -917,7 +917,7 @@ namespace cake
                       //<< "0, " // RuleTag
                       << "false" << ">" // DirectionIsFromFirstToSecond
 << endl << "    {"
-<< endl << "         typedef ::cake::unspecified_wordsize_type in_second;"
+<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default__to___cake_default_in_second;"
 << endl << "    };"
 << endl;
 				wrap_file <<
@@ -930,7 +930,7 @@ namespace cake
                       //<< "0, " // RuleTag
                       << "false" << ">" // DirectionIsFromSecondToFirst
 << endl << "    {"
-<< endl << "         typedef ::cake::unspecified_wordsize_type in_first;"
+<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default__to___cake_default_in_first;"
 << endl << "    };"
 << endl;
 				wrap_file << 
@@ -943,7 +943,7 @@ namespace cake
                       //<< "0, " // RuleTag
                       << "true" << ">" // DirectionIsFromFirstToSecond
 << endl << "    {"
-<< endl << "         typedef ::cake::unspecified_wordsize_type in_second;"
+<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default__to___cake_default_in_second;"
 << endl << "    };"
 << endl;
 			//auto all_value_corresps = val_corresps.equal_range(*i_pair);
@@ -955,6 +955,33 @@ namespace cake
 				const val_corresp_group_key& k = i_corresp_group->first;
 				vector<val_corresp *>& vec = i_corresp_group->second;
 				
+				// collect mappings of artificial type names (tags) in this group
+				map<string, vector< val_corresp *> > corresps_by_artificial_names_for_first_type;
+				map<string, vector< val_corresp *> > corresps_by_artificial_names_for_second_type;
+				for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); i_p_corresp++)
+				{
+					// is this correspondence defined using an artificial source name?
+					auto source = (*i_p_corresp)->source_data_type;
+					auto sink = (*i_p_corresp)->sink_data_type;
+					// for this corresp, is the source module the first in our iface_pair?
+					bool source_is_first = (k.source_module == i_pair->first);
+					for (auto current = source; current; current = (current == source) ? sink : shared_ptr<type_die>())
+					{
+						bool current_is_first = (current == source) ? source_is_first : !source_is_first;
+						map<string, vector< val_corresp *> >& current_map = 
+							(current_is_first) ? corresps_by_artificial_names_for_first_type
+							                   : corresps_by_artificial_names_for_second_type;
+						// is this data type artificial?
+						if (current->get_concrete_type() != current)
+						{
+							// HOW do we encode "as"? Answer: by creating an artificial typedef 
+							// Get the name. HACK: unqualified, for now
+							assert(current->get_name());
+							current_map[*current->get_name()].push_back(*i_p_corresp);
+						}
+						else current_map["__cake_default"].push_back(*i_p_corresp);
+					}
+				}				
 				// first output the correpsonding_type specializations:
 				// there is a sink-to-source and source-to-sink relationship
 				wrap_file << "// " << wrap_code.get_type_name(
@@ -988,16 +1015,17 @@ namespace cake
 					shared_ptr<type_die> outer_type = 
 					(k.source_module == i_pair->second)
 						? k.source_data_type
-						: k.sink_data_type);
+						: k.sink_data_type;
 					auto outer_type_synonymy_chain = type_synonymy_chain(outer_type);
 					
 					// the type to be typedef'd in the struct body
-					shared_ptr inner_type = 
+					shared_ptr<type_die> inner_type = 
 					(k.source_module == i_pair->first)
 						? k.source_data_type
-						: k.sink_data_type);
+						: k.sink_data_type;
 					auto inner_type_synonymy_chain = type_synonymy_chain(outer_type);
 					
+   wrap_file << "         // from corresp at " << *i_p_corresp << " " << **i_p_corresp << ", rule " << CCP(TO_STRING_TREE((*i_p_corresp)->corresp)) << endl;
    wrap_file << "         typedef "
                        << wrap_code.get_type_name(
                               (*i_p_corresp)->source == i_pair->first
@@ -1006,15 +1034,39 @@ namespace cake
                        << " "
                        << ( (*i_p_corresp)->init_only ? "__init_only_" : "" )
                        << ((outer_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
-                              *first_corresponded_type(outer_type_synonymy_chain)->get_name())
+                              *(*outer_type_synonymy_chain.begin())->get_name())
                        << "_to_"
                        << ((inner_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
-                              *first_corresponded_type(inner_type_synonymy_chain)->get_name())
+                              *(*inner_type_synonymy_chain.begin())->get_name())
                        << "in_first;" << endl;
 				}
-				// FIXME: ***************I think first_corresponded_type is always the first,
-				// otherwise we wouldn't have been called with the given source_/sink_ type, no?
-   wrap_file << "    };"
+				for (auto i_tag_in_second = corresps_by_artificial_names_for_second_type.begin();
+				          i_tag_in_second != corresps_by_artificial_names_for_second_type.end();
+				          i_tag_in_second++)
+				{
+  wrap_file << "         struct rule_tag_in_first_given_second_artificial_name_" << i_tag_in_second->first 
+  	<< " { enum __cake_rule_tags {" << endl;
+					for (auto i_p_corresp = i_tag_in_second->second.begin(); 
+						i_p_corresp != i_tag_in_second->second.end(); i_p_corresp++)
+					{
+						// COMPLETE HACK: skip init-only rules
+						if ((*i_p_corresp)->init_only) continue;
+
+						// here we want "second_artificial_name"
+						auto first_die = (wrap_code.module_of_die((*i_p_corresp)->source_data_type) == i_pair->first) ?
+							(*i_p_corresp)->source_data_type : (*i_p_corresp)->sink_data_type;
+						
+						auto artificial_name_for_first_die =
+							(first_die->get_concrete_type() != first_die) 
+							? *first_die->get_name()
+							 : "__cake_default";
+
+						wrap_file << artificial_name_for_first_die << " = " << val_corresp_numbering[(*i_p_corresp)->shared_from_this()];
+						if (i_p_corresp != i_tag_in_second->second.end() - 1) wrap_file << "," << endl;
+					}
+   wrap_file << "         }; };" << endl;
+				}
+     wrap_file << "    };"
 << endl;
 				wrap_file << 
 				"    template <>"
@@ -1037,16 +1089,17 @@ namespace cake
 					shared_ptr<type_die> outer_type = 
 					(k.source_module == i_pair->second)
 						? k.sink_data_type
-						: k.source_data_type);
+						: k.source_data_type;
 					auto outer_type_synonymy_chain = type_synonymy_chain(outer_type);
 					
 					// the type to be typedef'd in the struct body
-					shared_ptr inner_type = 
+					shared_ptr<type_die> inner_type = 
 					(k.source_module == i_pair->first)
 						? k.sink_data_type
-						: k.source_data_type);
+						: k.source_data_type;
 					auto inner_type_synonymy_chain = type_synonymy_chain(outer_type);
-						
+					
+   wrap_file << "         // from corresp at " << *i_p_corresp << " " << **i_p_corresp << ", rule " << CCP(TO_STRING_TREE((*i_p_corresp)->corresp)) << endl;
    wrap_file << "         typedef "
                        << wrap_code.get_type_name(
                               (*i_p_corresp)->source == i_pair->second
@@ -1055,12 +1108,48 @@ namespace cake
                        << " "
                        << ( (*i_p_corresp)->init_only ? "__init_only_" : "" )
                        << ((outer_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
-                              *first_corresponded_type(outer_type_synonymy_chain)->get_name())
+                              *(*outer_type_synonymy_chain.begin())->get_name())
                        << "_to_"
                        << ((inner_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
-                              *first_corresponded_type(inner_type_synonymy_chain)->get_name())
+                              *(*inner_type_synonymy_chain.begin())->get_name())
                        << "in_second;" << endl;
 				}
+				// now go round again, outputting the numbering enum
+				// What should go in it?
+				// For each corresp in the group, 
+				// output an enumerator 
+				// named like the typedef? 
+				// numbered like the correspondence numbering?
+				// Example was:
+				// rule_tag_in_second_given_first_artificial_name___cake_default::__cake_default
+				// i.e a class per typedef name.
+				for (auto i_tag_in_first = corresps_by_artificial_names_for_first_type.begin();
+				          i_tag_in_first != corresps_by_artificial_names_for_first_type.end();
+				          i_tag_in_first++)
+				{
+  wrap_file << "         struct rule_tag_in_second_given_first_artificial_name_" << i_tag_in_first->first 
+  	<< " { enum __cake_rule_tags {" << endl;
+					for (auto i_p_corresp = i_tag_in_first->second.begin(); 
+						i_p_corresp != i_tag_in_first->second.end(); i_p_corresp++)
+					{
+						// COMPLETE HACK: skip init-only rules
+						if ((*i_p_corresp)->init_only) continue;
+					
+						// here we want "second_artificial_name"
+						auto second_die = (wrap_code.module_of_die((*i_p_corresp)->source_data_type) == i_pair->second) ?
+							(*i_p_corresp)->source_data_type : (*i_p_corresp)->sink_data_type;
+						
+						auto artificial_name_for_second_die =
+							(second_die->get_concrete_type() != second_die) 
+							? *second_die->get_name()
+							 : "__cake_default";
+
+						wrap_file << artificial_name_for_second_die << " = " << val_corresp_numbering[(*i_p_corresp)->shared_from_this()];
+						if (i_p_corresp != i_tag_in_first->second.end() - 1) wrap_file << "," << endl;
+					}
+   wrap_file << "         }; };" << endl;
+				}
+   
    wrap_file << "    };"
 << endl;
 			} // end for all value corresps 
@@ -1921,7 +2010,17 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 // 			<< " refinement @" << refinement
 // 			<< " source on " << (source_is_on_left ? "left" : "right")
 // 			<< " corresp @" << corresp << endl;
-	
+		
+		// remember which typedefs matter
+		if (source_data_type->get_concrete_type() != source_data_type)
+		{
+			significant_typedefs.insert(source_data_type);
+		}
+		if (sink_data_type->get_concrete_type() != sink_data_type)
+		{
+			significant_typedefs.insert(sink_data_type);
+		}
+		
 		/* Handling dependencies:
 		 * Value correspondences may have dependencies on other value correspondences. 
 		 * Because they're emitted as template specialisations, they are sensitive to order. 
@@ -2083,10 +2182,12 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					// if we need to generate a separate init rule, do so, overriding init_candidate
 					if (!init_is_identical)
 					{
+						auto new_basic = basic;
+						new_basic.init_only = true; // HACK: shouldn't have this duplication of init_only
 						val_corresps.insert(make_pair(key, 
 							init_candidate = dynamic_pointer_cast<value_conversion>(
 								make_shared<structural_value_conversion>(
-									wrap_code, wrap_code.m_out, basic, true, init_is_identical
+									wrap_code, wrap_code.m_out, new_basic, true, init_is_identical
 								)
 							)
 						));
@@ -2119,6 +2220,20 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			init_tbl_key,
 			init_candidate
 		));
+	}
+	
+	shared_ptr<type_die> 
+	link_derivation::first_significant_type(shared_ptr<type_die> t)
+	{
+		while (t->get_concrete_type() != t
+			&& significant_typedefs.find(t) == significant_typedefs.end())
+		{
+			shared_ptr<spec::type_chain_die> tc = dynamic_pointer_cast<spec::type_chain_die>(t);
+			assert(tc);
+			assert(tc->get_type());
+			t = *tc->get_type();
+		}
+		return t;
 	}
 	
 	// Get the names of all functions provided by iface1

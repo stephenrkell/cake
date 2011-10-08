@@ -1382,10 +1382,10 @@ assert(false);
 		&& (!to_type || module_of_die(to_type) == to_module));
 		// we must have either a from_type of a from_typeof
 		assert(from_type || from_typeof);
-		std::string from_typestring = from_type ? get_type_name(from_type) 
-			: (std::string("__typeof(") + *from_typeof + ")");
 		// ... this is NOT true for to_type: if we don't have a to_type or a to_typeof, 
 		// we will use use the corresponding_type template
+		std::string from_typestring = from_type ? get_type_name(from_type) 
+			: (std::string("__typeof(") + *from_typeof + ")");
        
 //         // if we have a "from that" type, use it directly
 //         if (from_type)
@@ -1401,18 +1401,55 @@ assert(false);
 //         else
 //         {
 		
+		std::string from_artificial_tagstring;
+		if (from_type)
+		{
+			from_artificial_tagstring = 
+				(from_type->get_concrete_type() == from_type) 
+					? "__cake_default" 
+					: *m_d.first_significant_type(from_type)->get_name();
+		}
+		else
+		{
+			from_artificial_tagstring = "__cake_default";
+		}
+		
         	// nowe we ALWAYS use the function template
             //m_out << component_pair_classname(ifaces);
 			
 			//ostringstream rule_tag_str; rule_tag_str << rule_tag;
 			std::string to_typestring;
-			if (to_type) to_typestring = get_type_name(to_type);
-			else if (to_typeof) to_typestring = "__typeof(" + *to_typeof + ")";
+			std::string to_artificial_tagstring;
+			if (to_type) 
+			{
+				// this gives us concrete and artificial info in one go
+				to_typestring = get_type_name(to_type);
+				// extract artificial info
+				to_artificial_tagstring = 
+					(to_type->get_concrete_type() == to_type) 
+						? "__cake_default" 
+						: *m_d.first_significant_type(to_type)->get_name();
+			}
+			else if (to_typeof) 
+			{
+				// this only gives us concrete info! 
+				to_typestring = "__typeof(" + *to_typeof + ")";
+				// ... so artificial tagstring is just the default
+				to_artificial_tagstring = "__cake_default";
+			}
 			else
 			{
+				/* Here we have to recover the "to" type from the "from" type. 
+				 * It makes a difference if our "from" thing is typedef/artificial. */
+				to_artificial_tagstring = "__cake_default";
 				to_typestring = std::string("::cake::") + "corresponding_type_to_"
-					+ ((to_module == ifaces.first) ? ("second< " + component_pair_classname(ifaces) + ", " + from_typestring + /*", " + rule_tag_str.str() +*/ ", true>::in_first")
-					                               : ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + /*", " + rule_tag_str.str() +*/ ", true>::in_second"));
+					+ ((to_module == ifaces.first) 
+						? ("second< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"
+							+ "::" + from_artificial_tagstring + "__to_" + to_artificial_tagstring + "_in_first")
+						: ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"
+							+ "::" + from_artificial_tagstring + "__to_" + to_artificial_tagstring + "_in_second"));
+							// this one --^ is WHAT?       this one --^ is WHAT?
+							// answer: art.tag in source   answer: art.tag in sink
 			}
 			
 			/* This is messed up.
@@ -1459,10 +1496,13 @@ assert(false);
 			 * rather than by name-matching.
 			 * them. */
 			
-			optional<string> source_artificial_identifier;// = extract_artificial_data_type(
-				///*source_expr*/ 0, ctxt);
-			optional<string> sink_artificial_identifier; // = extract_artificial_data_type(
-				///*sink_expr*/ 0, ctxt);
+			//optional<string> source_artificial_identifier
+			// = (from_type
+			//
+			//;// = extract_artificial_data_type(
+			//	///*source_expr*/ 0, ctxt);
+			//optional<string> sink_artificial_identifier; // = extract_artificial_data_type(
+			//	///*sink_expr*/ 0, ctxt);
 			
 			// PROBLEM: we need ctxt to tell us exactly which syntactic fragment
 			// the current crossover is handling, so that we can scan the AST for
@@ -1501,10 +1541,10 @@ assert(false);
 			// corresponding data type, and that might be artificial.
 			
 			
-			string source_artificial_fragment = source_artificial_identifier ? 
-				*source_artificial_identifier : "__cake_default";
-			string sink_artificial_fragment = sink_artificial_identifier ? 
-				*sink_artificial_identifier : "__cake_default";
+			//string source_artificial_fragment = source_artificial_identifier ? 
+			//	*source_artificial_identifier : "__cake_default";
+			//string sink_artificial_fragment = sink_artificial_identifier ? 
+			//	*sink_artificial_identifier : "__cake_default";
 				
 			bool target_is_in_first = (to_module == ifaces.first);
 			std::string rule_tag_str = std::string(" ::cake::") + "corresponding_type_to_"
@@ -1513,8 +1553,8 @@ assert(false);
 				  : ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"))
 				+ "::rule_tag_in_" + (target_is_in_first ? "first" : "second" ) 
 				+ "_given_" + (target_is_in_first ? "second" : "first" ) + "_artificial_name_"
-				+ source_artificial_fragment
-				+ "::" + sink_artificial_fragment;
+				+ from_artificial_tagstring //source_artificial_fragment
+				+ "::" + to_artificial_tagstring; //sink_artificial_fragment;
 			
 			/* GAH: we can't use template specialisation to give us defaults
 			 * for which typedef to use, because template specialisation is insensitive to typedefs. 

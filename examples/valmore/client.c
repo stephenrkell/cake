@@ -23,8 +23,8 @@ int main(void)
 
     struct gadget g = { 0, 42, 'g', {53.0, 2.1}, 1000000.0}, *pg = &g;
 
- 	printf("Passing a gadget, amplitude %d, base %d, containing (%f, %f), density %f.\n",
-        pg->amplitude, pg->base, 
+ 	printf("Passing a gadget at %p, amplitude %d, base %d, containing (%f, %f), density %f.\n",
+        pg, pg->amplitude, pg->base, 
         (double)pg->contained.x, (double)pg->contained.y, (double)pg->density);
     
     pass(pg);

@@ -230,6 +230,11 @@ namespace cake {
 		typedef std::map<val_corresp_group_key, vector<val_corresp *> > 
 		val_corresp_group_tbl_t;
 		
+		std::set< shared_ptr<type_die> > significant_typedefs;
+		
+		shared_ptr<type_die> 
+		first_significant_type(shared_ptr<type_die> t);
+		
 		typedef map<iface_pair, val_corresp_group_tbl_t> val_corresp_groups_tbl_t;
 		val_corresp_groups_tbl_t val_corresp_groups;
 		

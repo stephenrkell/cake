@@ -83,7 +83,7 @@ namespace tree {
 	((cake::exception_msg_stream << "expected a token of class " << CAKE_TOKEN(token) << "/" << tokenname \
 	" (" __FILE__ ":" << __LINE__ << "); found token " << CCP(GET_TEXT(node)) \
 	<< " class id " << GET_TYPE(node)) \
-	, exception_msg_stream.str() ))
+	, exception_msg_stream.str() )) 
 
 /* Before binding a sequence of children, do INIT. 
  * Don't do INIT more than once in the same scope -- start another scope instead. */

@@ -7,6 +7,7 @@ derive elf_reloc("valmore.o") valmore = link [client, lib]
 		/* The point of these rules is to test 
 		 * - initialization rules
 		 * - bidirectional flow of object [references] 
+		 *   i.e. firing of init rules
 		 * - ...? */
         values gadget <--> gizmo
 		{

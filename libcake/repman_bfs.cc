@@ -1,7 +1,8 @@
 #include <cstdlib>
 
+#include <libreflect.hpp>
 #include "repman.h"
-#include "repman_image.hh"
+//#include "repman_image.hh"
 
 #include <map>
 #include <deque>
@@ -19,6 +20,7 @@ const char *debugging_output_filename = DEBUGGING_OUTPUT_FILENAME;
 using boost::shared_ptr;
 using boost::dynamic_pointer_cast;
 using namespace dwarf::spec;
+using pmirror::process_image;
 
 /* C++ prototypes */
 
@@ -63,7 +65,7 @@ void walk_bfs(int object_rep, void *object, /*int object_form,*/ int co_object_r
 	
 	/* Find out object's precise DWARF type and starting address. */
 	process_image::addr_t object_actual_start_addr;
-	auto descr = cake::image.discover_object_descr(
+	auto descr = pmirror::self.discover_object_descr(
 		(process_image::addr_t) object, shared_ptr<type_die>(), &object_actual_start_addr);
 	assert(descr);
 	void *object_actual_start = (void*) object_actual_start_addr;
@@ -214,7 +216,7 @@ void build_adjacency_list_recursive(
 		{
 			/* Find out object's precise DWARF type and starting address. */
 			process_image::addr_t object_actual_start_addr;
-			auto descr = cake::image.discover_object_descr(
+			auto descr = pmirror::self.discover_object_descr(
 				(process_image::addr_t) pointed_to_object, 
 				shared_ptr<type_die>(), &object_actual_start_addr);
 			void *object_actual_start = (void*) object_actual_start_addr;

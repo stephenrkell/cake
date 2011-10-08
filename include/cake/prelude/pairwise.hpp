@@ -26,14 +26,14 @@ extern "C" {
 //        int RuleTag,
         bool DirectionIsFromFirstToSecond
     > struct corresponding_type_to_first <ComponentPair, InFirstIsAPtr*, /*RuleTag, */ DirectionIsFromFirstToSecond>
-    { typedef void *in_second; }; /* we specialize this for various InSeconds */ 
+    { typedef void *__cake_default__to___cake_default_in_second; }; /* we specialize this for various InSeconds */ 
     template <
         typename ComponentPair, 
         typename InSecondIsAPtr, 
 //        int RuleTag,
         bool DirectionIsFromSecondToFirst
     > struct corresponding_type_to_second<ComponentPair, InSecondIsAPtr*, /*RuleTag, */ DirectionIsFromSecondToFirst> 
-    { typedef void *in_first; }; /* we specialize this for various InFirsts */ 
+    { typedef void *__cake_default__to___cake_default_in_first; }; /* we specialize this for various InFirsts */ 
 
 namespace cake
 {
@@ -79,13 +79,17 @@ template_head4_map_keyed_on_first_module(InFirstIsAPtr)
 <ComponentPair, InFirstIsAPtr*, /*RuleTag,*/ DirectionIsFromFirstToSecond>
 : public corresponding_type_to_first<ComponentPair, void, /*RuleTag,*/
 	DirectionIsFromFirstToSecond> {
-	typedef void *in_second;
+	typedef void *__cake_default__to___cake_default_in_second;
+         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags {
+__cake_default = 0         }; };
 };	
 template_head4_map_keyed_on_second_module(InSecondIsAPtr)
 <ComponentPair, InSecondIsAPtr*, /*RuleTag,*/ DirectionIsFromSecondToFirst>
 : public corresponding_type_to_second<ComponentPair, void, /*RuleTag,*/
 	DirectionIsFromSecondToFirst> {
-typedef void *in_first;
+typedef void *__cake_default__to___cake_default_in_first;
+         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags {
+__cake_default = 0         }; };
 };
 
 // mappings for base types -- by default, all base types correspond to themselves
@@ -94,13 +98,17 @@ template_head3_map_keyed_on_first_module \
 <ComponentPair, base_type, /*RuleTag,*/ DirectionIsFromFirstToSecond> \
 : public corresponding_type_to_first<ComponentPair, void, /*RuleTag,*/ \
 	DirectionIsFromFirstToSecond> { \
-	typedef base_type in_second; \
+	typedef base_type __cake_default__to___cake_default_in_second; \
+         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+__cake_default = 0         }; }; \
 };	 \
 template_head3_map_keyed_on_second_module \
 <ComponentPair, base_type, /*RuleTag,*/ DirectionIsFromSecondToFirst> \
 : public corresponding_type_to_second<ComponentPair, void, /*RuleTag,*/ \
 	DirectionIsFromSecondToFirst> { \
-	typedef base_type in_first; \
+	typedef base_type __cake_default__to___cake_default_in_first; \
+         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+__cake_default = 0         }; }; \
 }
 
 pair_of_mappings(bool);
@@ -123,12 +131,20 @@ pair_of_mappings(long double);
  * a type. So these will get overridden effectively only if a ComponentPair
  * defines its own rules for a particular type */
 
-	/* All value_convert operator()s MUST have the same ABI!
+	/* All value_convert operator()s MUST have the same ABI, so that they
+	 * can be dispatched to by the runtime!
+	 *
+	 * That ABI is:
 	 * Pointer or reference "from", then pointer "to". 
- 	 * Return values vary the ABI depending on the returned object size; 
-	 * we generally get around this by only using return values in the
-	 * class templates. The function template (at the bottom) ignores
-	 * the return value. */
+	 *
+	 * Return values are an exception. These may vary the ABI, so
+	 * returning by value is okay.
+	 * We generally get around this as follows.
+	 * The runtime table entries are populated by instances of value_convert_function.
+	 * This is defined by a function template (at the bottom) which ignores
+	 * the return value. Therefore, the class template specializations may each have different
+	 * return value ABIs, but the function template instances will not be sensitive to the
+	 * differences. */
 
 	template <typename From, typename To, typename FromComponent, typename ToComponent, int RuleTag>  
     struct value_convert 
@@ -156,83 +172,7 @@ pair_of_mappings(long double);
 			
 			if (p_to) *p_to = reinterpret_cast<__typeof(*p_to)>(found_co_object);
 			return reinterpret_cast<__typeof(*p_to)>(found_co_object);
-			
-// 			// ensure a co-object exists
-// 			struct found_co_object_group *co_object_group;
-// 			void *co_object = find_co_object(
-// 				from, REP_ID( from_module ), REP_ID( to_module ),
-// 				&found_co_object_rec, -1);
-// 			if (!co_object) 
-// 			{
-// 				/* Need to walk object graph here,
-// 				 * firstly to ensure that all objects reachable from the new object
-// 				 * are allocated,
-// 				 * and secondly to ensure that they are
-// 				 * initialized/updated.
-// 				 * FIXME: how to ensure that we don't duplicate work from the 
-// 				 * sync_all step? Ideally we would allocate before the sync-all.
-// 				 * Is that feasible? YES. It all happens in the crossover 
-// 				 * environment generation.
-// 				 */
-// 				// FIRST JOB: make walk_bfs work with DWARF / libprocessimage
-// 				walk_bfs (
-// 					REP_GTK_12, /* object_rep */ // i.e. key for looking up conversions
-// 					arg1, /* object */ // ok
-// 					FORM_GDK_WINDOW, /* object_form */ // we don't need this now!
-// 					REP_GTK_20, /* co_object_rep */ // i.e. key for looking up conversions
-// 					allocate_co_object_idem, /* (*on_blacken)(int, void*, int, int, int) */
-// 					REP_GTK_12, /* arg_n_minus_1 */ // 
-// 					REP_GTK_20); /* arg_n */ // 
-// 				
-				/* How is the alloc_co_object going to look up correspondences?
-				 * Well,
-				 * It's going to use a run-time equivalent of our corresponding_type
-				 * template typedef tables. 
-				 * It's a table keyed on
-				 * <source-component, source-type-identifier, dest-component>
-				 * and yielding 
-				 * <dest-type-identifier, conversion-function> 
-				 * AND (FIXME) must make sure that all conversion functions are
-				 * - instantiated, and
-				 * - have same/unifiable signatures.
-				 *
-				 * Thesis says:
-				 * - generate a table mapping from pairs of data types...
-				 *   ... to the template function instances which perform the
-				 *       value conversion
-				 * - include in the table all conversions defined between all
-				 *   data types related in the Cake file
-				 * 
-				 * Q. How are we doing object schema discovery these days?
-				 * A. By explicit allocation_site annotations.
-				 * So object schema discovery is going to give us the DWARF type
-				 * as defined in the allocating compilation unit.
-				 * We need to canonicalise this to a unique type 
-				 * ... at the component (.o / .so) level.
-				 * Computing type equivalences can take many seconds.
-				 * So this means writing a simple tool that can compute
-				 * (and dump to disk) these equivalences.
-				 *
-				 * In turn, libprocessimage has to be able to find these.
-				 * How? 
-				 * Use a /usr/lib/debug-like filesystem,
-				 * whose prefix is given by an environment variable.
-				 * Each executable or shared object is a directory in this filesystem.
-				 * Within this, there is one directory per compiler "producer" string.
-				 * Under these directories,
-				 * the directory tree reproduces the *build* directory structure(s)
-				 * in the executable or shared object.
-				 * Each DWARF compilation unit 
-				 * in the executable / shared object
-				 * may have a symlink in this filesystem.
-				 * These symlinks point to equivalence databases,
-				 * which may reside anywhere under the executable / shared object's
-				 * directory. 
-				 * The set of symlinks defines the set of compilation units 
-				 * up to whose scope the equivalence is complete.
-				 * WAIT. We don't need any of this, because our kind of "equivalence"
-				 * is also *name*-equivalence.
-				 *
+				/*
 				 * Cake compiler:
 				 * How do we identify source/sink data types
 				 * in the tables we output?
@@ -390,50 +330,40 @@ pair_of_mappings(long double);
         } 
 	}; 
 
-	/* Q: When do we specialise this *struct template*? 
-     *    (Note that we can't specialise the static functions.)
-     *    (Note also that both functions are identical!)
-     * A: Once per pair of components?
-     * (Is the purpose of this class to select RuleTags?)
-     * Yes, i.e. it's a mapping from per-component-pair 
-     * (Does that mean it doesn't have RuleTags of its own?)
-     * -- No, just that its default rule (0) might not map 
-     * to value_convert<> rule 0.
-     *  */
     template <typename FirstComponentTag, typename SecondComponentTag>
     struct component_pair {
-        template <
-		    typename To /*= typename cake::corresponding_cxx_type<FirstComponentTag, SecondComponentTag, Arg, 0>::t*/,
-            typename From = ::cake::unspecified_wordsize_type, 
-            int RuleTag = 0
-        >
-        static 
-        To
-        value_convert_from_first_to_second(From arg)
-        {
-    	    return value_convert<From, 
-                To,
-				FirstComponentTag,
-				SecondComponentTag,
-                RuleTag
-                >().operator()(arg);
-        }
-        template <
-            typename To /*= typename cake::corresponding_cxx_type<FirstComponentTag, SecondComponentTag, Arg, 0>::t*/,
-            typename From = ::cake::unspecified_wordsize_type, 
-            int RuleTag = 0
-        >
-        static 
-        To
-        value_convert_from_second_to_first(From arg)
-        {
-    	    return value_convert<From, 
-                To,
-				SecondComponentTag,
-				FirstComponentTag,
-                RuleTag
-                >().operator()(arg);
-        }	
+//         template <
+// 		    typename To /*= typename cake::corresponding_cxx_type<FirstComponentTag, SecondComponentTag, Arg, 0>::t*/,
+//             typename From = ::cake::unspecified_wordsize_type, 
+//             int RuleTag = 0
+//         >
+//         static 
+//         To
+//         value_convert_from_first_to_second(From arg)
+//         {
+//     	    return value_convert<From, 
+//                 To,
+// 				FirstComponentTag,
+// 				SecondComponentTag,
+//                 RuleTag
+//                 >().operator()(arg);
+//         }
+//         template <
+//             typename To /*= typename cake::corresponding_cxx_type<FirstComponentTag, SecondComponentTag, Arg, 0>::t*/,
+//             typename From = ::cake::unspecified_wordsize_type, 
+//             int RuleTag = 0
+//         >
+//         static 
+//         To
+//         value_convert_from_second_to_first(From arg)
+//         {
+//     	    return value_convert<From, 
+//                 To,
+// 				SecondComponentTag,
+// 				FirstComponentTag,
+//                 RuleTag
+//                 >().operator()(arg);
+//         }	
     };
 
 	// now we can define a function template to wrap all these up

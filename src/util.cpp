@@ -10,6 +10,13 @@
 #include "parser.hpp"
 #include "module.hpp"
 
+using boost::shared_ptr;
+using dwarf::spec::type_die;
+using dwarf::spec::typedef_die;
+using dwarf::spec::type_chain_die;
+using boost::dynamic_pointer_cast;
+using std::vector;
+
 namespace cake
 {
 	std::string new_anon_ident()
@@ -581,6 +588,23 @@ namespace cake
 			}
 		}
 		return std::string("");
+	}
+	
+	vector<shared_ptr<type_die> > 
+	type_synonymy_chain(shared_ptr<type_die> d)
+	{
+		vector<shared_ptr<type_die> > v;
+		auto concrete = d->get_concrete_type();
+		while (d != concrete)
+		{
+			auto tc = dynamic_pointer_cast<type_chain_die>(d);
+			assert(tc);
+			if (dynamic_pointer_cast<typedef_die>(tc)) v.push_back(d);
+			assert(tc->get_type());
+			d = *tc->get_type();
+			assert(d);
+		}
+		return v;
 	}
 		
 	std::string solib_constructor = std::string("elf_external_sharedlib");

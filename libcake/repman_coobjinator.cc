@@ -19,7 +19,7 @@
  */
 
 extern "C" {
-#include "processimage/memtable.h"
+#include <memtable.h>
 #include "repman.h"
 }
 #include <map>

@@ -26,31 +26,20 @@ $(C_DEPS): .%.d : %.c
 
 CFLAGS += -std=c99 -g3 -fPIC
 CFLAGS += -Iinclude
-CFLAGS += -I${HOME}/work/devel/libprocessimage/include
 
 CXXFLAGS += -std=c++0x -g3 -fPIC
-CXXFLAGS += -I${HOME}/work/devel/libdwarfpp/include
-CXXFLAGS += -I${HOME}/work/devel/libprocessimage/include
-CXXFLAGS += -I${HOME}/work/devel/libsrk31c++/include
-CXXFLAGS += -I${HOME}/work/devel/c++-fileno/include
-CXXFLAGS += -I${HOME}/scratch/opt/include
-CXXFLAGS += -I${HOME}/opt/include
 CXXFLAGS += -Iinclude
 CXXFLAGS += -I../include
-
-LDFLAGS += -L${HOME}/work/devel/libdwarfpp/lib -Wl,-R$(realpath ${HOME}/work/devel/libdwarfpp/lib)
-LDFLAGS += -L${HOME}/work/devel/libprocessimage/src -Wl,-R$(realpath ${HOME}/work/devel/libprocessimage/src)
-LDFLAGS += -L/usr/local/lib
 
 C_DEPS := $(patsubst %.c,.%.c.d,$(C_SRC)) 
 CXX_DEPS := $(patsubset %.cc,%,cc.d,$(patsubst %.cpp,.%.cpp.d,$(CXX_SRC)))
 
 .PHONY: clean
 clean:
-	rm -f *.o *.so
+	rm -f *.o *.so $(C_DEPS) $(CXX_DEPS)
 
 libcake.so: $(OBJS)
-	$(CXX) $(CXXFLAGS) -shared -o "$@"  $(OBJS) $(LDFLAGS) -lprocessimage -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldl
+	$(CXX) $(CXXFLAGS) -shared -o "$@"  $(OBJS) $(LDFLAGS) -lreflect -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldl
 
 $(CXX_DEPS): .%.cpp.d : %.cpp
 	$(CXX) -MM $(CXXFLAGS) "$<"  > "$@"
@@ -59,7 +48,7 @@ $(CXX_DEPS): .%.cc.d : %.cc
 $(C_DEPS): .%.c.d : %.c
 	gcc -MM $(CFLAGS) "$<"  > "$@"
 	
-include $(DEPS)
+-include $(DEPS)
 
 %.o: %.cpp #$(HDRS)
 	$(CXX) $(CXXFLAGS) -c -o "$@" "$<"

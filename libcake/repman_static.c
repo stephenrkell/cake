@@ -5,7 +5,7 @@
 #include <assert.h>
 #include <malloc.h>
 #include "repman.h"
-#include <processimage/heap_index.h>
+#include <heap_index.h> // from libheap_index_hooks
 
 /* static co-object relation -- FIXME: reinstate this */
 //struct co_object_group *head = &__libcake_first_co_object_group; /* hard-wire the static entries */

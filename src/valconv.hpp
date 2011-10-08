@@ -21,7 +21,10 @@ namespace cake
 		bool source_is_on_left;
         antlr::tree::Tree *corresp; // for generating errors
 		bool init_only;
+		
+		friend std::ostream& operator<<(std::ostream& s, const basic_value_conversion& c);
 	}; 
+	std::ostream& operator<<(std::ostream& s, const basic_value_conversion& c);
 	
 	// base class
 	class value_conversion : public boost::enable_shared_from_this<value_conversion>, 

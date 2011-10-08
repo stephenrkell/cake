@@ -7,11 +7,6 @@ extern "C"
 }
 
 #include <iostream>
-#include <processimage/process.hpp>
-
-namespace cake
-{
-	extern process_image image; /* defined in repman_components.cc */
-}
+#include <libreflect.hpp>
 
 #endif

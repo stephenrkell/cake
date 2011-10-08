@@ -42,6 +42,18 @@ namespace cake
 	{
 		assert(false);
 	}
+	std::ostream& operator<<(std::ostream& s, const basic_value_conversion& c)
+	{
+		s << "{ " << c.source->get_filename() << " :: " 
+			<< (c.source_data_type->get_name() ? *c.source_data_type->get_name() : "<anonymous>")
+			<< " to "
+			<< c.sink->get_filename() << " :: " 
+			<< (c.sink_data_type->get_name() ? *c.sink_data_type->get_name() : "<anonymous>")
+			<< ", " << (c.source_is_on_left ? "left to right" : "right to left")
+			<< ", " << (c.init_only ? "initialization" : "update")
+			<< " }";
+		return s;
+	}
 	
 	value_conversion::value_conversion(wrapper_file& w,
 		srk31::indenting_ostream& out,
@@ -260,6 +272,9 @@ namespace cake
 			target_module(w.module_of_die(sink_data_type)),
 			modules(link_derivation::sorted(make_pair(source_module, target_module)))
 	{
+		// HACK: why do we have an init_only arg?
+		assert(init_only == basic.init_only);
+		
 		/* Find explicitly assigned-to fields:
 		 * the map is from the assigned-to- field
 		 * to the rule details.
