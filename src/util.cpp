@@ -275,17 +275,43 @@ namespace cake
 	{
 		// We do this by building a string and feeding it to the parser.
 	 	std::cerr << "creating ident AST for " << ident << std::endl;
+// 
+// 		char *dup = strdup(ident.c_str());
+// 		pANTLR3_INPUT_STREAM ss = antlr3StringStreamNew(
+// 			reinterpret_cast<uint8_t*>(dup), 
+// 			ANTLR3_ENC_UTF8, ident.size(), (uint8_t *)"(no file)");
+// 		cakeCLexer *lexer = cakeCLexerNew(ss);
+// 		antlr::CommonTokenStream *tokenStream = antlr3CommonTokenStreamSourceNew(
+// 			ANTLR3_SIZE_HINT, TOKENSOURCE(lexer));
+// 		cakeCParser *parser = cakeCParserNew(tokenStream); 
+// 		// HACK: use stubPrimitiveExpression to build idents
+// 		cakeCParser_stubPrimitiveExpression_return ret = parser->stubPrimitiveExpression(parser);
+// 	
+// 		return ret.tree;
 
-		char *dup = strdup(ident.c_str());
+		return make_ast(ident, &cakeCParser::stubPrimitiveExpression);
+	}
+	
+	template<typename AntlrReturnedObject>
+	antlr::tree::Tree *
+	make_ast(
+		const std::string& fragment, 
+		AntlrReturnedObject (* cakeCParser::* parserFunction)(cakeCParser_Ctx_struct *)
+	)
+	{
+		// We do this by building a string and feeding it to the parser.
+	 	std::cerr << "creating arbitrary AST for fragment " << fragment << std::endl;
+
+		char *dup = strdup(fragment.c_str());
 		pANTLR3_INPUT_STREAM ss = antlr3StringStreamNew(
 			reinterpret_cast<uint8_t*>(dup), 
-			ANTLR3_ENC_UTF8, ident.size(), (uint8_t *)"(no file)");
+			ANTLR3_ENC_UTF8, fragment.size(), (uint8_t *)"(no file)");
 		cakeCLexer *lexer = cakeCLexerNew(ss);
 		antlr::CommonTokenStream *tokenStream = antlr3CommonTokenStreamSourceNew(
 			ANTLR3_SIZE_HINT, TOKENSOURCE(lexer));
 		cakeCParser *parser = cakeCParserNew(tokenStream); 
 		// HACK: use stubPrimitiveExpression to build idents
-		cakeCParser_stubPrimitiveExpression_return ret = parser->stubPrimitiveExpression(parser);
+		AntlrReturnedObject ret = (parser->*parserFunction)(parser);
 	
 		return ret.tree;
 	}
@@ -343,7 +369,7 @@ namespace cake
 		pANTLR3_COMMON_TOKEN tok = static_cast<pANTLR3_COMMON_TOKEN>(vec->get(vec, tokenStream->p));
 		
 		bool retval;
-		std::cerr << "Pulled out a token of type " << GET_TYPE(tok) << std::endl;
+		//std::cerr << "Pulled out a token of type " << GET_TYPE(tok) << std::endl;
 		if (tok->getType(tok) != CAKE_TOKEN(IDENT)) retval = true;
 		else retval = false;
 		

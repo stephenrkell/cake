@@ -29,7 +29,9 @@ namespace cake
 		friend class link_derivation;
 		friend class value_conversion;
 		friend class structural_value_conversion;
+		friend class primitive_value_conversion;
 		friend class reinterpret_value_conversion;
+		friend class codegen_context;
 	
         cxx_compiler& compiler;
         link_derivation& m_d;
@@ -57,25 +59,9 @@ namespace cake
         	return make_pair(get_cu_ident(d), d->get_offset());
         }
         map<stable_die_ident, unsigned> arg_counts;
-    
-	    struct bound_var_info
-        {
-			string cxx_name;
-			string cxx_typeof; // names a STATIC immediate type 
-			module_ptr valid_in_module;
-			//shared_ptr<with_type_describing_layout_die> dwarf_origin;
-        };
-        //typedef std::map<std::string, bound_var_info> environment;
-		struct environment : public map<string, bound_var_info>
-		{
-		private:
-			typedef map<string, bound_var_info> super;
-		public:
-			const bound_var_info& operator[](const string& k) const
-			{ auto found = this->find(k); assert(found != this->end()); return found->second; }
-			bound_var_info& operator[](const string& k) 
-			{ return this->super::operator[](k);  }
-		};
+    public:
+		typedef ::cake::bound_var_info bound_var_info;
+		typedef ::cake::environment environment;
         typedef environment::value_type binding;
 //         instd::string cxx_name_for_binding(const binding& binding)
 //         {
@@ -87,76 +73,23 @@ namespace cake
 //             return ident_str.str();
 //         }
 		
-		/* All code-generation functions take one of these as an argument. 
-		 * However, which of its members must be present for a given language
-		 * feature to work is given a more fine-grained dynamic treatment. */
-		struct context
-		{
-			// these just point to the fields of the wrapper_file
-			request& req;
-			link_derivation& derivation;
-			const string& ns_prefix;
-			
-			// source and sink modules -- all code has these, but they vary within one file
-			struct
-			{
-				module_ptr source;
-				module_ptr sink;
-				module_ptr current;
-			} modules;
-			
-			// source event 
-			struct source_info_s
-			{
-				// we have at least a signature (if we have a source at all)
-				shared_ptr<spec::subprogram_die> signature;
-				
-				// we may have an event pattern
-				antlr::tree::Tree *opt_pattern;
-				
-				// FIXME: how do we get at the names bound?
-			};
-			optional<source_info_s> opt_source;
-			
-			// val corresp
-			struct val_info_s
-			{
-				// val corresp context
-				antlr::tree::Tree *rule;
-			};
-			optional<val_info_s> opt_val_corresp;
-			
-			// DWARF context -- used for name resolution once after the environment
-			struct dwarf_context_s
-			{
-				shared_ptr<spec::with_named_children_die> source_decl;
-				shared_ptr<spec::with_named_children_die> sink_decl;
-			} dwarf_context;
-			
-			// environment 
-			environment env;
-			
-			context(wrapper_file& w, module_ptr source, module_ptr sink, 
-				const environment& initial_env) 
-			: req(w.m_r), derivation(w.m_d), ns_prefix(w.ns_prefix), 
-			  modules({source, sink, source}), opt_source(), 
-			  dwarf_context((dwarf_context_s)
-			                {source->get_ds().toplevel(),
-			                 sink->get_ds().toplevel()}), 
-			  env(initial_env) {}
-		};
-		
+		typedef codegen_context context;
+
+		// HACK: these are somewhat utility functions
 		bool subprogram_returns_void(
 			shared_ptr<spec::subprogram_die> subprogram);
 		
 		bool treat_subprogram_as_untyped(
 			shared_ptr<spec::subprogram_die> subprogram);
 
+		// HACK: these are _even_ more utility functions
 		module_ptr module_of_die(shared_ptr<spec::basic_die> p_d);
 			
 		string get_type_name(
 			shared_ptr<spec::type_die> t/*,
 				const std::string& namespace_prefix*/);
+				
+	private:
 		
 		// Cake high-level constructs
 		environment initial_environment(

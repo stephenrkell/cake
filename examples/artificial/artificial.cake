@@ -1,9 +1,12 @@
 exists elf_reloc("client.o") client;
 exists elf_reloc("lib.o") lib;
-derive elf_reloc("artificial.o") app = link [client, lib]
+derive elf_reloc("artificial.o") artificial = link [client, lib]
 {
 	client <--> lib
 	{
+		/* bit of boilerplate while we don't have require func info */
+		frob(a) --> frob(a);
+		
 		/* Artificial data types allow typedefs having different treatment. */
 		values 
 		{
@@ -13,6 +16,7 @@ derive elf_reloc("artificial.o") app = link [client, lib]
 			hundredths_t            -->(that*10) thousandths_t;
 			hundredths_t  (that/10)<--           thousandths_t;
 		}
+		
 		
 		/* We can also introduce them ourselves using "as". */
 		

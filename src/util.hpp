@@ -59,6 +59,14 @@ namespace cake
 	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName);
 	antlr::tree::Tree *make_definite_member_name_expr(const definite_member_name& arg);
 	antlr::tree::Tree *make_ident_expr(const std::string& ident);
+
+	template<typename AntlrReturnedObject>
+	antlr::tree::Tree *
+	make_ast(
+		const std::string& fragment, 
+		AntlrReturnedObject (* cakeCParser::* parserFunction)(cakeCParser_Ctx_struct*)
+	);
+	
 	std::string cake_token_text_from_ident(const std::string& arg);
 	bool is_cake_keyword(const std::string& arg);
 	

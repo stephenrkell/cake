@@ -648,6 +648,8 @@ stubPrimitiveExpression	: stubLiteralExpression^
                         | IDENT^
                         | KEYWORD_THIS^
                         | KEYWORD_THAT^
+                        | KEYWORD_HERE^
+                        | KEYWORD_THERE^
                         | KEYWORD_SUCCESS^
                         /*| memberNameExpr*/
                         | KEYWORD_OUT^ /*memberNameExpr*/ IDENT /* for threading output parameters to function calls */
@@ -857,6 +859,8 @@ KEYWORD_DELETE: 'delete';
 KEYWORD_TIE: 'tie';
 KEYWORD_THIS: 'this';
 KEYWORD_THAT: 'that';
+KEYWORD_HERE: 'here';
+KEYWORD_THERE: 'there';
 KEYWORD_IN_ARGS: 'in_args';
 KEYWORD_OUT_ARGS: 'out_args';
 LE : '<=';

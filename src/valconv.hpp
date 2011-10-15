@@ -9,6 +9,88 @@
 
 namespace cake
 {
+	using std::string;
+	using std::map;
+	using boost::optional;
+	using boost::shared_ptr;
+	using namespace dwarf;
+	using boost::shared_ptr;
+	
+	class wrapper_file;
+
+	struct bound_var_info
+	{
+		string cxx_name;
+		string cxx_typeof; // names a STATIC immediate type 
+		module_ptr valid_in_module;
+		bool do_not_crossover;
+		//shared_ptr<with_type_describing_layout_die> dwarf_origin;
+	};
+	//typedef std::map<std::string, bound_var_info> environment;
+	struct environment : public map<string, bound_var_info>
+	{
+	private:
+		typedef map<string, bound_var_info> super;
+	public:
+		const bound_var_info& operator[](const string& k) const
+		{ auto found = this->find(k); assert(found != this->end()); return found->second; }
+		bound_var_info& operator[](const string& k) 
+		{ return this->super::operator[](k);  }
+	};
+	
+	/* All code-generation functions take one of these as an argument. 
+	 * However, which of its members must be present for a given language
+	 * feature to work is given a more fine-grained dynamic treatment. */
+	struct codegen_context
+	{
+		// these just point to the fields of the wrapper_file
+		request& req;
+		link_derivation& derivation;
+		const string& ns_prefix;
+
+		// source and sink modules -- all code has these, but they vary within one file
+		struct
+		{
+			module_ptr source;
+			module_ptr sink;
+			module_ptr current;
+		} modules;
+
+		// source event 
+		struct source_info_s
+		{
+			// we have at least a signature (if we have a source at all)
+			shared_ptr<spec::subprogram_die> signature;
+
+			// we may have an event pattern
+			antlr::tree::Tree *opt_pattern;
+
+			// FIXME: how do we get at the names bound?
+		};
+		optional<source_info_s> opt_source;
+
+		// val corresp
+		struct val_info_s
+		{
+			// val corresp context
+			antlr::tree::Tree *rule;
+		};
+		optional<val_info_s> opt_val_corresp;
+
+		// DWARF context -- used for name resolution once after the environment
+		struct dwarf_context_s
+		{
+			shared_ptr<spec::with_named_children_die> source_decl;
+			shared_ptr<spec::with_named_children_die> sink_decl;
+		} dwarf_context;
+
+		// environment 
+		environment env;
+
+		codegen_context(wrapper_file& w, module_ptr source, module_ptr sink, 
+			const environment& initial_env);
+	};
+	
 	struct basic_value_conversion
 	{
         module_ptr source;
@@ -101,13 +183,37 @@ namespace cake
 		
 		void emit_body();
 	};
-	// structural impl
-	class structural_value_conversion : public value_conversion
+	
+	// primitive_value_conversion impl
+	class primitive_value_conversion : public virtual value_conversion
 	{
+	public:
+		primitive_value_conversion(wrapper_file& w,
+			srk31::indenting_ostream& out, 
+			const basic_value_conversion& basic,
+			bool make_init_conversion,
+			bool& out_init_and_update_are_identical);
+		
+		void emit_body();
+	protected:
 		module_ptr source_module;
 		module_ptr target_module;
 		std::pair<module_ptr, module_ptr> modules;
-
+		void emit_buffer_declaration();
+		void write_single_field(
+			codegen_context& ref_ctxt,
+			string target_field_selector,
+			optional<string> unique_source_field_selector,
+			antlr::tree::Tree *source_expr,
+			antlr::tree::Tree *source_infix,
+			antlr::tree::Tree *sink_infix);
+	};
+	
+	
+	// structural impl
+	class structural_value_conversion : public virtual value_conversion, 
+		private primitive_value_conversion // we share code with this guy
+	{
 		struct member_mapping_rule_base
 		{
 			structural_value_conversion *owner;

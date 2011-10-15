@@ -17,6 +17,15 @@ namespace cake
 	const std::string wrapper_file::wrapper_arg_name_prefix = "__cake_arg";
 	const std::string wrapper_file::NO_VALUE = "__cake_arg";
 
+	codegen_context::codegen_context(wrapper_file& w, module_ptr source, module_ptr sink, 
+		const environment& initial_env)
+	: req(w.m_r), derivation(w.m_d), ns_prefix(w.ns_prefix), 
+	  modules({source, sink, source}), opt_source(), 
+	  dwarf_context((dwarf_context_s)
+			        {source->get_ds().toplevel(),
+			         sink->get_ds().toplevel()}), 
+	  env(initial_env) {}
+
 	bool wrapper_file::treat_subprogram_as_untyped(
 		boost::shared_ptr<dwarf::spec::subprogram_die> subprogram)
 	{
@@ -826,15 +835,18 @@ assert(false);
 		
 			// sanity check -- for all bindings covered by this cxx name,
 			// check that they are valid in the module context we're crossing over *from*
+			// also, skip if they're all marked no-crossover
+			bool no_crossover = true;
 			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
 				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
 				i_binding_name++)
 			{
 				auto i_binding = env.find(*i_binding_name);
 				assert(i_binding != env.end());
+				no_crossover &= i_binding->second.do_not_crossover;
 				assert(i_binding->second.valid_in_module == old_module);
 			}
-			
+			if (no_crossover) continue;
 			
 			// create a new cxx ident for the binding
 			auto ident = new_ident("xover_" + i_first_binding->first);
@@ -1026,8 +1038,6 @@ assert(false);
 				};
 			}
 		}
-		// sanity check
-		assert(new_env.size() == env.size());
 		
 		// output a summary comment
 		m_out << "/* crossover: " << std::endl;
@@ -1756,7 +1766,21 @@ assert(false);
 					//	"true");
 				}
 			case CAKE_TOKEN(KEYWORD_THIS):
+				assert(ctxt.env.find("__cake_this") != ctxt.env.end());
+				return (post_emit_status){ ctxt.env["__cake_this"].cxx_name,
+						"true", environment() };
 			case CAKE_TOKEN(KEYWORD_THAT):
+				assert(ctxt.env.find("__cake_that") != ctxt.env.end());
+				return (post_emit_status){ ctxt.env["__cake_that"].cxx_name,
+						"true", environment() };
+			case CAKE_TOKEN(KEYWORD_HERE):
+				assert(ctxt.env.find("__cake_here") != ctxt.env.end());
+				return (post_emit_status){ ctxt.env["__cake_here"].cxx_name,
+						"true", environment() };
+			case CAKE_TOKEN(KEYWORD_THERE):
+				assert(ctxt.env.find("__cake_there") != ctxt.env.end());
+				return (post_emit_status){ ctxt.env["__cake_there"].cxx_name,
+						"true", environment() };
 
 			case CAKE_TOKEN(KEYWORD_SUCCESS):
 
@@ -1778,7 +1802,7 @@ assert(false);
 			case CAKE_TOKEN(KEYWORD_OUT_AS):
 				assert(false);
 			
-			ambiguous_arity_ops:
+			ambiguous_arity_ops: //__attribute__((unused))
 			// may be unary (address-of) or binary
 			case CAKE_TOKEN(BITWISE_AND):
 			case CAKE_TOKEN(MINUS): // may be unary or binary!
@@ -1799,7 +1823,7 @@ assert(false);
 			/* HACK: for unary and binary arithmetic/logic ops, we just
 			 * blast out the C++ code*/
 
-			unary_al_ops:
+			unary_al_ops: //__attribute__((unused))
 			case CAKE_TOKEN(COMPLEMENT):
 			case CAKE_TOKEN(NOT):
 			// + others from ambiguous goto: BITWISE_AND, MINUS, PLUS, MULTIPLY
@@ -1816,7 +1840,7 @@ assert(false);
 					environment() };
 			}
 			
-			binary_al_ops:
+			binary_al_ops: //__attribute__((unused))
 			case CAKE_TOKEN(DIVIDE):
 			case CAKE_TOKEN(MODULO):
 			// we could try to catch divide-by-zero errors here, but we don't
@@ -1860,7 +1884,7 @@ assert(false);
 			
 			case CAKE_TOKEN(KEYWORD_FN):
 			
-			sequencing_ops:
+			sequencing_ops: //__attribute__((unused))
 			case CAKE_TOKEN(SEMICOLON):
 			case CAKE_TOKEN(ANDALSO_THEN):
 			case CAKE_TOKEN(ORELSE_THEN):

@@ -275,10 +275,10 @@ namespace cake
 			i_pair++)
 		{
 			auto candidate_groups = candidate_init_rules[*i_pair];
-			cerr << "For interface pair (" << name_of_module(i_pair->first)
-				<< ", " << name_of_module(i_pair->second) << ") there are "
-				<< candidate_groups.size() << " value corresps that are candidate init rules"
-				<< endl;
+// 			cerr << "For interface pair (" << name_of_module(i_pair->first)
+// 				<< ", " << name_of_module(i_pair->second) << ") there are "
+// 				<< candidate_groups.size() << " value corresps that are candidate init rules"
+// 				<< endl;
 			
 			for (auto i_key = candidate_init_rules_tbl_keys[*i_pair].begin();
 				i_key != candidate_init_rules_tbl_keys[*i_pair].end();
@@ -290,8 +290,11 @@ namespace cake
 				
 				auto candidates = candidate_groups.equal_range(*i_key);
 				unsigned candidates_count = srk31::count(candidates.first, candidates.second);
-				cerr << "For data type " << *i_key->source_type <<
-					" there are " << candidates_count << " candidate init rules." << endl;
+				cerr << "For data type " 
+					<< (i_key->source_type->get_name() ? *i_key->source_type->get_name() : "(anonymous)")
+					<< " at 0x" << std::hex << i_key->source_type->get_offset()  << std::dec
+				//<< *i_key->source_type 
+					<< " there are " << candidates_count << " candidate init rules." << endl;
 				
 				if (candidates_count == 1)
 				{
@@ -1009,6 +1012,8 @@ namespace cake
                       << boolalpha << (k.source_module == i_pair->second) << ">" // DirectionIsFromSecondToFirst
 << endl << "    {"
 << endl;
+				wrap_file <<
+		  "         // this group has " << vec.size() << " rules" << endl;
 				for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); i_p_corresp++)
 				{
 					// the template argument data type
@@ -1083,6 +1088,8 @@ namespace cake
                       << boolalpha << (k.source_module == i_pair->first) << ">" // DirectionIsFromFirstToSecond
 << endl << "    {"
 << endl;
+				wrap_file <<
+		  "         // this group has " << vec.size() << " rules" << endl;
 				for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); i_p_corresp++)
 				{
 					// the template argument data type
@@ -2111,7 +2118,9 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			
 		bool emit_as_reinterpret = false;
 		if (source_concrete_type->is_rep_compatible(sink_concrete_type)
-			&& (!refinement || GET_CHILD_COUNT(refinement) == 0))
+			&& (!refinement || GET_CHILD_COUNT(refinement) == 0)
+			&& (!source_infix_stub || GET_CHILD_COUNT(source_infix_stub) == 0)
+			&& (!sink_infix_stub || GET_CHILD_COUNT(sink_infix_stub) == 0))
 		{
 			// two rep-compatible cases
 			if (compiler.cxx_assignable_from(sink_concrete_type, source_concrete_type))
@@ -2142,7 +2151,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		else
 		{
 			// rep-incompatible cases are the same in effect but we report them individually
-			if (!refinement || GET_CHILD_COUNT(refinement) == 0)
+			if (!source_concrete_type->is_rep_compatible(sink_concrete_type))
 			{
 				cerr << "Generating value conversion from "
 					<< from_typename << " to " << to_typename
@@ -2157,18 +2166,20 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				// for fields whose renaming enables rep-compatibility
 				cerr << "Generating value conversion from "
 					<< from_typename << " to " << to_typename
-					<< " as they have nonempty refinement." << endl;
+					<< " as they have infix stubs and/or nonempty refinement." << endl;
 			}
 		}
 
 		// here goes the value conversion logic
 		if (!emit_as_reinterpret)
 		{
-			// -- dispatch to a function based on the DWARF tags of the two types
+			// -- dispatch to a function based on the DWARF tags of the two types...
+			// ... in *CONCRETE* form
 	#define TAG_PAIR(t1, t2) ((t1)<<((sizeof (Dwarf_Half))*8) | (t2))
-			switch(TAG_PAIR(source_data_type->get_tag(), sink_data_type->get_tag()))
+			switch(TAG_PAIR(source_data_type->get_concrete_type()->get_tag(), 
+				sink_data_type->get_concrete_type()->get_tag()))
 			{
-				case TAG_PAIR(DW_TAG_structure_type, DW_TAG_structure_type):
+				case TAG_PAIR(DW_TAG_structure_type, DW_TAG_structure_type): {
 					//emit_structural_conversion_body(source_data_type, sink_data_type,
 					//	refinement, source_is_on_left);
 					bool init_is_identical;
@@ -2192,10 +2203,36 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 							)
 						));
 					}
-				break;
+				} break;
+				/* If we are corresponding two base types, it's probably because we have 
+				 * some infix stub expressions or something. */
+				case TAG_PAIR(DW_TAG_base_type, DW_TAG_base_type): {
+					bool init_is_identical;
+					val_corresps.insert(make_pair(key, 
+						init_candidate = dynamic_pointer_cast<value_conversion>(
+							make_shared<primitive_value_conversion>(
+								wrap_code, wrap_code.m_out, basic, false, init_is_identical
+							)
+						)
+					));
+					// if we need to generate a separate init rule, do so, overriding init_candidate
+					if (!init_is_identical)
+					{
+						auto new_basic = basic;
+						new_basic.init_only = true; // HACK: shouldn't have this duplication of init_only
+						val_corresps.insert(make_pair(key, 
+							init_candidate = dynamic_pointer_cast<value_conversion>(
+								make_shared<primitive_value_conversion>(
+									wrap_code, wrap_code.m_out, new_basic, true, init_is_identical
+								)
+							)
+						));
+					}
+				} break;
 				default:
 					cerr << "Warning: didn't know how to generate conversion between "
 						<< *source_data_type << " and " << *sink_data_type << endl;
+					//RAISE_INTERNAL(corresp, "unsupported value correspondence");
 				return;
 			}
 	#undef TAG_PAIR
@@ -2704,10 +2741,19 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 							source_sink_pair.second, 
 							sink_type))
 					{
-		cerr << "Adding value corresp from source module @" << source_sink_pair.first.get()
-			<< " source data type " << *source_type << " " 
-			<< " to sink module @" << source_sink_pair.second.get()
-			<< " sink data type " << *sink_type << endl;
+		cerr << "Adding name-matched value corresp from"
+			//<< " source module @" << source_sink_pair.first.get()
+			<< " source data type " 
+			//<< *source_type 
+			<< (source_type->get_name() ? *source_type->get_name() : "(anonymous)" )
+			<< " at " << std::hex << source_type->get_offset() << std::dec
+			<< " to" 
+			//<< " sink module @" << source_sink_pair.second.get()
+			<< " sink data type " 
+			<< (sink_type->get_name() ? *sink_type->get_name() : "(anonymous)" )
+			<< " at " << std::hex << sink_type->get_offset() << std::dec
+			//<< *sink_type 
+			<< endl;
 	
 						add_value_corresp(
 							source_sink_pair.first,
@@ -2835,8 +2881,12 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		for (auto i = val_corresps.begin(); i != val_corresps.end(); i++)
 		{
 			auto p_c = i->second;
-			auto k = (val_corresp_group_key)
-			{ p_c->source, p_c->sink, p_c->source_data_type, p_c->sink_data_type };
+			auto k = (val_corresp_group_key) {
+				p_c->source, 
+				p_c->sink, 
+				p_c->source_data_type->get_concrete_type(), 
+				p_c->sink_data_type->get_concrete_type() 
+			};
 			
 			// 1. put it in the group table
 			auto ifaces = sorted(make_pair(p_c->source, p_c->sink));
@@ -2849,12 +2899,12 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			int assigned = counts[k]++;
 			assert(vec.size() == counts[k]);
 			
-			cerr << "Assigned number " << assigned
-				<< " to rule relating source data type "
-				<< p_c->source_data_type
-				<< " with sink data type "
-				<< p_c->sink_data_type
-				<< " where counts[...] is now " << counts[k] << endl;
+			//cerr << "Assigned number " << assigned
+			//	<< " to rule relating source data type "
+			//	<< p_c->source_data_type
+			//	<< " with sink data type "
+			//	<< p_c->sink_data_type
+			//	<< " where counts[...] is now " << counts[k] << endl;
 			val_corresp_numbering.insert(make_pair(p_c, assigned));
 		}
 	}
