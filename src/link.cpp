@@ -1014,21 +1014,35 @@ namespace cake
 << endl;
 				wrap_file <<
 		  "         // this group has " << vec.size() << " rules" << endl;
+
+				// sanity check
+				bool emitted_default_to_default = false;
 				for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); i_p_corresp++)
 				{
 					// the template argument data type
 					shared_ptr<type_die> outer_type = 
 					(k.source_module == i_pair->second)
-						? k.source_data_type
-						: k.sink_data_type;
+						? (*i_p_corresp)->source_data_type
+						: (*i_p_corresp)->sink_data_type;
 					auto outer_type_synonymy_chain = type_synonymy_chain(outer_type);
 					
 					// the type to be typedef'd in the struct body
 					shared_ptr<type_die> inner_type = 
 					(k.source_module == i_pair->first)
-						? k.source_data_type
-						: k.sink_data_type;
+						? (*i_p_corresp)->source_data_type
+						: (*i_p_corresp)->sink_data_type;
 					auto inner_type_synonymy_chain = type_synonymy_chain(outer_type);
+					
+					cerr << "outer type: " << *outer_type
+						<< ", inner type: " << *inner_type
+						<< endl;
+					
+					assert(outer_type_synonymy_chain.size() != 0
+					||    inner_type_synonymy_chain.size() != 0
+					||    emitted_default_to_default == false);
+
+					if (outer_type_synonymy_chain.size() == 0
+					&&   inner_type_synonymy_chain.size() == 0) emitted_default_to_default = true;
 					
    wrap_file << "         // from corresp at " << *i_p_corresp << " " << **i_p_corresp << ", rule " << CCP(TO_STRING_TREE((*i_p_corresp)->corresp)) << endl;
    wrap_file << "         typedef "
@@ -1095,15 +1109,15 @@ namespace cake
 					// the template argument data type
 					shared_ptr<type_die> outer_type = 
 					(k.source_module == i_pair->second)
-						? k.sink_data_type
-						: k.source_data_type;
+						? (*i_p_corresp)->sink_data_type
+						: (*i_p_corresp)->source_data_type;
 					auto outer_type_synonymy_chain = type_synonymy_chain(outer_type);
 					
 					// the type to be typedef'd in the struct body
 					shared_ptr<type_die> inner_type = 
 					(k.source_module == i_pair->first)
-						? k.sink_data_type
-						: k.source_data_type;
+						? (*i_p_corresp)->sink_data_type
+						: (*i_p_corresp)->source_data_type;
 					auto inner_type_synonymy_chain = type_synonymy_chain(outer_type);
 					
    wrap_file << "         // from corresp at " << *i_p_corresp << " " << **i_p_corresp << ", rule " << CCP(TO_STRING_TREE((*i_p_corresp)->corresp)) << endl;

@@ -1,3 +1,4 @@
+--input='(invalid blah)[n]' --rule='cakeValueDescription'
 --input='values (blah: Blah, bleh: Bleh) <--> (foo: Foo, bar: Bar) { };' --rule='pairwiseCorrespondenceElement'
 --input='foo.bar.baz' --rule='memberNameExpr'
 --input='(a: foo, b: bar) <--> (c: clang, d: duh) {};' --rule='valueCorrespondence'

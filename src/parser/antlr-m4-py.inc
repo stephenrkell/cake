@@ -1,7 +1,0 @@
-include(antlr-m4.inc) 
-define(antlr_m4_grammar_name_suffix,Py) 
-define(antlr_m4_language,Python) 
-define(antlr_m4_skip_action,self.skip();)
-define(antlr_m4_newline_action,$channel=HIDDEN;)
-define(antlr_m4_header,)
-define(antlr_m4_extra_options,)

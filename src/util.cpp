@@ -620,6 +620,10 @@ namespace cake
 	type_synonymy_chain(shared_ptr<type_die> d)
 	{
 		vector<shared_ptr<type_die> > v;
+		// sanity check
+		bool is_typedef = dynamic_pointer_cast<typedef_die>(d);
+		
+		// begin proper
 		auto concrete = d->get_concrete_type();
 		while (d != concrete)
 		{
@@ -630,6 +634,9 @@ namespace cake
 			d = *tc->get_type();
 			assert(d);
 		}
+		
+		// sanity check
+		assert(!is_typedef || v.size() > 0);
 		return v;
 	}
 		

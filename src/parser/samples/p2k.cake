@@ -126,9 +126,10 @@ derive elf_archive("user_kfs.a") fs = link[
     --> RUMP_VOP_READLINK(vn, uio, cr);
 
     puffs_node_readdir(mount, vn as vnode_lkshared, uio as uio_outbuf(dent, *reslen, *readoff), 
-        /* readoff */ _ out_as uio_outres_len_off(readoff, reslen), /* reslen */ _, 
+         /* readoff */ _ out_as uio_outres_len_off(readoff, reslen), /* reslen */ _ , 
         cr, inout eofflag, 
-        out cookies as (invalid off_t)[ncookies], /* ncookies */ _)
+        out cookies as (invalid off_t)[ncookies] , /* ncookies */ _
+    )
         // TODO: check strange bug in p2k code: no size given for "cookies" buffer!
     --> RUMP_VOP_READDIR(vn, uio, cr, eofflag, cookies, if cookies == null then null else out ncookies);
     // NOTE: Cake has to notice the mismtach between 

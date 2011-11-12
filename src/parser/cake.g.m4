@@ -1,254 +1,91 @@
-include(antlr_m4_include_file)
-grammar antlr_m4_make_grammar_name(cake,antlr_m4_grammar_name_suffix);
-options {
-    output=AST;
-    backtrack=true; /* seems to be necessary for C-style postfix operators.... */
-    language=antlr_m4_language;
-    antlr_m4_extra_options
-}
+include(head.g.m4)
 
-tokens { ENCLOSING; MULTIVALUE; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; 
-ANNOTATED_VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; OBJECT_SPEC_DIRECT; 
-OBJECT_SPEC_DERIVING; EXISTS_BODY; DEFINITE_MEMBER_NAME; MEMBERSHIP_CLAIM; VALUE_DESCRIPTION; DWARF_BASE_TYPE; 
-DWARF_BASE_TYPE_ATTRIBUTE; DWARF_BASE_TYPE_ATTRIBUTE_LIST; REMAINING_MEMBERS; ANY_VALUE; PAIRWISE_BLOCK_LIST; 
-EVENT_CORRESP; EVENT_SINK_AS_PATTERN; EVENT_SINK_AS_STUB; CONST_ARITH; KEYWORD_PATTERN; INFIX_STUB_EXPR; 
-IDENTS_TO_BIND; ARRAY; VALUE_CONSTRUCT; EVENT_PATTERN_REWRITE_EXPR; RETURN_EVENT; INVOKE_WITH_ARGS; 
-EVENT_WITH_CONTEXT_SEQUENCE; CONTEXT_SEQUENCE; EVENT_COUNT_PREDICATE; ARRAY_SUBSCRIPT; FORM_ASSOCIATION; 
+include(dwarfidl-tokens.inc)
+tokens { 
+dwarfidl_tokens
+ENCLOSING; IDENT_LIST; SUPPLEMENTARY; INVOCATION; CORRESP; STUB; EVENT_PATTERN; 
+ANNOTATED_VALUE_PATTERN; EVENT_CONTEXT; SET_CONST; CONDITIONAL; TOPLEVEL; OBJECT_CONSTRUCTOR; 
+OBJECT_SPEC_DIRECT; OBJECT_SPEC_DERIVING; EXISTS_BODY; REMAINING_MEMBERS; PAIRWISE_BLOCK_LIST; 
+EVENT_CORRESP; EVENT_SINK_AS_PATTERN; EVENT_SINK_AS_STUB; KEYWORD_PATTERN; INFIX_STUB_EXPR; 
+IDENTS_TO_BIND; VALUE_CONSTRUCT; EVENT_PATTERN_REWRITE_EXPR; RETURN_EVENT; INVOKE_WITH_ARGS; 
+EVENT_WITH_CONTEXT_SEQUENCE; CONTEXT_SEQUENCE; EVENT_COUNT_PREDICATE; FORM_ASSOCIATION; 
 VALUE_CORRESPONDENCE_REFINEMENT; PATTERN_OF_VALUES; DESCEND_TO_MEMBERS; NAMED_VALUE_CORRESP; }
 
+antlr_m4_begin_rules
 
-@header {
-antlr_m4_header
-}
-@lexer::header {
-antlr_m4_header
-}
+define(m4_value_description_production,cakeValueDescription)
+include(dwarfidl-rules.inc)
 
-/**************************
- *      DWARF syntax      *
- **************************/
- 
-/* FIXME: rename this to something more neutral
- * like "named element definition" */
-/* FIXME: provide explicit compile units */
-/* FIXME: allow offset labelling here using the "@" prefix e.g.
- * @ 11: _: compile_unit { ... }; */
-membershipClaim		: (memberNameExpr ':' KEYWORD_CLASS_OF)=> 
-                    	memberNameExpr ':' KEYWORD_CLASS_OF valueDescriptionExpr SEMICOLON
-						-> ^( MEMBERSHIP_CLAIM memberNameExpr ^( KEYWORD_CLASS_OF  valueDescriptionExpr ) )
-                    | (memberNameExpr ':' KEYWORD_CONST)=>
-                        memberNameExpr ':' KEYWORD_CONST namedDwarfTypeDescription '=' constantValueDescription SEMICOLON
-                        -> ^( MEMBERSHIP_CLAIM memberNameExpr ^( KEYWORD_CONST namedDwarfTypeDescription constantValueDescription ) )
-                    | namedValueDescription SEMICOLON
-						-> ^( MEMBERSHIP_CLAIM namedValueDescription )
-					| ELLIPSIS ':' valueDescriptionExpr SEMICOLON
-                    	-> ^( MEMBERSHIP_CLAIM REMAINING_MEMBERS valueDescriptionExpr )
-                    ;/* FIXME: ellipsis is Cake-specific, or at least Dwarf Predicate -specific...
-                      * note that you can just insert extra alternatives easily in ANTLR by doing
-                      * myRuleName : mySmallerRuleName
-                                   | ELLIPSIS ...;  */
-
-//memberNameExpr		/*: '.'? IDENT ( '.' IDENT )* -> ^( DEFINITE_MEMBER_NAME IDENT* )*/
-                                          
-memberNameExpr		: definiteMemberName -> ^( DEFINITE_MEMBER_NAME definiteMemberName )
-					| KEYWORD_VOID^ /* means "actually, no member" */
-					| INDEFINITE_MEMBER_NAME^ 
+/* Cake versions/extensions of dwarfidl */
+membershipClaim     : dwarfNamedElement
+                    | ELLIPSIS ':' valueDescriptionExpr SEMICOLON
+                        -> ^( MEMBERSHIP_CLAIM REMAINING_MEMBERS valueDescriptionExpr )
                     ;
 
-/* FIXME: we want to unify this with restrictedPostfixExpression somehow.
- * The latter allows more stuff though. This should really just be a path
- * through a static structure, representable as a list of idents. 
- * BUT we want to be able to represent arrays. 
- * Maybe idents beginning with digits are okay? Maybe we just define 
- * "member selection on arrays" for digit-based? */
-definiteMemberName : IDENT^ ( memberSuffix^ )*
-                   ;
-memberSuffix : '.' IDENT
-         -> ^( '.' IDENT )
-       | '[' constantIntegerArithmeticExpression ']'
-         -> ^( ARRAY_SUBSCRIPT constantIntegerArithmeticExpression )
-         ;
+valueInterpretation : KEYWORD_AS^ dwarfType valueConstructionExpression
+                    | KEYWORD_OUT_AS^ dwarfType valueConstructionExpression
+                    | KEYWORD_INTERPRET_AS^ dwarfType valueConstructionExpression
+                    | KEYWORD_IN_AS^ dwarfType valueConstructionExpression
+                    ;
 
-/* The following alternatives are in precedence order, highest to lowest */
-valueDescriptionExpr		: primitiveOrFunctionValueDescription 
-	-> ^( VALUE_DESCRIPTION primitiveOrFunctionValueDescription)
-                            /*| functionValueDescription*/
-                            ;
-
-primitiveOrFunctionValueDescription	: 
-	| (argumentMultiValueDescription FUNCTION_ARROW)=> 
-    	argumentMultiValueDescription FUNCTION_ARROW primitiveOrFunctionValueDescription 
-			-> ^(FUNCTION_ARROW argumentMultiValueDescription primitiveOrFunctionValueDescription )
-	| primitiveValueDescription
-	; 
-
-primitiveValueDescription	: KEYWORD_CONST^ constantValueDescription
-                            | valueIntrinsicAnnotation? unannotatedValueDescription valueInterpretation?
-                        	;
-
-/*** FIXME: the following is Cake-specific, not Dwarf! ***/
-valueInterpretation : KEYWORD_AS^ unannotatedValueDescription valueConstructionExpression
-                    | KEYWORD_OUT_AS^ unannotatedValueDescription valueConstructionExpression
-                    | KEYWORD_INTERPRET_AS^ unannotatedValueDescription valueConstructionExpression
-                    | KEYWORD_IN_AS^ unannotatedValueDescription valueConstructionExpression
-					;
-/*** FIXME: the following is Cake-specific, not Dwarf! ***/
-/*valueConstructionExpression : '(' stubStatementBody ( ',' stubStatementBody )* ')' 
-								-> ^( VALUE_CONSTRUCT stubStatementBody* )
-                            | -> ^( VALUE_CONSTRUCT )
-                            ;*/
 valueConstructionExpression : '(' stubNonSequencingExpression ( ',' stubNonSequencingExpression )* ')' 
-								-> ^( VALUE_CONSTRUCT stubNonSequencingExpression* )
+                              -> ^( VALUE_CONSTRUCT stubNonSequencingExpression* )
                             | -> ^( VALUE_CONSTRUCT )
                             ;
-
-valueIntrinsicAnnotation : KEYWORD_OPAQUE^ valueIntrinsicAnnotation?
-                         | KEYWORD_IGNORED^ valueIntrinsicAnnotation?
-                         | KEYWORD_INVALID^ valueIntrinsicAnnotation?
-                         | KEYWORD_CALLER_FREE^ '('! IDENT ')'! valueIntrinsicAnnotation?
+valueIntrinsicAnnotation : KEYWORD_OPAQUE// valueIntrinsicAnnotation?
+                         | KEYWORD_IGNORED //valueIntrinsicAnnotation?
+                         | KEYWORD_INVALID //valueIntrinsicAnnotation?
+                         | KEYWORD_CALLER_FREE^ '('! IDENT ')'! //valueIntrinsicAnnotation?
                          ;
 
 valueModeAnnotation : KEYWORD_OUT -> ^( KEYWORD_OUT) //^ valueAnnotation?
                     | KEYWORD_IN -> ^( KEYWORD_IN ) //^ valueAnnotation?
                     | KEYWORD_INOUT -> ^(KEYWORD_INOUT) //^ valueAnnotation?
                     ;
-                            
-unannotatedValueDescription : /*unspecifiedValueDescription^
-							|*/ simpleOrObjectOrPointerValueDescription^
-                            ;
 
-
-/* the multiValueDescription for argument specs: needn't have names, may have modes! 
- * -- at the moment this is the same as multiValueDescription */
-argumentMultiValueDescription : multiValueDescription
-                              ; 
-
+/* Cake version of dwarfMultiValueDescription */
 multiValueDescription	: '(' optionallyNamedWithModeValueDescription (',' optionallyNamedWithModeValueDescription )* ( ',' ELLIPSIS )? ')'
-								-> ^( MULTIVALUE optionallyNamedWithModeValueDescription* ELLIPSIS? )
+                                -> ^( MULTIVALUE optionallyNamedWithModeValueDescription* ELLIPSIS? )
                                 ;
-
+/* used by Cake version */
 optionallyNamedWithModeValueDescription: valueModeAnnotation^? optionallyNamedValueDescription
                                     ;
-      
-optionallyNamedValueDescription 	: (namedValueDescription)=>namedValueDescription
-									| primitiveOrFunctionValueDescription
-                                    ;
+/* ... then resume dwarfidl version */
 
-namedValueDescription 	: memberNameExpr ':'! valueDescriptionExpr
-						;
+/* Cake version of dwarfStructuredValueDescription */
+structuredValueDescription  : KEYWORD_OBJECT '{' membershipClaim* '}'
+                                -> ^(KEYWORD_OBJECT membershipClaim* )
+                            ;
 /* the multiValueDescription for tuples: must have names! */
 namedMultiValueDescription : '(' namedValueDescription (',' namedValueDescription )*  ')'
-								-> ^( MULTIVALUE namedValueDescription* )
+                               -> ^( MULTIVALUE namedValueDescription* )
                            ;
+
+/* Cake version of dwarfValueDescription */
+cakeValueDescription: primitiveOrFunctionValueDescription
+                    ;
+primitiveOrFunctionValueDescription	: 
+    | (multiValueDescription FUNCTION_ARROW)=> 
+       multiValueDescription FUNCTION_ARROW primitiveOrFunctionValueDescription 
+           -> ^(FUNCTION_ARROW multiValueDescription primitiveOrFunctionValueDescription )
+    | primitiveValueDescription
+    ;
+/* Cake version of dwarfPrimitiveValueDescription -- has interpretations, annotations
+ -- and we hack the Cake extended structuredValueDescription in here too */
+primitiveValueDescription   : dwarfConstantValueDescription
+                         /*   | (valueIntrinsicAnnotation structuredValueDescription)=>
+                              valueIntrinsicAnnotation structuredValueDescription valueInterpretation? */
+                            | annotatedDwarfPrimitiveValueDescription valueInterpretation?
+                            ;
+/* HACK: for now we don't seem to support opaque/ignored structure members... because
+of the above commenting-out of our Cake extension of dwarfStructuredValueDescription. FIXME! */
+annotatedDwarfPrimitiveValueDescription: dwarfType
+                                       | valueIntrinsicAnnotation^ annotatedDwarfPrimitiveValueDescription
+                                       ;
                            
-							                            
-structuredValueDescription	: KEYWORD_OBJECT '{' membershipClaim* '}'
-								-> ^(KEYWORD_OBJECT membershipClaim* )
-                            /*| multiValueDescription*/
-                            ;
-                            
-simpleOrObjectOrPointerValueDescription : structuredValueDescription^ ( valueDescriptionModifierSuffix^ )*
-                                        | simpleValueDescription^ ( valueDescriptionModifierSuffix^ )*
-                                        | enumValueDescription^ ( valueDescriptionModifierSuffix^ )*
-                                        | KEYWORD_VOID^ ( valueDescriptionModifierSuffix^ )*
-                                        | '('! primitiveValueDescription ')'! ( valueDescriptionModifierSuffix^ )*
-                                        ;
-
-valueDescriptionModifierSuffix : KEYWORD_PTR
-                               | '[' arraySizeExpr? ']' -> ^( ARRAY arraySizeExpr? )
-                               ;
-
-arraySizeExpr : /*  memberNameExpr | INT */ constantIntegerArithmeticExpression;
-
-simpleValueDescription		: namedDwarfTypeDescription^
-                            | INDEFINITE_MEMBER_NAME -> ANY_VALUE
-							/*| '('! primitiveOrFunctionValueDescription^ ')'!*/
-							;
-
-byteSizeParameter			: '<'! INT '>'!
-							;
-
-namedDwarfTypeDescription	: KEYWORD_BASE^ dwarfBaseTypeDescription
-							| IDENT
-                            ;
-                
-dwarfBaseTypeDescription	: encoding=IDENT byteSizeParameter? dwarfBaseTypeAttributeList
-							-> ^( DWARF_BASE_TYPE $encoding dwarfBaseTypeAttributeList byteSizeParameter?  )
-							;
-
-dwarfBaseTypeAttributeList : ( '{' ( dwarfBaseTypeAttributeDefinition )* '}' )?
-								-> ^( DWARF_BASE_TYPE_ATTRIBUTE_LIST dwarfBaseTypeAttributeDefinition* )
-                              ;
-
-dwarfBaseTypeAttributeDefinition 	: attr=IDENT '=' ( value=IDENT | value=INT ) SEMICOLON
-									-> ^( DWARF_BASE_TYPE_ATTRIBUTE $attr $value )
-									;
-/*enumValueDescription	: KEYWORD_ENUM^ ( ( ( IDENT | '_' ) byteSizeParameter? enumDefinition? ) | ( byteSizeParameter? enumDefinition ) )*/
-enumValueDescription    : KEYWORD_ENUM^ dwarfBaseTypeDescription enumDefinition
-                        | KEYWORD_ENUM enumDefinition
-                         -> ^( KEYWORD_ENUM ^( DWARF_BASE_TYPE ) enumDefinition ) /* empty base type => int */
-                        ;
-
-enumDefinition	: '{'! enumElement* '}'!
-				;
-
-enumElement : 
-            (KEYWORD_ENUMERATOR IDENT EQ)=>
-            KEYWORD_ENUMERATOR name=IDENT EQ constantIntegerArithmeticExpression SEMICOLON
-            -> ^( KEYWORD_ENUMERATOR ^( KEYWORD_LET ^( IDENTS_TO_BIND $name ) constantIntegerArithmeticExpression ) )
-            | ident=IDENT SEMICOLON
-            -> ^( KEYWORD_ENUMERATOR IDENT ) /* using an ident defined elsewhere (must be constant value!) */
-            ;
-
-/*********************************************************
- * literal values and compile-time constant expressions  *
- * -- could be useful in DWARF syntax? Or just for Cake? *
- * -- certainly useful in Dwarf Predicates....           *
- *********************************************************/
-
-patternConstantValueDescription : STRING_LIT^
-                                | INT ELLIPSIS^ INT
-                                ;
-
-constantOrVoidValueDescription	:	constantValueDescription^
-								|	KEYWORD_VOID^
-                                ;
-
-constantValueDescription	: STRING_LIT^ /* FIXME: need IDENTS here too? depends what we use these for */
-                            | KEYWORD_NULL^
-                            | constantSetExpression
-							| constantIntegerArithmeticExpression 
-                            	-> ^( CONST_ARITH constantIntegerArithmeticExpression )
-                            ;
-                            
-/* FIXME: lists are like these but without the "set" keyword */
-constantSetExpression	: KEYWORD_SET '[' ( constantValueDescription ( ',' constantValueDescription* )* )? ']' -> ^( SET_CONST constantValueDescription* )
-						;
-
+/* Cake only */
 setExpression           : KEYWORD_SET '[' ( stubLangExpression ( ',' stubLangExpression* )* )? ']' -> ^( KEYWORD_SET stubLangExpression* )
-						;
-           
-constantIntegerArithmeticExpression	: constantShiftingExpression^
-									;
-/* FIXME: rather than repeating these rules, just use stub expressions
- * and push the compile-time-const detection to semantic analysis
- * (where it has to be anyway, because we use memberNameExpr which
- * might actually be referencing non-compile-time-const values). */
-
-primitiveIntegerArithmeticExpression	: INT^
-                                        | memberNameExpr /* HACK: so we can use this rule in array suffix */
-										| '('! constantIntegerArithmeticExpression^ ')'!
-                                        ;
-constantUnaryOperatorExpression	: (MINUS^|PLUS^)* primitiveIntegerArithmeticExpression
                         ;
-                                        
-constantMultiplicativeOperatorExpression	: constantUnaryOperatorExpression ( ( MULTIPLY^ | DIVIDE^ | MODULO^ ) constantUnaryOperatorExpression )*
-									;
-constantAdditiveOperatorExpression 	: constantMultiplicativeOperatorExpression ( ( PLUS^ | MINUS^ ) constantMultiplicativeOperatorExpression )*
-							;
-constantShiftingExpression	: constantAdditiveOperatorExpression ( ( SHIFT_LEFT^ | SHIFT_RIGHT^ ) constantAdditiveOperatorExpression )* 
-					;
- 
 
 
 
@@ -805,9 +642,10 @@ inlineDeclaration			:	KEYWORD_INLINE^ objectSpec wellNestedTokenBlock
                             
 wellNestedTokenBlock : '{' ( INT | STRING_LIT | IDENT | 'alias' | 'any' | SEMICOLON | '[' | ',' | ']' | 'exists' | 'check' | 'declare' | 'override' | ':' | '.' | '_' | '->' | 'object' | 'ptr' | '<' | '>' | '=' | 'enum' | 'enumerator' | '==' | '<<' | '>>' | wellNestedTokenBlock | '<-->' | '<--' | '-->' | '#' | '::' | '?' | '+' | '-' | '/' | '|' | '(' | ')' | 'let' )* '}';
 
-/* Lexer */
+/* Named tokens */
+include(dwarfidl-abbrev.inc)
 
-/* boilerplate tokens */
+/* extra boilerplate tokens for Cake */
 KEYWORD_ALIAS : 'alias';
 KEYWORD_ANY : 'any';
 KEYWORD_DERIVING : 'deriving';
@@ -816,30 +654,16 @@ KEYWORD_STATIC : 'static' ;
 KEYWORD_CHECK : 'check';
 KEYWORD_DECLARE : 'declare';
 KEYWORD_OVERRIDE : 'override';
-KEYWORD_CONST : 'const';
 KEYWORD_OPAQUE : 'opaque';
 KEYWORD_IGNORED : 'ignored';
 KEYWORD_INVALID : 'invalid';
-KEYWORD_VOID : 'void';
-KEYWORD_NULL : 'null';
-FUNCTION_ARROW : '=>';
 KEYWORD_FN : 'fn';
-KEYWORD_BASE : 'base' ;
-KEYWORD_OBJECT : 'object';
-KEYWORD_PTR : 'ptr';
-KEYWORD_CLASS_OF : 'class_of';
-KEYWORD_ENUM : 'enum';
-KEYWORD_ENUMERATOR : 'enumerator';
-KEYWORD_SET : 'set';
-SHIFT_LEFT : '<<';
-SHIFT_RIGHT : '>>';
 KEYWORD_LINK : 'link';
 KEYWORD_DERIVE : 'derive';
 BI_DOUBLE_ARROW : '<-->';
 RL_DOUBLE_ARROW : '<--';
 LR_DOUBLE_ARROW : '-->';
 SCOPE_RESOLUTION : '::';
-ELLIPSIS : '...';
 KEYWORD_AS : 'as';
 KEYWORD_IN_AS: 'in_as';
 KEYWORD_INTERPRET_AS: 'interpret_as';
@@ -851,8 +675,6 @@ KEYWORD_INOUT: 'inout';
 KEYWORD_NAMES : 'names';
 KEYWORD_PATTERN : 'pattern' ;
 KEYWORD_SKIP : 'skip';
-KEYWORD_TRUE : 'true';
-KEYWORD_FALSE : 'false';
 KEYWORD_SUCCESS : 'success';
 KEYWORD_NEW: 'new';
 KEYWORD_DELETE: 'delete';
@@ -863,80 +685,22 @@ KEYWORD_HERE: 'here';
 KEYWORD_THERE: 'there';
 KEYWORD_IN_ARGS: 'in_args';
 KEYWORD_OUT_ARGS: 'out_args';
-LE : '<=';
-GE : '>=';
-EQ : '==';
-NEQ : '!=';
-LOGICAL_AND : '&&';
-LOGICAL_OR : '||';
 KEYWORD_IF : 'if';
 KEYWORD_THEN : 'then';
-KEYWORD_LET : 'let';
 KEYWORD_EMIT : 'emit';
 KEYWORD_VALUES : 'values';
 KEYWORD_ELSE : 'else';
 LR_DOUBLE_ARROW_Q : '-->?' ;
 RL_DOUBLE_ARROW_Q : '<--?' ;
 KEYWORD_INLINE : 'inline';
-//UNDERSCORE : '_';
-INDEFINITE_MEMBER_NAME : '_';
-// DOT : '.';
 MEMBER_SELECT : '.';
 INDIRECT_MEMBER_SELECT : '->';
 RL_SINGLE_ARROW: '<-';
-//TILDE : '~';
-COMPLEMENT : '~';
-//EXCLAMATION : '!';
-NOT : '!';
-MINUS : '-';
-PLUS : '+';
-//AMPERSAND : '&';
-BITWISE_AND : '&';
-//STAR : '*';
-MULTIPLY : '*';
-//SLASH : '/';
-DIVIDE : '/';
-//PERCENT : '%';
-MODULO : '%';
-LESS : '<';
-GREATER : '>';
-//CARET : '^';
-BITWISE_XOR : '^';
-//BAR : '|';
-BITWISE_OR : '|';
 CONT_LBRACE : '--{';
 CONT_RBRACE : '}--';
-SEMICOLON : ';';
 ANDALSO_THEN : ';&';
 ORELSE_THEN : ';|';
 
-/* Fallback (interesting) tokens */
-INT :   ('1'..'9''0'..'9'*)|'0''x'('0'..'9'|'a'..'f'|'A'..'F')+|'0';
-FLOAT : '0'..'9'+ '.''0'..'9'+ ;
-NEWLINE:'\r'? '\n' {antlr_m4_newline_action} ;
-WS  :   (' '|'\t')+ {antlr_m4_skip_action} ;
-LINECOMMENT : '/' '/'( ~ '\n' )* {antlr_m4_skip_action} ;
-BLOCKCOMMENT : '/' '*' ( ~ '/' | ( ~ '*' ) '/' )* '*' '/' {antlr_m4_skip_action} ;
-STRING_LIT : '\"' ( ~'\"'|'\\\"' )* '\"' ;
-//IDENT  :   ('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9'|'\\'.) /* begin with a-zA-Z or non-terminating '_' */
-//(
-//	('a'..'z'|'A'..'Z'|'0'..'9'|'\\'.|'_'|'-'|('.'('0'..'9')+))*('a'..'z'|'A'..'Z'|'0'..'9'|'\\'.|'_')
-//   /*|('.''0'..'9') /* ending with dot-digit is okay */
-//)? ;
-/* FIXME: scrapped the fancy IDENT rule until antlr does maximum munch. GRR! */
-IDENT : ('\\'.|'a'..'z'|'A'..'Z'|'_'+'a'..'z'|'_'+'A'..'Z'|'_'+'0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'\\'.)*;
-PATTERN_IDENT : '/'('a'..'z'|'A'..'Z'|'_''a'..'z'|'_''A'..'Z'|'_''0'..'9')('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'|'|'*'|'('|')'|'.'|'?')*'/';
-METAVAR	: '@'('a'..'z'|'A'..'Z')('a'..'z'|'A'..'Z'|'0'..'9'|'_')* ;
-/* The ident rule is a bit different from the conventional -- idents must be at
- * least two characters, and may embed '-' characters, and '.' preceding a number.
- * (but not at the start or end). 
- * The first of these quirks reduces ambiguity, since '_' is given a unique and special
- * meaning. On the other hand, symbols which are only one character will cause problems.
- * The second quirk is really odd, but I'm running with it so that we can use library names
- * in a natural fashion, e.g. glib-2.0 and so on. Note that the ambiguity is less than
- * you think, in the common case that the dots fall in between digits, since a digit
- * can't begin an ident anyway.
- * FIXME: at the moment, to support the allow-digits-after-dots rule, 
- * we require extra spaces in a name.name.name expression. Fix ANTLR's lexing 
- * behaviour so that we don't need this (i.e. that blah.blah.blah works as expected). */
-/* FIXME: semantic action to process backslash-escapes within IDENT? */
+/* Lexer */
+include(dwarfidl-lex.inc)
+
