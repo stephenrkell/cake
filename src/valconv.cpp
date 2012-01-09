@@ -202,7 +202,7 @@ namespace cake
 		auto found_target_field = dynamic_pointer_cast<member_die>(found_target);
 		assert(found_target_field && found_target_field->get_type());
 		
-		auto found_target_field_type = *found_target_field->get_type();
+		auto found_target_field_type = found_target_field->get_type();
 		assert(found_target_field_type);
 		
 		shared_ptr<member_die> found_source_field;
@@ -216,7 +216,7 @@ namespace cake
 			found_source_field = dynamic_pointer_cast<member_die>(found_source);
 			assert(found_source_field && found_source_field->get_type());
 			
-			found_source_field_type = *found_source_field->get_type();
+			found_source_field_type = found_source_field->get_type();
 			assert(found_source_field_type);
 		}
 		
@@ -491,7 +491,7 @@ namespace cake
 		//std::multimap<std::string, member_mapping_rule*> explicit_toplevel_mappings;
 		for (auto i_mapping = explicit_field_corresps.begin(); 
 			i_mapping != explicit_field_corresps.end();
-			i_mapping++)
+			++i_mapping)
 		{
 			if (i_mapping->first.size() == 1)
 			{
@@ -513,7 +513,7 @@ namespace cake
 			 	->member_children_begin();
 			i_member != dynamic_pointer_cast<structure_type_die>(sink_data_type)
 			 	->member_children_end();
-			i_member++)
+			++i_member)
 		{
 			assert((*i_member)->get_name());
 			if (name_matched_mappings.find(*(*i_member)->get_name())
@@ -575,14 +575,14 @@ namespace cake
 		// a defined conversion
 		for (auto i_mapping = name_matched_mappings.begin();
 				i_mapping != name_matched_mappings.end();
-				i_mapping++)
+				++i_mapping)
 		{
 			auto pair = make_pair(
-					*dynamic_pointer_cast<member_die>(
+					dynamic_pointer_cast<member_die>(
 						dynamic_pointer_cast<with_named_children_die>(this->source_data_type)
 							->named_child(i_mapping->second.target.at(0))
 						)->get_type(),
-					*dynamic_pointer_cast<member_die>(
+					dynamic_pointer_cast<member_die>(
 						dynamic_pointer_cast<with_named_children_die>(this->sink_data_type)
 							->named_child(i_mapping->second.target.at(0))
 						)->get_type()
@@ -593,7 +593,7 @@ namespace cake
 		}
 		for (auto i_mapping = explicit_toplevel_mappings.begin();
 				i_mapping != explicit_toplevel_mappings.end();
-				i_mapping++)
+				++i_mapping)
 		{
 			// FIXME: to accommodate foo.bar <--> foo.bar,
 			// we need to capture that the dependency *must* adhere to the 
@@ -611,8 +611,8 @@ namespace cake
 						dynamic_pointer_cast<with_named_children_die>(
 							this->sink_data_type
 						)->named_child(i_mapping->second->target.at(0)));
-			auto source_member_type = *source_member->get_type();
-			auto sink_member_type = *sink_member->get_type();
+			auto source_member_type = source_member->get_type();
+			auto sink_member_type = sink_member->get_type();
 			
 			auto pair = make_pair(source_member_type, sink_member_type);
 
@@ -628,7 +628,7 @@ namespace cake
 		//	<< " to " << *this->sink_data_type
 		//	<< ": total " << working.size() << endl;
 		//cerr << "Listing:" << endl;
-		//for (auto i_dep = working.begin(); i_dep != working.end(); i_dep++)
+		//for (auto i_dep = working.begin(); i_dep != working.end(); ++i_dep)
 		//{
 		//	cerr << "require from " << *i_dep->first << " to " << *i_dep->second << endl;
 		//}		
@@ -861,13 +861,13 @@ namespace cake
 		map<string, member_mapping_rule *> target_fields_to_write;
 		for (auto i_name_matched = name_matched_mappings.begin();
 				i_name_matched != name_matched_mappings.end();
-				i_name_matched++)
+				++i_name_matched)
 		{
 			string target_field_selector;
 			ostringstream s;
 			for (auto i_name_part = i_name_matched->second.target.begin();
 				i_name_part != i_name_matched->second.target.end();
-				i_name_part++)
+				++i_name_part)
 			{
 				//if (i_name_part != i_name_matched->second.target.begin())
 				{ s << "."; } // always begin selector with '.'!
@@ -884,7 +884,7 @@ namespace cake
 		}
 		for (auto i_explicit_toplevel = explicit_toplevel_mappings.begin();
 				i_explicit_toplevel != explicit_toplevel_mappings.end();
-				i_explicit_toplevel++)
+				++i_explicit_toplevel)
 		{
 			// assert uniqueness in the multimap for now
 			auto equal_range = explicit_toplevel_mappings.equal_range(i_explicit_toplevel->first);
@@ -914,7 +914,7 @@ namespace cake
 					source_data_type)->member_children_begin();
 				i_field != dynamic_pointer_cast<with_data_members_die>(
 					source_data_type)->member_children_end();
-				i_field++)
+				++i_field)
 		{
 			assert((*i_field)->get_name());
 
@@ -939,7 +939,7 @@ namespace cake
 		 * able to bind this name using "auto" and have it stay in scope for later. */
 		for (auto i_target = target_fields_to_write.begin();
 				i_target != target_fields_to_write.end();
-				i_target++)
+				++i_target)
 		{
 			/* All dependencies should be in place now -- check this. */
 			i_target->second->check_sanity();
@@ -957,7 +957,7 @@ namespace cake
 				ostringstream s;
 				for (auto i_name_part = i_target->second->unique_source_field->begin();
 					i_name_part != i_target->second->unique_source_field->end();
-					i_name_part++)
+					++i_name_part)
 				{
 					//if (i_name_part != i_target->second->unique_source_field->begin())
 					{ s << "."; } // i.e. always begin with '.'
@@ -1072,7 +1072,7 @@ namespace cake
 // 					source_data_type)->member_children_begin();
 // 				i_field != dynamic_pointer_cast<with_data_members_die>(
 // 					source_data_type)->member_children_end();
-// 				i_field++)
+// 				++i_field)
 // 		{
 // 			assert((*i_field)->get_name());
 // 
@@ -1101,7 +1101,7 @@ namespace cake
 // 		/* 4, 5. Now finish the job: for each target field, compute any post-stub and assign. */
 // 		for (auto i_target = target_fields_to_write.begin();
 // 				i_target != target_fields_to_write.end();
-// 				i_target++)
+// 				++i_target)
 // 		{
 // 			// always start with crossed-over environment
 // 			ctxt.env = crossed_env;
@@ -1113,7 +1113,7 @@ namespace cake
 // 				ostringstream s;
 // 				for (auto i_name_part = i_target->second->unique_source_field->begin();
 // 					i_name_part != i_target->second->unique_source_field->end();
-// 					i_name_part++)
+// 					++i_name_part)
 // 				{
 // 					if (i_name_part != i_target->second->unique_source_field->begin())
 // 					{ s << "."; }

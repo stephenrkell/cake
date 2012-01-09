@@ -2,7 +2,7 @@
 CXX ?= g++-4.5
 
 CXXFLAGS += -fno-eliminate-unused-debug-symbols -fno-eliminate-unused-debug-types 
-CXXFLAGS += -DBOOST_HAS_RVALUE_REFS
+CXXFLAGS += -DBOOST_HAS_RVALUE_REFS 
 
 SRC := $(wildcard *.cpp)
 DEPS = $(patsubst %.cpp,.%.d,$(SRC))
@@ -19,6 +19,10 @@ LDLIBS += -lsrk31c++ -lc++fileno -lboost_filesystem -lboost_regex -lboost_system
 
 CXXFLAGS += -Iparser/include -Iinclude
 CXXFLAGS += -g3 -O0 -Wall -std=c++0x 
+
+# HACK while various bits of Cake source code are not optimal....
+CXXFLAGS += -Wno-deprecated-declarations -Wno-sequence-point -Wno-unused-variable -Wno-unused-label
+
 GCJFLAGS += -findirect-dispatch -fno-indirect-classes -fPIC -g3 --classpath=$(CLASSPATH) -Wall 
 
 CAKE_VERSION := 0.0$(shell stat --format='%y' *.cpp | sort | tail -n1 |  tr -cd '[:digit:]' )

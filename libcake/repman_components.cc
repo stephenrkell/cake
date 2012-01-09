@@ -76,12 +76,12 @@ void init_components_table(void)
 	 * where a conversions-table*/
 	using namespace cake;	
 	
-	for (auto i_file = self.files.begin(); i_file != self.files.end(); i_file++)
+	for (auto i_file = self.files.begin(); i_file != self.files.end(); ++i_file)
 	{
 		auto symbols = self.all_symbols(i_file);
 		std::cerr << "Looking for Cake component definitions in symbols of file " << i_file->first
 			<< std::endl;
-		for (auto i_sym = symbols.first; i_sym != symbols.second; i_sym++)
+		for (auto i_sym = symbols.first; i_sym != symbols.second; ++i_sym)
 		{
 			const char *strptr = elf_strptr(i_sym.base().origin->elf,
 				i_sym.base().origin->shdr.sh_link, 
@@ -119,7 +119,7 @@ void init_components_table(void)
 				bool success = false;
 				for (auto i_cu = i_file->second.p_ds->toplevel()->compile_unit_children_begin();
 					i_cu != i_file->second.p_ds->toplevel()->compile_unit_children_end();
-					i_cu++)
+					++i_cu)
 				{
 					if (
 					    (*i_cu)->get_name() && *(*i_cu)->get_name() == source_fname
@@ -158,10 +158,10 @@ void init_component_pairs_table(void)
 	// FIXME: delete this object
 	
 	/* We're building a table of component pairs, pointing to their conversion table. */
-	for (auto i_file = self.files.begin(); i_file != self.files.end(); i_file++)
+	for (auto i_file = self.files.begin(); i_file != self.files.end(); ++i_file)
 	{
 		auto symbols = self.all_symbols(i_file);
-		for (auto i_sym = symbols.first; i_sym != symbols.second; i_sym++)
+		for (auto i_sym = symbols.first; i_sym != symbols.second; ++i_sym)
 		{
 			std::string name = elf_strptr(i_sym.base().origin->elf,
 				i_sym.base().origin->shdr.sh_link, 
@@ -233,7 +233,7 @@ void init_component_pairs_table(void)
 
 				// search for this symbols, then we can terminate
 				process_image::addr_t base = self.get_dieset_base(*i_file->second.p_ds);
-				for (auto i_othersym = i_sym; i_othersym != symbols.second; i_othersym++)
+				for (auto i_othersym = i_sym; i_othersym != symbols.second; ++i_othersym)
 				{
 					std::string name = elf_strptr(i_othersym.base().origin->elf,
 						i_othersym.base().origin->shdr.sh_link, 
@@ -316,7 +316,7 @@ void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_r
 		<< " entries." << std::endl;
 	for (auto i_component_entry = p_components->begin(); 
 		i_component_entry != p_components->end();
-		i_component_entry++)
+		++i_component_entry)
 	{
 		if (i_component_entry->second == co_obj_rep)
 		{

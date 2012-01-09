@@ -488,7 +488,7 @@ namespace cake
 		std::string ident_in_cake;
 		std::string rhs_ident_in_cake;
 		std::string fragment;
-		for (auto i_ident = ident.begin(); i_ident != ident.end(); i_ident++)
+		for (auto i_ident = ident.begin(); i_ident != ident.end(); ++i_ident)
 		{
 			if (i_ident != ident.begin()) ident_in_cake += ".";
 			ident_in_cake += cake_token_text_from_ident(*i_ident);
@@ -500,7 +500,7 @@ namespace cake
 		}
 		else
 		{
-			for (auto i_ident = rhs_ident->begin(); i_ident != rhs_ident->end(); i_ident++)
+			for (auto i_ident = rhs_ident->begin(); i_ident != rhs_ident->end(); ++i_ident)
 			{
 				if (i_ident != rhs_ident->begin()) rhs_ident_in_cake += ".";
 				rhs_ident_in_cake += cake_token_text_from_ident(*i_ident);
@@ -631,7 +631,7 @@ namespace cake
 			assert(tc);
 			if (dynamic_pointer_cast<typedef_die>(tc)) v.push_back(d);
 			assert(tc->get_type());
-			d = *tc->get_type();
+			d = tc->get_type();
 			assert(d);
 		}
 		

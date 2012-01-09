@@ -4,8 +4,9 @@ CXXFLAGS += $(CFLAGS) -std=gnu++0x
 
 CAKE ?= ../../src/cake
 CXX ?= g++-4.5
-CXXFLAGS += -I$(shell dirname $(CAKE))/../include -I$(shell dirname $(CAKE))/../libcake/include
-LDFLAGS += -L$(shell dirname $(CAKE))/../libcake -lcake -Wl,-R$(realpath $(shell dirname $(CAKE))/../libcake)
+CXXFLAGS += -I/usr/local/include -I$(shell dirname $(CAKE))/../include -I$(shell dirname $(CAKE))/../libcake/include
+LDFLAGS += -L/usr/local/lib -Wl,-R/usr/local/lib -L$(shell dirname $(CAKE))/../libcake -lcake -Wl,-R$(realpath $(shell dirname $(CAKE))/../libcake)
+LDLIBS += -lunwind -lunwind-ptrace -lunwind-$(shell uname -m)
 
 SRC := $(wildcard *.c)
 OBJS := $(patsubst %.c,%.o,$(SRC))
@@ -13,7 +14,7 @@ $(warning OBJS are $(OBJS))
 BASENAME := $(shell basename $(shell readlink -f $(shell pwd)))
 
 
-default: $(BASENAME).o 
+default: $(BASENAME).o $(BASENAME)
 
 -include cake-generated.mk
 
@@ -27,11 +28,11 @@ $(BASENAME): $(BASENAME).o
 # HACK: workaround missing symbol unbinding
 $(BASENAME): $(BASENAME).o
 	objdump -t $(BASENAME).o | grep __real_ | tr -s '[:blank:]' '\t' | cut -f6 | sed 's/__real_\(.*\)/-Wl,--defsym,\1=__real_\1/' | xargs \
-	$(CXX) -o $(BASENAME) $(BASENAME).o $(LDFLAGS)
+	$(CXX) -o $(BASENAME) $(BASENAME).o $(LDFLAGS) $(LDLIBS)
 
 ifeq ($(DEBUG),)
 cake-generated.mk $(BASENAME)_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
-	$(CAKE) $(BASENAME).cake > "$@"
+	( $(CAKE) $(BASENAME).cake 1>&2 2>&3 ) 2>"$@" 3>&1 | tee cake.log
 else
 cake-generated.mk $(BASENAME)_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
 	gdb --eval-command "break main" --eval-command "run $(BASENAME).cake -o $@" $(CAKE) #> "$@"

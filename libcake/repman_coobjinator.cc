@@ -180,7 +180,7 @@ new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by
 
 void sync_all_co_objects(int from_rep, int to_rep)
 {
-	for (auto i_group = groups.begin(); i_group != groups.end(); i_group++)
+	for (auto i_group = groups.begin(); i_group != groups.end(); ++i_group)
 	{
 		if (!i_group->expired())
 		{

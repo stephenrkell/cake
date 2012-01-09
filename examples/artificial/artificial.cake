@@ -5,7 +5,7 @@ derive elf_reloc("artificial.o") artificial = link [client, lib]
 	client <--> lib
 	{
 		/* bit of boilerplate while we don't have require func info */
-		frob(a) --> frob(a);
+		frob(a as length) --> frob(a);
 		
 		/* Artificial data types allow typedefs having different treatment. */
 		values 

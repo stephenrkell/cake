@@ -76,7 +76,7 @@ namespace cake
 				// look for a _unique_ _corresponding_ type and use that
 				assert(unique_called_subprogram->get_type());
 				auto found_vec = m_d.corresponding_dwarf_types(
-					*unique_called_subprogram->get_type(),
+					unique_called_subprogram->get_type(),
 					calling_module,
 					true /* flow_from_type_module_to_corresp_module */);
 				if (found_vec.size() == 1)
@@ -89,7 +89,7 @@ namespace cake
 					m_out << " ::cake::unspecified_wordsize_type";
 				}
 			}
-            else m_out << get_type_name(*ret_type);
+            else m_out << get_type_name(ret_type);
              
             m_out << ' ';
         }
@@ -127,7 +127,7 @@ namespace cake
 // 					// get argument at position argnum from the subprogram;
 // 					/*auto*/ i_fp = unique_called_subprogram->formal_parameter_children_begin();
 // 					//i_arg = unique_called_subprogram->formal_parameter_children_begin();
-// 					for (int i = 0; i < argnum; i++) i_fp++;
+// 					for (int i = 0; i < argnum; i++) ++i_fp;
 // 	//xxxxxxxxxxxxxxxxxxxxxxx
 // 					if (emit_types)
 // 					{
@@ -135,7 +135,7 @@ namespace cake
 // 						{
 // 							// look for a _unique_ _corresponding_ type and use that
 // 							auto found_vec = m_d.corresponding_dwarf_types(
-// 								*(*i_fp)->get_type(),
+// 								(*i_fp)->get_type(),
 // 								calling_module,
 // 								false /* flow_from_type_module_to_corresp_module */);
 // 							if (found_vec.size() == 1)
@@ -149,14 +149,14 @@ namespace cake
 // 								std::cerr << "Didn't find unique corresponding type" << std::endl;
 // 								if (treat_subprogram_as_untyped(unique_called_subprogram))
 // 								{ m_out << " ::cake::unspecified_wordsize_type"; }
-// 								else m_out << get_type_name(*(*i_fp)->get_type());
+// 								else m_out << get_type_name((*i_fp)->get_type());
 // 							}
 // 						}
 // 						else  // FIXME: remove duplication here ^^^ vvv
 // 						{
 // 							if (treat_subprogram_as_untyped(unique_called_subprogram))
 // 							{ m_out << " ::cake::unspecified_wordsize_type"; }
-// 							else m_out << get_type_name(*(*i_fp)->get_type());
+// 							else m_out << get_type_name((*i_fp)->get_type());
 // 						}
 // 					}
 // 	//				else
@@ -164,7 +164,7 @@ namespace cake
 // 	//				
 // 	//xxxxxxxxxxxxxxxxxxxxxxxx				
 // 	//                     m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
-// 	//                        *(*i_fp)->get_type()));
+// 	//                        (*i_fp)->get_type()));
 // 	//					}
 // 					if ((*i_fp)->get_name())
 // 					{
@@ -175,7 +175,7 @@ namespace cake
 // 					{
 //                     	// output the argument type and a dummy name
 //                     	//if (emit_types) m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
-//                     	//    *(*i_fp)->get_type()));
+//                     	//    (*i_fp)->get_type()));
 //                     	m_out << ' ' << arg_name_prefix << argnum /*<< "_dummy"/* << argnum*/;
 // 					}
 // 					goto next;
@@ -183,55 +183,55 @@ assert(false);
 				}
 				else if (!ignore_dwarf_args && unique_called_subprogram)
 				{ /* FIXME: Check that they're consistent! */ }
-                break;
-            default: { // must be >=5
-                pattern_args = GET_CHILD_COUNT(event_pattern) - 4; /* ^ number of bindings above! */
-            	assert(pattern_args >= 1);
-                FOR_REMAINING_CHILDREN(event_pattern)
-                {
-                	if (!ignore_dwarf_args && i_arg == args_end)
-                    {
-                        std::ostringstream msg;
-	                    msg << "argument pattern has too many arguments for subprogram "
-                        	<< subprogram;
-	                    RAISE(event_pattern, msg.str());
-	                }
-                    ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
-                    {
-                    	INIT;
-                        BIND2(n, valuePattern)
-                        switch(GET_TYPE(valuePattern))
-                        {
-                    	    // these are all okay -- we don't care 
-                    	    case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
-                                {
-                                	definite_member_name mn = 
-                                    	read_definite_member_name(valuePattern);
-                                    if (mn.size() > 1) RAISE(valuePattern, "may not be compound");
-                            	    // output the variable type, or unspecified_wordsize_type
-                                    if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
-                                	    *(*i_arg)->get_type()));
-                                    // output the variable name, prefixed 
-                                    m_out << ' ' << arg_name_prefix << argnum /*<< '_' << mn.at(0)*/;
-	                            } break;
-                            case CAKE_TOKEN(INDEFINITE_MEMBER_NAME):
-                    	    case CAKE_TOKEN(METAVAR):
-                            case CAKE_TOKEN(KEYWORD_CONST):
-                            	// output the argument type and a dummy name
-                                if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
-                                	*(*i_arg)->get_type()));
-                                m_out << ' ' << arg_name_prefix << argnum /*<< "_dummy"/* << argnum*/;
-                                break;
-                            default: RAISE_INTERNAL(valuePattern, "not a value pattern");
-                        } // end switch
+				break;
+			default: { // must be >=5
+				pattern_args = GET_CHILD_COUNT(event_pattern) - 4; /* ^ number of bindings above! */
+				assert(pattern_args >= 1);
+				FOR_REMAINING_CHILDREN(event_pattern)
+				{
+					if (!ignore_dwarf_args && i_arg == args_end)
+					{
+						std::ostringstream msg;
+						msg << "argument pattern has too many arguments for subprogram "
+							<< subprogram;
+						RAISE(event_pattern, msg.str());
+					}
+					ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
+					{
+						INIT;
+						BIND2(n, valuePattern)
+						switch(GET_TYPE(valuePattern))
+						{
+							// these are all okay -- we don't care 
+							case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+								{
+									definite_member_name mn = 
+										read_definite_member_name(valuePattern);
+									if (mn.size() > 1) RAISE(valuePattern, "may not be compound");
+									// output the variable type, or unspecified_wordsize_type
+									if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
+										(*i_arg)->get_type()));
+									// output the variable name, prefixed 
+									m_out << ' ' << arg_name_prefix << argnum /*<< '_' << mn.at(0)*/;
+								} break;
+							case CAKE_TOKEN(INDEFINITE_MEMBER_NAME):
+							case CAKE_TOKEN(METAVAR):
+							case CAKE_TOKEN(KEYWORD_CONST):
+								// output the argument type and a dummy name
+								if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
+									(*i_arg)->get_type()));
+								m_out << ' ' << arg_name_prefix << argnum /*<< "_dummy" << argnum*/;
+								break;
+							default: RAISE_INTERNAL(valuePattern, "not a value pattern");
+						} // end switch
 					} // end ALIAS3 
 					// advance to the next
-            	next:
-                	// work out whether we need a comma
-                	if (!ignore_dwarf_args) 
+				next:
+					// work out whether we need a comma
+					if (!ignore_dwarf_args) 
 					{	
 						//std::cerr << "advance DWARF caller arg cursor from " << **i_arg;
-						i_arg++; // advance DWARF caller arg cursor
+						++i_arg; // advance DWARF caller arg cursor
 						//std::cerr << " to ";
 						//if (i_arg != args_end) std::cerr << **i_arg; else std::cerr << "(sentinel)";
 						//std::cerr << std::endl;
@@ -239,7 +239,7 @@ assert(false);
                 	argnum++; // advance our arg count
 					if (ignore_dwarf_args && unique_called_subprogram)
 					{
-						i_fp++;
+						++i_fp;
 						// use DWARF callee arg cursor
 						if (i_fp != unique_called_subprogram->formal_parameter_children_end())
 						{
@@ -264,7 +264,7 @@ assert(false);
 // 				// get argument at position argnum from the subprogram;
 // 				/*auto*/ i_fp = unique_called_subprogram->formal_parameter_children_begin();
 // 				//i_arg = unique_called_subprogram->formal_parameter_children_begin();
-// 				for (int i = 0; i < argnum; i++) i_fp++;
+// 				for (int i = 0; i < argnum; i++) ++i_fp;
 // //xxxxxxxxxxxxxxxxxxxxxxx
 // 				if (emit_types)
 // 				{
@@ -299,7 +299,7 @@ assert(false);
 // //				
 // //xxxxxxxxxxxxxxxxxxxxxxxx				
 // //                     m_out << (treat_subprogram_as_untyped(unique_called_subprogram) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
-// //                        *(*i_fp)->get_type()));
+// //                        (*i_fp)->get_type()));
 // //					}
 // 				if ((*i_fp)->get_name())
 // 				{
@@ -319,7 +319,7 @@ assert(false);
 //                 if (!ignore_dwarf_args) 
 // 				{	
 // 					std::cerr << "advance DWARF caller arg cursor from " << **i_arg;
-// 					i_arg++; // advance DWARF caller arg cursor
+// 					++i_arg; // advance DWARF caller arg cursor
 // 					std::cerr << " to ";
 // 					if (i_arg != args_end) std::cerr << **i_arg; else std::cerr << "(sentinel)";
 // 					std::cerr << std::endl;
@@ -327,7 +327,7 @@ assert(false);
 //                 argnum++; // advance our arg count
 // 				if (ignore_dwarf_args && unique_called_subprogram)
 // 				{
-// 					i_fp++;
+// 					++i_fp;
 // 					// use DWARF callee arg cursor
 // 					if (i_fp != unique_called_subprogram->formal_parameter_children_end())
 // 					{
@@ -355,7 +355,7 @@ assert(false);
 			int count = 0;
 			for (auto i_arg_ctr = subprogram->formal_parameter_children_begin();
 				i_arg_ctr != subprogram->formal_parameter_children_end();
-				i_arg_ctr++) { count++; }
+				++i_arg_ctr) { count++; }
 			msg << "subprogram has " << count << " arguments (first uncovered: "
 				<< **i_arg << ").";
             RAISE(event_pattern, msg.str());
@@ -462,7 +462,7 @@ assert(false);
 
 		// 3. emit wrapper definition -- this is a sequence of "if" statements
 		for (link_derivation::ev_corresp_pair_ptr_list::iterator i_pcorresp = corresps.begin();
-				i_pcorresp != corresps.end(); i_pcorresp++)
+				i_pcorresp != corresps.end(); ++i_pcorresp)
 		{
 			antlr::tree::Tree *pattern = (*i_pcorresp)->second.source_pattern;
 			antlr::tree::Tree *action = (*i_pcorresp)->second.sink_expr;
@@ -585,10 +585,10 @@ assert(false);
 				if (!subprogram_returns_void(ctxt.opt_source->signature))
 				{
 					m_out << "// generating return value here, constrained to type "
-						<< compiler.name_for(*ctxt.opt_source->signature->get_type())
+						<< compiler.name_for(ctxt.opt_source->signature->get_type())
 						<< std::endl;
 					return_constraints.insert(std::make_pair("__cake_it",
-						*ctxt.opt_source->signature->get_type()));
+						ctxt.opt_source->signature->get_type()));
 				}
 				else
 				{
@@ -707,7 +707,7 @@ assert(false);
 //         bool found = false;
 //         for (auto i_fp = p_subprogram->formal_parameter_children_begin();
 //             i_fp != p_subprogram->formal_parameter_children_end();
-//             i_fp++)
+//             ++i_fp)
 //         {
 //             if ((*i_fp)->get_offset() == origin->get_offset())
 //             {
@@ -808,7 +808,7 @@ assert(false);
 		
 		// for deduplicating multiple aliases of the same cxxname...
 		std::map<std::string, std::set<std::string > > bindings_by_cxxname;
-		for (auto i_binding = env.begin(); i_binding != env.end(); i_binding++)
+		for (auto i_binding = env.begin(); i_binding != env.end(); ++i_binding)
 		{
 			bindings_by_cxxname[i_binding->second.cxx_name].insert(i_binding->first);
 		}
@@ -817,10 +817,10 @@ assert(false);
 		//std::map<std::string, bool> seen_cxxnames; /* bool is "was it a pointer?" */
 		
 		// for each unique cxxname...
-		//for (auto i_binding = env.begin(); i_binding != env.end(); i_binding++)
+		//for (auto i_binding = env.begin(); i_binding != env.end(); ++i_binding)
 		for (auto i_cxxname = bindings_by_cxxname.begin(); 
 			i_cxxname != bindings_by_cxxname.end();
-			i_cxxname++)
+			++i_cxxname)
 		{
 			/* In this loop we are going to:
 			 * - emit a new cxx variable that is the crossed-over old one; 
@@ -839,7 +839,7 @@ assert(false);
 			bool no_crossover = true;
 			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
 				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
-				i_binding_name++)
+				++i_binding_name)
 			{
 				auto i_binding = env.find(*i_binding_name);
 				assert(i_binding != env.end());
@@ -855,7 +855,7 @@ assert(false);
 			std::set<boost::shared_ptr<dwarf::spec::type_die> > all_constraints;
 			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
 				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
-				i_binding_name++)
+				++i_binding_name)
 			{
 				auto i_binding = env.find(*i_binding_name);
 				assert(i_binding != env.end());
@@ -863,7 +863,7 @@ assert(false);
 				auto constraint_iters = constraints.equal_range(i_binding->first);
 				for (auto i_constraint = constraint_iters.first;
 					i_constraint != constraint_iters.second;
-					i_constraint++)
+					++i_constraint)
 				{
 					all_constraints.insert(i_constraint->second);
 				}
@@ -874,7 +874,7 @@ assert(false);
 			
 			// get the constraints defined for this Cake name
 			//auto iter_pair = constraints.equal_range(i_binding->first);
-			for (auto i_type = all_constraints.begin(); i_type != all_constraints.end(); i_type++)
+			for (auto i_type = all_constraints.begin(); i_type != all_constraints.end(); ++i_type)
 			{
 				/* There are a few cases here. 
 				 * - all identical, all concrete: no problem
@@ -909,7 +909,7 @@ assert(false);
 			bool is_a_pointer = false;
 			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
 				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
-				i_binding_name++)
+				++i_binding_name)
 			{
 				auto i_binding = env.find(*i_binding_name);
 				assert(i_binding != env.end());
@@ -922,7 +922,7 @@ assert(false);
 			boost::optional<std::string> collected_cxx_typeof;
 			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
 				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
-				i_binding_name++)
+				++i_binding_name)
 			{
 				auto i_binding = env.find(*i_binding_name);
 				assert(i_binding != env.end());
@@ -1029,7 +1029,7 @@ assert(false);
 			// for each Cake name, add it to the new environment
 			for (auto i_cakename = bindings_by_cxxname[i_cxxname->first].begin();
 					i_cakename != bindings_by_cxxname[i_cxxname->first].end();
-					i_cakename++)
+					++i_cakename)
 			{
 				new_env[*i_cakename] = (bound_var_info) {
 					ident,
@@ -1041,7 +1041,7 @@ assert(false);
 		
 		// output a summary comment
 		m_out << "/* crossover: " << std::endl;
-		for (auto i_el = new_env.begin(); i_el != new_env.end(); i_el++)
+		for (auto i_el = new_env.begin(); i_el != new_env.end(); ++i_el)
 		{
 			m_out << "\t" << i_el->first << " is now " << i_el->second.cxx_name << std::endl;
 		}
@@ -1064,7 +1064,7 @@ assert(false);
 		
 		for (auto i_new = new_bindings.begin();
 				i_new != new_bindings.end();
-				i_new++)
+				++i_new)
 		{
 			if (seen_module)
 			{
@@ -1230,7 +1230,7 @@ assert(false);
 						}));
 				} // end ALIAS3(annotatedValuePattern
 				++argnum;
-				if (i_caller_arg != caller_subprogram->formal_parameter_children_end()) i_caller_arg++;
+				if (i_caller_arg != caller_subprogram->formal_parameter_children_end()) ++i_caller_arg;
 			} // end FOR_REMAINING_CHILDREN(eventPattern
 		} // end ALIAS3(pattern, eventPattern, EVENT_PATTERN)
 		
@@ -1739,7 +1739,7 @@ assert(false);
 							<< unescape_ident(CCP(GET_TEXT(expr)))
 							<< " not present in the environment. Environment is: "
 							<< std::endl;
-						for (auto i_el = ctxt.env.begin(); i_el != ctxt.env.end(); i_el++)
+						for (auto i_el = ctxt.env.begin(); i_el != ctxt.env.end(); ++i_el)
 						{
 							std::cerr << i_el->first << " : " 
 								<<  i_el->second.cxx_name << std::endl;
@@ -2021,11 +2021,11 @@ assert(false);
 		> out;
 		for (auto i_first = first->formal_parameter_children_begin();
 				i_first != first->formal_parameter_children_end();
-				i_first++)
+				++i_first)
 		{
 			for (auto i_second = second->formal_parameter_children_begin();
 				i_second != second->formal_parameter_children_end();
-				i_second++)
+				++i_second)
 			{
 				if ((*i_first)->get_name() && (*i_second)->get_name()
 					&& *(*i_first)->get_name() == *(*i_second)->get_name())
@@ -2083,7 +2083,7 @@ assert(false);
 		}
 		else if (!subprogram_returns_void(callee_subprogram))
 		{
-			m_out << get_type_name(*callee_subprogram->get_type())
+			m_out << get_type_name(callee_subprogram->get_type())
 			 << ' ' << value_ident << ";" << std::endl;
 		}
 		//m_out << "do" << std::endl
@@ -2149,7 +2149,7 @@ assert(false);
 						 * and check that they form a contiguous sequence 
 						 * starting at our current pos. */
 						for (auto i_out = matched_names.begin(); i_out != matched_names.end();
-							i_out++)
+							++i_out)
 						{
 							dwarf::spec::subprogram_die::formal_parameter_iterator i_test;
 							i_test = i_out->second;
@@ -2181,10 +2181,10 @@ assert(false);
 						{
 							RAISE(n, "name-matching args do not start here");
 						}
-						for (auto i_out = matched_names.begin(); i_out != matched_names.end(); i_out++)
+						for (auto i_out = matched_names.begin(); i_out != matched_names.end(); ++i_out)
 						{
-							auto i_next_matched_name = i_out; i_next_matched_name++;
-							auto i_next_callee_parameter = i_out->second; i_next_callee_parameter++;
+							auto i_next_matched_name = i_out; ++i_next_matched_name;
+							auto i_next_callee_parameter = i_out->second; ++i_next_callee_parameter;
 							if (i_next_matched_name != matched_names.end()
 							// in the callee arg list, i.e. ->second, they must be contiguous
 								&& i_next_matched_name->second != i_next_callee_parameter)
@@ -2248,7 +2248,7 @@ assert(false);
 							m_out << "{" << std::endl;
 							m_out.inc_level();
 					next_arg_in_callee_sequence:
-							i_arg++;
+							++i_arg;
 						} // end do
 						while (--args_for_this_ast_node > 0);
 					finished_argument_eval_for_current_ast_node:
@@ -2261,18 +2261,18 @@ assert(false);
 		// semantic check: did we output enough arguments for the callee?
 		int min_args = 0;
 		for (auto i_arg = callee_subprogram->formal_parameter_children_begin();
-			i_arg != callee_subprogram->formal_parameter_children_end(); min_args++, i_arg++);
+			i_arg != callee_subprogram->formal_parameter_children_end(); min_args++, ++i_arg);
 		int max_args =
 			(callee_subprogram->unspecified_parameters_children_begin() == 
 				callee_subprogram->unspecified_parameters_children_end())
 			? min_args : -1;
-		if (arg_results.size() < min_args || 
-			(max_args != -1 && arg_results.size() > max_args))
+		if ((signed) arg_results.size() < min_args || 
+			(max_args != -1 && (signed) arg_results.size() > max_args))
 		{
 			std::ostringstream msg;
 			msg << "invalid number of arguments (" << arg_results.size();
 			msg << ": ";
-			for (auto i_result = arg_results.begin(); i_result != arg_results.end(); i_result++)
+			for (auto i_result = arg_results.begin(); i_result != arg_results.end(); ++i_result)
 			{
 				if (i_result != arg_results.begin()) msg << ", ";
 				msg << i_result->result_fragment;
@@ -2306,7 +2306,7 @@ assert(false);
 		m_out << '(';
 		m_out.inc_level();
 		for (auto i_result = arg_results.begin(); 
-			i_result != arg_results.end(); i_result++)
+			i_result != arg_results.end(); ++i_result)
 		{
 			if (i_result != arg_results.begin()) m_out << ", ";
 			m_out << std::endl; // begin each argument on a new line
@@ -2358,7 +2358,7 @@ assert(false);
 			m_out << value_ident << " = ::cake::failure<" 
 				<<  (treat_subprogram_as_untyped(callee_subprogram)
 					 ? /* "unspecified_wordsize_type " */ "int" // HACK! "int" is what our fake DWARF will say, for now
-					 : get_type_name(*callee_subprogram->get_type())) //return_type_name
+					 : get_type_name(callee_subprogram->get_type())) //return_type_name
 				<< ">()();" << std::endl;
 		}
 		m_out.dec_level();

@@ -157,12 +157,12 @@ void build_adjacency_list_recursive(
 	assert(structured_type_at_this_offset);
 	for (auto i_subobj = structured_type_at_this_offset->member_children_begin();
 			i_subobj != structured_type_at_this_offset->member_children_end();
-			i_subobj++)
+			++i_subobj)
 	{
 		/* This will iterate through all members. 
 		 * We only want those with structured types. */
 		if (!((*i_subobj)->get_type() && 
-			dynamic_pointer_cast<dwarf::spec::with_data_members_die>(*(*i_subobj)->get_type())))
+			dynamic_pointer_cast<dwarf::spec::with_data_members_die>((*i_subobj)->get_type())))
 		{
 			continue;
 		}
@@ -171,7 +171,7 @@ void build_adjacency_list_recursive(
 			/* offset from adj_u that we are recursing on: */
 				start_byte_offset + (*i_subobj)->calculate_addr(0, 0),
 			/* DWARF type of the object at that address:  */
-				*(*i_subobj)->get_type()
+				(*i_subobj)->get_type()
 		);
 				
 //            				get_subobject_offset(rep, start_subobject_form, i, i_subobj->get_type()),
@@ -192,13 +192,13 @@ void build_adjacency_list_recursive(
 
 	for (auto i_ptrmemb = structured_type_at_this_offset->member_children_begin();
 			i_ptrmemb != structured_type_at_this_offset->member_children_end();
-			i_ptrmemb++)
+			++i_ptrmemb)
 	{
 		/* This will iterate through all members. 
 		 * We only want those with pointer types. */
 		if (!((*i_ptrmemb)->get_type() && 
-			(dynamic_pointer_cast<dwarf::spec::pointer_type_die>(*(*i_ptrmemb)->get_type())
-			|| dynamic_pointer_cast<dwarf::spec::reference_type_die>(*(*i_ptrmemb)->get_type()))
+			(dynamic_pointer_cast<dwarf::spec::pointer_type_die>((*i_ptrmemb)->get_type())
+			|| dynamic_pointer_cast<dwarf::spec::reference_type_die>((*i_ptrmemb)->get_type()))
 			))
 		{
 			continue;
