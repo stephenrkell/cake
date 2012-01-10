@@ -41,7 +41,6 @@
 
 namespace cake
 {
-   	typedef boost::shared_ptr<module_described_by_dwarf> module_ptr;
     //module_ptr make_module_ptr(described_module *arg) { return module_ptr(arg); }
     class derivation;
     class wrapper_file; // in wrapper.hpp

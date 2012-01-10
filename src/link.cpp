@@ -443,10 +443,26 @@ namespace cake
 														switch(GET_TYPE(arg))
 														{
 															case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+																assert(false); // no longer used
+															case CAKE_TOKEN(NAME_AND_INTERPRETATION):
 															{
+																INIT;
+																antlr::tree::Tree *interpretation = 0;
+																BIND3(arg, memberName, DEFINITE_MEMBER_NAME);
+																if (GET_CHILD_COUNT(arg) > 1) {
+																	interpretation = GET_CHILD(arg, 1);
+																}
 																ostringstream s;
-																s << read_definite_member_name(arg);
+																s << read_definite_member_name(memberName);
 																argnames.push_back(s.str());
+																cerr << "Pushed an argument name: " 
+																	<< s.str() << endl;
+																if (interpretation)
+																{
+																	cerr << "FIXME: ignoring interpretation: "
+																		<< CCP(TO_STRING_TREE(interpretation))
+																		<< endl;
+																}
 																break;
 															}
 															case CAKE_TOKEN(KEYWORD_CONST):
@@ -471,6 +487,12 @@ namespace cake
 												));
 												callnames.push_back(dmn);
 											} // end if name matches
+											else if (dmn.size() != 1)
+											{
+												cerr << "Warning: encountered function name of size " 
+													<< dmn.size()
+													<< endl;
+											}
 										} // end case EVENT_PATTERN
 										break;
 										default: RAISE(p, "didn't understand event pattern");
@@ -563,37 +585,28 @@ namespace cake
 												i_ctxt != contexts.end();
 												++i_ctxt)
 											{
-												auto node = *i_ctxt;
-												antlr::tree::Tree *prev_node = 0;
-												assert(GET_TYPE(node) == CAKE_TOKEN(IDENT));
-												while (node && ((node = /*GET_PARENT(node)*/ NULL /* HACK: getParent is broken!  2011-4-22 */) != NULL))
+												auto found_die = map_stub_context_to_dwarf_element(
+													*i_ctxt,
+													i_pattern->second.corresp->sink);
+												
+												if (found_die)
 												{
-													cerr << "Considering subtree " << CCP(TO_STRING_TREE(node))
+													cerr << "FIXME: found a stub function call using ident " 
+														<< **i_arg 
+														<< " as " << *found_die
+														<< ", child of " << *found_die->get_parent()
 														<< endl;
-													switch (GET_TYPE(node))
-													{
-														case CAKE_TOKEN(INVOKE_WITH_ARGS):
-															// this is the interesting case
-															cerr << "FIXME: found a stub function call using ident " 
-																<< **i_arg << endl;
-
-														case CAKE_TOKEN(IDENT):
-														case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
-														case CAKE_TOKEN(MULTIVALUE):
-															continue;
-
-														default: node = NULL; break; // signal exit
-													}
+													// FIXME: extract its type information
 												}
-												// when we get here, we may have identified some
-												// type expectations, or we may not.
-												// FIXME: finish this code by
-												// - checking all the type expectations are
-												// the same
-												// - invoking unique_correpsonding_type
-												// - filling in the output of this in the fp die
-
 											}
+											// when we get here, we may have identified some
+											// type expectations, or we may not.
+											// FIXME: finish this code by
+											// - checking all the type expectations are
+											// the same
+											// - invoking unique_correpsonding_type
+											// - filling in the output of this in the fp die
+											
 										} // end if contexts.size() > 0
 									}
 								} // end for i_pattern
@@ -1629,59 +1642,6 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			}
 			out << endl;
 		}
-		
-		
-
-// 		// if it's a link:
-// 		compute_function_bindings(); // event correspondences: which calls should be bound (possibly indirectly) to which definitions?
-// 		
-// 		compute_form_value_correspondences(); 
-// 			// use structural + lossless rules, plus provided correspondences
-// 			// not just the renaming-only correspondences!
-// 			// since other provided correspondences (e.g. use of "as") might bring compatibility "back"
-// 			// in other words we need to traverse *all* correspondences, forming implicit ones by name-equiv
-// 			// How do we enumerate all correspondences? need a starting set + transitive closure
-// 			// starting set is set of types passed in bound functions?
-// 			// *** no, just walk through the DWARF info -- it's finite. add explicit ones first?
-// 			
-// 			// in the future, XSLT-style notion of correspondences, a form correspondence can be
-// 			// predicated on a context... is this sufficient expressivity for
-// 			// 1:N, N:1 and N:M object identity conversions? we'll need to tweak the notion of
-// 			// co-object relation also, clearly
-// 
-// 		compute_static_value_correspondences();
-// 			// -- note that when we support stubs and sequences, they will imply some nontrivial
-// 			// value correspondences between function values. For now it's fairly simple 
-// 			// -- wrapped if not in same rep domain, else not wrapped
-// 		
-// 		compute_dwarf_type_compatibility(); 
-// 			// of all the pairs of corresponding forms, which are binary-compatible?
-// 		
-// 		compute_rep_domains(); // graph colouring ahoy
-// 		
-// 		output_rep_conversions(); // for the non-compatible types that need to be passed
-// 		
-// 		compute_interposition_points(); // which functions need wrapping between which domains
-// 		
-// 		output_symbol_renaming_rules(); // how to implement the above for static references, using objcopy and ld options
-// 		
-// 		output_formgens(); // one per rep domain
-// 		
-// 		output_wrappergens(); // one per inter-rep call- or return-direction, i.e. some multiple of 2!
-// 		
-// 		output_static_co_objects(); // function and global references may be passed dynamically, 
-// 			// as may stubs and wrappers, so the co-object relation needs to contain them.
-// 			// note that I really mean "references to statically-created objects", **but** actually
-// 			// globals need not be treated any differently, unless there are two pre-existing static
-// 			// obejcts we want to correspond, or unless they should be treated differently than their
-// 			// DWARF-implied form would entail. 
-// 			// We treat functions specially so that we don't have to generate rep-conversion functions
-// 			// for functions -- we expand all the rep-conversion ahead-of-time by generating wrappers.
-// 			// This works because functions are only ever passed by reference (identity). If we could
-// 			// construct functions at run-time, things would be different!
-// 			
-// 		// output_stubs(); -- compile stubs from stub language expressions
-		
 	}
 	
 	void link_derivation::add_corresps_from_block(
@@ -1814,9 +1774,9 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 								{
 									INIT;
 									/* The BI_DOUBLE_ARROW is special because 
-	  								* - it might have multivalue children (for many-to-many)
-	  								* - it should not have nonempty infix stubs
-		  								(because these would be ambiguous) */
+									* - it might have multivalue children (for many-to-many)
+									* - it should not have nonempty infix stubs
+										(because these would be ambiguous) */
 									BIND2(correspHead, leftValDecl);
 									BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
 									BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
@@ -1832,15 +1792,15 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 									// we don't support many-to-many yet
 									assert(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
 									&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE));
-									ALIAS3(leftValDecl, leftMember, DEFINITE_MEMBER_NAME);
-									ALIAS3(rightValDecl, rightMember, DEFINITE_MEMBER_NAME);
+									ALIAS3(leftValDecl, leftMember, NAME_AND_INTERPRETATION);
+									ALIAS3(rightValDecl, rightMember, NAME_AND_INTERPRETATION);
 									// each add_value_corresp call denotes a 
 									// value conversion function that needs to be generated
-									add_value_corresp(left, leftMember, leftInfixStub,
-										right, rightMember, rightInfixStub,
+									add_value_corresp(left, GET_CHILD(leftMember, 0), leftInfixStub,
+										right, GET_CHILD(rightMember, 0), rightInfixStub,
 										valueCorrespondenceRefinement, true, correspHead);
-									add_value_corresp(right, rightMember, rightInfixStub,
-										left, leftMember, leftInfixStub, 
+									add_value_corresp(right, GET_CHILD(rightMember, 0), rightInfixStub,
+										left, GET_CHILD(leftMember, 0), leftInfixStub, 
 										valueCorrespondenceRefinement, false, correspHead);
 
 								}
@@ -1861,33 +1821,45 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 									if(!(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
 									&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE)))
 									{ RAISE(correspHead, "many-to-many value correspondences must be bidirectional"); }
-									ALIAS3(leftValDecl, leftMember, DEFINITE_MEMBER_NAME);
-									ALIAS3(rightValDecl, rightMember, DEFINITE_MEMBER_NAME);
-
+									
+									// one of these is a valuePattern, so will be a NAME_AND_INTERPRETATION;
+									// the other is a stub expression, so need not have an interpretation.
+									ALIAS2(leftValDecl, leftMember);
+									ALIAS2(rightValDecl, rightMember);
 									bool init_only = false;
+									bool left_is_pattern = false;
+									bool right_is_pattern = false;
 									switch(GET_TYPE(correspHead))
 									{
 										case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
 											init_only = true;
 										case CAKE_TOKEN(LR_DOUBLE_ARROW):
-											add_value_corresp(left, leftMember, leftInfixStub,
+											// the valuePattern is the left-hand one
+											assert(GET_TYPE(leftMember) == CAKE_TOKEN(NAME_AND_INTERPRETATION));
+											add_value_corresp(left, GET_CHILD(leftMember, 0), leftInfixStub,
 												right, rightMember, rightInfixStub,
 												valueCorrespondenceRefinement, true, correspHead,
 												init_only);
+											left_is_pattern = true;
 											goto record_touched;
 										case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
 											init_only = true;
 										case CAKE_TOKEN(RL_DOUBLE_ARROW):
-											add_value_corresp(right, rightMember, rightInfixStub,
+											// the valuePattern is the right-hand one
+											assert(GET_TYPE(rightMember) == CAKE_TOKEN(NAME_AND_INTERPRETATION));
+											add_value_corresp(right, GET_CHILD(rightMember, 0), rightInfixStub,
 												left, leftMember, leftInfixStub, 
 												valueCorrespondenceRefinement, false, correspHead,
 												init_only);
+											right_is_pattern = true;
 											goto record_touched;
 										record_touched:
 											touched_data_types[left].insert(
-												read_definite_member_name(leftMember));
+												read_definite_member_name(left_is_pattern ? 
+													(GET_CHILD(leftMember, 0)) : leftMember));
 											touched_data_types[right].insert(
-												read_definite_member_name(rightMember));
+												read_definite_member_name(right_is_pattern ? 
+													(GET_CHILD(rightMember, 0)): rightMember));
 											break;
 										default: assert(false);
 									}

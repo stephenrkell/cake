@@ -14,11 +14,15 @@ $(warning OBJS are $(OBJS))
 BASENAME := $(shell basename $(shell readlink -f $(shell pwd)))
 
 
-default: $(BASENAME).o $(BASENAME)
+default: cake-generated.mk $(BASENAME)
 
 -include cake-generated.mk
 
-$(BASENAME).o:: $(BASENAME).cake $(CAKE) cake-generated.mk
+# Including this command seems to imply that there are no commands to run for
+# $(BASENAME).o, so if cake-generated.mk happens to be empty (after a failing Cake run),
+# it will assume $(BASENAME).o is built (and try to build $(BASENAME)) even when
+# it doesn't exist. 
+#$(BASENAME).o:: $(BASENAME).cake $(CAKE) cake-generated.mk
 
 #	$(MAKE) CXXFLAGS="$(CXXFLAGS)" -f cake-generated.mk "$@"
 
@@ -30,9 +34,12 @@ $(BASENAME): $(BASENAME).o
 	objdump -t $(BASENAME).o | grep __real_ | tr -s '[:blank:]' '\t' | cut -f6 | sed 's/__real_\(.*\)/-Wl,--defsym,\1=__real_\1/' | xargs \
 	$(CXX) -o $(BASENAME) $(BASENAME).o $(LDFLAGS) $(LDLIBS)
 
+# We remove cake-generated.mk if Cake didn't succeed, because otherwise it will hang around
+# and appear to be up-to-date, preventing re-running of Cake. FIXME: shouldn't Make handle
+# this problem itself? I think the PIPESTATUS fix may already handle this case.
 ifeq ($(DEBUG),)
 cake-generated.mk $(BASENAME)_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
-	( $(CAKE) $(BASENAME).cake 1>&2 2>&3 ) 2>"$@" 3>&1 | tee cake.log
+	bash -c '( $(CAKE) $(BASENAME).cake 1>&2 2>&3 ) 2>"$@" 3>&1 | tee cake.log; test "$${PIPESTATUS[*]}" == "0 0"' || rm -f cake-generated.mk
 else
 cake-generated.mk $(BASENAME)_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
 	gdb --eval-command "break main" --eval-command "run $(BASENAME).cake -o $@" $(CAKE) #> "$@"

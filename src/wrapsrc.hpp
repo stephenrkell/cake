@@ -94,7 +94,9 @@ namespace cake
 		// Cake high-level constructs
 		environment initial_environment(
 			antlr::tree::Tree *pattern,
-			module_ptr source_module);
+			module_ptr source_module,
+			const std::vector<antlr::tree::Tree *>& exprs,
+			module_ptr other_module);
 		environment merge_environment(
 			const environment& env,
 			const environment& new_bindings
@@ -109,6 +111,7 @@ namespace cake
 		void open_value_conversion(
 			link_derivation::iface_pair ifaces_context,
 			//int rule_tag,
+			const binding& source_binding,
 			shared_ptr<spec::type_die> from_type, // most precise
 			shared_ptr<spec::type_die> to_type, 
 			optional<string> from_typeof = optional<string>(), // mid-precise

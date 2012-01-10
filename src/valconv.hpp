@@ -20,11 +20,28 @@ namespace cake
 
 	struct bound_var_info
 	{
+		/** The C++ name of the bound value. (The Cake name is not stored here. Rather,
+		 *  it is the key associated with this entry in the environment map.) */
 		string cxx_name;
-		string cxx_typeof; // names a STATIC immediate type 
+		
+		/** The C++ type of the bound value ("names a STATIC immediate type"), in the form of
+		 *  an expression or variable name that has the same time (i.e. not C++ type syntax). */
+		string cxx_typeof;
+		
+		/** The unique module for which this binding is meaningful. */
 		module_ptr valid_in_module;
+		
+		/** Whether to discard this binding at the next crossover point. Used for? FIXME. */
 		bool do_not_crossover;
+		
 		//shared_ptr<with_type_describing_layout_die> dwarf_origin;
+		
+		/** The key used to look up value conversion. This is the name of a top-level typedef 
+		 *  in the module, or an artificial typename used in Cake source code. It should always
+		 *  have a non-empty value -- the default is "__cake_default". */
+		string local_tagstring;
+		/** Similar, but for remote uses. */
+		string remote_tagstring;
 	};
 	//typedef std::map<std::string, bound_var_info> environment;
 	struct environment : public map<string, bound_var_info>

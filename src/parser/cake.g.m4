@@ -9,7 +9,8 @@ OBJECT_SPEC_DIRECT; OBJECT_SPEC_DERIVING; EXISTS_BODY; REMAINING_MEMBERS; PAIRWI
 EVENT_CORRESP; EVENT_SINK_AS_PATTERN; EVENT_SINK_AS_STUB; KEYWORD_PATTERN; INFIX_STUB_EXPR; 
 IDENTS_TO_BIND; VALUE_CONSTRUCT; EVENT_PATTERN_REWRITE_EXPR; RETURN_EVENT; INVOKE_WITH_ARGS; 
 EVENT_WITH_CONTEXT_SEQUENCE; CONTEXT_SEQUENCE; EVENT_COUNT_PREDICATE; FORM_ASSOCIATION; 
-VALUE_CORRESPONDENCE_REFINEMENT; PATTERN_OF_VALUES; DESCEND_TO_MEMBERS; NAMED_VALUE_CORRESP; }
+VALUE_CORRESPONDENCE_REFINEMENT; PATTERN_OF_VALUES; DESCEND_TO_MEMBERS; NAMED_VALUE_CORRESP;
+NAME_AND_INTERPRETATION; }
 
 antlr_m4_begin_rules
 
@@ -282,9 +283,9 @@ eventParameterNamesAnnotation	: ('{')=> '{'! KEYWORD_NAMES^ namedMultiValueDescr
 valuePatternEOFHack: valuePattern^ EOF!;
 valuePattern		: (memberNameExpr '[')=>
                       memberNameExpr '[' constantIntegerArithmeticExpression ']' valueInterpretation?
-                      -> ^( memberNameExpr ^( ARRAY_SUBSCRIPT constantIntegerArithmeticExpression ) valueInterpretation? )
+                      -> ^( NAME_AND_INTERPRETATION ^( memberNameExpr ^( ARRAY_SUBSCRIPT constantIntegerArithmeticExpression ) valueInterpretation? ) )
                     | memberNameExpr valueInterpretation? /* matches a named constant value -- also matches '_' */
-                      -> ^( memberNameExpr valueInterpretation? )
+                      -> ^( NAME_AND_INTERPRETATION memberNameExpr valueInterpretation? )
 					/*| METAVAR^ */ /* matches any value, and names it */
 					| constantValueDescription -> ^( KEYWORD_CONST constantValueDescription ) /* matches that constant */
                     | KEYWORD_VOID^ /* used for "no value" correspondences & inserting "arbitrary" code */

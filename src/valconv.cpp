@@ -706,13 +706,19 @@ namespace cake
 				(wrapper_file::bound_var_info) {
 					"__cake_nonconst_from" + *unique_source_field_selector, // cxx name
 					"__cake_nonconst_from" + *unique_source_field_selector, // typeof
-					source_module
+					source_module,
+					false,
+					"__cake_default",
+					"__cake_default"
 				}));
 			extra_env.insert(make_pair("__cake_here",
 				(wrapper_file::bound_var_info) {
 					"&__cake_from" + *unique_source_field_selector, // cxx name
 					"&__cake_nonconst_from" + *unique_source_field_selector, // typeof
-					source_module
+					source_module,
+					false,
+					"__cake_default"
+					"__cake_default"
 				}));
 		}
 		// we always have a "there"
@@ -720,7 +726,10 @@ namespace cake
 			(wrapper_file::bound_var_info) {
 				"&((*__cake_p_buf)" + target_field_selector + ")", // cxx name
 				"&((*__cake_p_buf)" + target_field_selector + ")", // typeof
-				source_module
+				source_module,
+				false,
+				"__cake_default",
+				"__cake_default"
 			}));
 
 		// compute the merged environment
@@ -745,7 +754,11 @@ namespace cake
 			(wrapper_file::bound_var_info) {
 				status1.result_fragment,
 				status1.result_fragment,  //shared_ptr<type_die>(),
-				ctxt.modules.source };
+				ctxt.modules.source,
+				false,
+				"__cake_default",
+				"__cake_default"
+			};
 
 		/* Now we can evaluate the pre-stub if there is one. It should use "this" if
 		 * it depends on the field value. */
@@ -759,7 +772,10 @@ namespace cake
 					(wrapper_file::bound_var_info) {
 						status2.result_fragment,
 						status2.result_fragment,  //shared_ptr<type_die>(),
-						ctxt.modules.source 
+						ctxt.modules.source,
+						false,
+						"__cake_default",
+						"__cake_default"
 					};
 		}
 		// stash the result in the basic env
@@ -799,14 +815,20 @@ namespace cake
 				(wrapper_file::bound_var_info) {
 					"__cake_nonconst_from" + *unique_source_field_selector, // cxx name
 					"__cake_nonconst_from" + *unique_source_field_selector, // typeof
-					target_module
+					target_module,
+					false,
+					"__cake_default",
+					"__cake_default"
 				}));
 
 			ctxt.env.insert(make_pair("__cake_there",
 				(wrapper_file::bound_var_info) {
 					"&__cake_nonconst_from" + *unique_source_field_selector, // cxx name
 					"&__cake_nonconst_from" + *unique_source_field_selector, // typeof
-					target_module
+					target_module,
+					false,
+					"__cake_default",
+					"__cake_default"
 				}));
 		} 
 
@@ -815,7 +837,10 @@ namespace cake
 			(wrapper_file::bound_var_info) {
 				"&((*__cake_p_buf)" + target_field_selector + ")", // cxx name
 				"&((*__cake_p_buf)" + target_field_selector + ")", // typeof
-				target_module
+				target_module,
+				false,
+				"__cake_default",
+				"__cake_default"
 			}));
 		// we can also always add "it"!
 		ctxt.env.insert(make_pair("__cake_it", ctxt.env[
@@ -832,7 +857,10 @@ namespace cake
 					(wrapper_file::bound_var_info) {
 						status3.result_fragment,
 						status3.result_fragment,  //shared_ptr<type_die>(),
-						ctxt.modules.sink 
+						ctxt.modules.sink,
+						false,
+						"__cake_default",
+						"__cake_default"
 					};
 		}
 
@@ -924,7 +952,9 @@ namespace cake
 					string("__cake_nonconst_from.") + *(*i_field)->get_name(), // cxx name
 					"__cake_nonconst_from." + *(*i_field)->get_name(), // typeof
 					source_module,
-					true // do not crossover!
+					true, // do not crossover!
+					"__cake_default",
+					"__cake_default"
 				}));
 		}
 		// environment complete for now; create a context out of this environment
@@ -993,13 +1023,17 @@ namespace cake
 // 					(wrapper_file::bound_var_info) {
 // 						"__cake_nonconst_from." + *unique_source_field_selector, // cxx name
 // 						"__cake_nonconst_from." + *unique_source_field_selector, // typeof
-// 						source_module
+// 						source_module,
+// 						false,
+// 						"__cake_default"
 // 					}));
 // 				extra_env.insert(make_pair("__cake_here",
 // 					(wrapper_file::bound_var_info) {
 // 						"&__cake_from." + *unique_source_field_selector, // cxx name
 // 						"&__cake_nonconst_from." + *unique_source_field_selector, // typeof
-// 						source_module
+// 						source_module,
+// 						false,
+// 						"__cake_default"
 // 					}));
 // 			}
 // 			// we always have a "there"
@@ -1007,7 +1041,9 @@ namespace cake
 // 				(wrapper_file::bound_var_info) {
 // 					"&__cake_p_buf->" + target_field_selector, // cxx name
 // 					"&__cake_p_buf->" + target_field_selector, // typeof
-// 					source_module
+// 					source_module,
+// 					false,
+// 					"__cake_default"
 // 				}));
 // 			
 // 			// compute the merged environment
@@ -1032,7 +1068,9 @@ namespace cake
 // 				(wrapper_file::bound_var_info) {
 // 					status1.result_fragment,
 // 					status1.result_fragment,  //shared_ptr<type_die>(),
-// 					ctxt.modules.source };
+// 					ctxt.modules.source,
+// 					false,
+// 					"__cake_default" };
 // 			
 // 			/* Now we can evaluate the pre-stub if there is one. It should use "this" if
 // 			 * it depends on the field value. */
@@ -1046,7 +1084,9 @@ namespace cake
 // 						(wrapper_file::bound_var_info) {
 // 							status2.result_fragment,
 // 							status2.result_fragment,  //shared_ptr<type_die>(),
-// 							ctxt.modules.source 
+// 							ctxt.modules.source,
+// 							false,
+// 							"__cake_default"
 // 						};
 // 			}
 // 			// stash the result in the basic env
@@ -1138,14 +1178,18 @@ namespace cake
 // 					(wrapper_file::bound_var_info) {
 // 						"__cake_nonconst_from." + *unique_source_field_selector, // cxx name
 // 						"__cake_nonconst_from." + *unique_source_field_selector, // typeof
-// 						target_module
+// 						target_module,
+// 						false,
+// 						"__cake_default"
 // 					}));
 // 
 // 				ctxt.env.insert(make_pair("__cake_there",
 // 					(wrapper_file::bound_var_info) {
 // 						"&__cake_nonconst_from." + *unique_source_field_selector, // cxx name
 // 						"&__cake_nonconst_from." + *unique_source_field_selector, // typeof
-// 						target_module
+// 						target_module,
+// 						false,
+// 						"__cake_default"
 // 					}));
 // 			} 
 // 			string target_field_selector = i_target->first;
@@ -1154,7 +1198,9 @@ namespace cake
 // 				(wrapper_file::bound_var_info) {
 // 					"&__cake_p_buf->" + target_field_selector, // cxx name
 // 					"&__cake_p_buf->" + target_field_selector, // typeof
-// 					target_module
+// 					target_module,
+// 					false,
+// 					"__cake_default"
 // 				}));
 // 			// we can also always add "it"!
 // 			ctxt.env.insert(make_pair("__cake_it", ctxt.env["__cake_source_" + i_target->first]));
@@ -1170,7 +1216,9 @@ namespace cake
 // 						(wrapper_file::bound_var_info) {
 // 							status3.result_fragment,
 // 							status3.result_fragment,  //shared_ptr<type_die>(),
-// 							ctxt.modules.sink 
+// 							ctxt.modules.sink,
+// 							false,
+// 							"__cake_default"
 // 						};
 // 			}
 // 			

@@ -11,11 +11,14 @@
 #include "module.hpp"
 
 using boost::shared_ptr;
+using dwarf::spec::basic_die;
 using dwarf::spec::type_die;
 using dwarf::spec::typedef_die;
 using dwarf::spec::type_chain_die;
 using boost::dynamic_pointer_cast;
 using std::vector;
+using std::cerr;
+using std::endl;
 
 namespace cake
 {
@@ -225,12 +228,12 @@ namespace cake
 			break;
 			case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
 				INIT;
-				//FOR_ALL_CHILDREN(t)
-				//{
-				//	push_back(std::string(CCP(GET_TEXT(n))));
-				//}
-				BIND2(t, top);
-				*this = read_definite_member_name(top);
+				FOR_ALL_CHILDREN(t)
+				{
+					push_back(std::string(CCP(GET_TEXT(n))));
+				}
+				//BIND2(t, top);
+				//*this = read_definite_member_name(top);
 			}
 			break;
 			default: RAISE_INTERNAL(t, "bad syntax tree for memberName");			
@@ -638,6 +641,103 @@ namespace cake
 		// sanity check
 		assert(!is_typedef || v.size() > 0);
 		return v;
+	}
+
+	int 
+	path_to_node(antlr::tree::Tree *ancestor,
+		antlr::tree::Tree *target, std::deque<int>& out)
+	{
+		std::deque<int> retpath;
+		if (ancestor == target) { out = retpath; return 0; }
+		else for (auto i_child = 0; i_child < GET_CHILD_COUNT(ancestor); ++i_child)
+		{
+			if (0 == path_to_node(GET_CHILD(ancestor, i_child), target, retpath))
+			{
+				retpath.push_front(i_child);
+				out = retpath; 
+				return 0;
+			}
+		}
+		return -1;
+	}
+
+	boost::shared_ptr<dwarf::spec::basic_die>
+	map_stub_context_to_dwarf_element(
+		antlr::tree::Tree *node,
+		module_ptr dwarf_context
+	)
+	{
+		if (!node) return boost::shared_ptr<dwarf::spec::basic_die>();
+//		antlr::tree::Tree *prev_node = 0;
+		assert(GET_TYPE(node) == CAKE_TOKEN(IDENT));
+
+		// first we do a depthfirst walk of the tree from the ancestor,
+		// looking for the node
+// 		std::deque<int> path;
+// 		int retval = path_to_node(ancestor, node, path);
+// 		if (retval == -1) RAISE_INTERNAL(node, "not an ancestor");
+// 		// parent chain goes from node to ancestor, inclusive
+// 		std::deque<antlr::tree::Tree *> parent_chain;
+// 		antlr::tree::Tree *cur = ancestor;
+// 		parent_chain.push_back(node);
+// 		for (auto i_ind = path.begin(); i_ind != path.end(); ++i_ind) 
+// 		{
+// 			parent_chain.push_front(cur);
+// 			cur = GET_CHILD(cur, *i_ind);
+// 		}
+// 		assert(cur == node);
+
+		//auto i_path = path.rbegin();
+		antlr::tree::Tree *begin_node = node;
+		antlr::tree::Tree *prev_node;
+		while (node && (prev_node = node, ((node = GET_PARENT(node)) != NULL)))
+		//for (auto i_node = parent_chain.begin(); i_node != parent_chain.end(); ++i_node, ++i_path)
+		{
+			if (!node) 
+			{
+				// we've reached the top
+				break;
+			}
+
+			// if we're not at the end of the chain, we can reach the current node like so...
+			//assert(i_node == parent_chain.end() -1 ||
+			//	GET_CHILD(*(i_node + 1), *i_path) == *i_node);
+				
+			cerr << "Considering subtree " << CCP(TO_STRING_TREE(node))
+				<< endl;
+			switch (GET_TYPE(node))
+			{
+				case CAKE_TOKEN(INVOKE_WITH_ARGS): {
+					antlr::tree::Tree *invoked_function = GET_CHILD(node, GET_CHILD_COUNT(node) - 1);
+					assert(invoked_function && 
+						GET_TYPE(invoked_function) == CAKE_TOKEN(DEFINITE_MEMBER_NAME));
+					// we only match if we're directly underneath an argument position
+					if (GET_PARENT(begin_node) == node)
+					{
+						auto dmn = read_definite_member_name(invoked_function);
+						auto found_dwarf = dwarf_context->get_ds().toplevel()->visible_resolve(
+							dmn.begin(), dmn.end());
+						auto found_subp = dynamic_pointer_cast<dwarf::spec::subprogram_die>(found_dwarf);
+						assert(found_dwarf); assert(found_subp);
+						int num = 0;
+						for (auto i_fp = found_subp->formal_parameter_children_begin(); i_fp != 
+							found_subp->formal_parameter_children_end(); ++i_fp, ++num)
+						{
+							if (GET_CHILD(node, num) == /**i_path */ prev_node) return *i_fp;
+						}
+					}
+					
+					break;
+				}
+				case CAKE_TOKEN(IDENT):
+				case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+				case CAKE_TOKEN(MULTIVALUE):
+					continue;
+
+				default: break; // signal exit
+			}
+		}
+		return boost::shared_ptr<dwarf::spec::basic_die>();
 	}
 		
 	std::string solib_constructor = std::string("elf_external_sharedlib");

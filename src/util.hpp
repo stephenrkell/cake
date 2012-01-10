@@ -9,6 +9,7 @@
 //#include <java/lang/String.h>
 #include <string>
 #include <vector>
+#include <deque>
 #include <sstream>
 
 #include <dwarfpp/encap.hpp>
@@ -22,6 +23,9 @@ namespace cake
 	using boost::shared_ptr;
 	using dwarf::spec::type_die;
 	using std::vector;
+	
+	class module_described_by_dwarf;
+   	typedef boost::shared_ptr<module_described_by_dwarf> module_ptr;
 
 	extern const char *guessed_system_library_path;
 	extern const char *guessed_system_library_prefix;
@@ -87,6 +91,15 @@ namespace cake
 	vector<shared_ptr<type_die> > 
 	type_synonymy_chain(shared_ptr<type_die> d);
 
+	shared_ptr<dwarf::spec::basic_die>
+	map_stub_context_to_dwarf_element(
+		antlr::tree::Tree *node,
+		module_ptr dwarf_context
+	);
+	
+	int path_to_node(antlr::tree::Tree *ancestor,
+	antlr::tree::Tree *target, std::deque<int>& out);
+	
     //boost::optional<definite_member_name> 
     //dwarf_fq_member_name(dwarf::abstract::Die_abstract_base<>& d);
         
