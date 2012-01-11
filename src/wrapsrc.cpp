@@ -987,8 +987,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 					ident,
 					new_module,
 					false,
-					"__cake_default",
-					"__cake_default"
+					// we swap over the local and remote tagstrings
+					(assert(env.find(*i_cakename) != env.end()), env[*i_cakename].remote_tagstring),
+					(assert(env.find(*i_cakename) != env.end()), env[*i_cakename].local_tagstring)
 				};
 			}
 		}
@@ -997,7 +998,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 		m_out << "/* crossover: " << std::endl;
 		for (auto i_el = new_env.begin(); i_el != new_env.end(); ++i_el)
 		{
-			m_out << "\t" << i_el->first << " is now " << i_el->second.cxx_name << std::endl;
+			m_out << "\t" << i_el->first << " is now " << i_el->second.cxx_name 
+				<< " (local: " << i_el->second.local_tagstring
+				<< ", remote: " << i_el->second.remote_tagstring
+				<< ")" << std::endl;
 		}
 		m_out << "*/" << std::endl;
 		
@@ -1200,6 +1204,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					
 					// check for typedefs
 					if (i_caller_arg != caller_subprogram->formal_parameter_children_end()
+						&& (*i_caller_arg)->get_type()
 						&& (*i_caller_arg)->get_type()->get_concrete_type() != (*i_caller_arg)->get_type())
 					{
 						auto unqual_t = (*i_caller_arg)->get_type()->get_unqualified_type();
@@ -1233,14 +1238,23 @@ assert(false && "disabled support for inferring positional argument mappings");
 						if (friendly_name) m_d.find_usage_contexts(*friendly_name,
 							*i_expr, out);
 					}
+					cerr << "found " << out.size() << " usage contexts of Cake names {"
+						<< basic_name << (friendly_name ? (", " + *friendly_name) : "")
+						<< "}" << endl;
+					
 					// now reduce them -- by unanimity?
 					shared_ptr<type_die> found_type;
 					for (auto i_ctxt = out.begin(); i_ctxt != out.end(); ++i_ctxt)
 					{
+						cerr << "context is " << CCP(GET_TEXT(*i_ctxt))
+							<< ", full tree: " << CCP(TO_STRING_TREE(*i_ctxt)) << endl;
+						assert(CCP(GET_TEXT(*i_ctxt)) == basic_name
+						||     (friendly_name && CCP(GET_TEXT(*i_ctxt)) == *friendly_name));
 						auto found_die = map_stub_context_to_dwarf_element(
 							*i_ctxt,
 							remote_module // dwarf context is the remote module
 							);
+						// if we didn't find a DIE, that means... what?
 						shared_ptr<formal_parameter_die> found_fp
 						 = dynamic_pointer_cast<formal_parameter_die>(found_die);
 						assert(found_die); assert(found_fp);
@@ -1468,189 +1482,192 @@ assert(false && "disabled support for inferring positional argument mappings");
 		 * user may have specified it as a specific from_type. Is that the
 		 * only way? If they give us a typestring (typeof),
 		 * it might denote a typedef too. */
-		std::string from_artificial_tagstring;
-		if (from_type)
+		std::string from_artificial_tagstring = 
+			source_binding.second.local_tagstring;
+		std::string to_artificial_tagstring = 
+			source_binding.second.remote_tagstring;
+		
+// 		if (from_type)
+// 		{
+// 			from_artificial_tagstring = 
+// 				(from_type->get_concrete_type() == from_type) 
+// 					? "__cake_default" 
+// 					: *m_d.first_significant_type(from_type)->get_name();
+// 		}
+// 		else
+// 		{
+// 			from_artificial_tagstring = "__cake_default";
+// 		}
+		
+        // nowe we ALWAYS use the function template
+        //m_out << component_pair_classname(ifaces);
+
+		//ostringstream rule_tag_str; rule_tag_str << rule_tag;
+		std::string to_typestring;
+		//std::string to_artificial_tagstring;
+		if (to_type) 
 		{
-			from_artificial_tagstring = 
-				(from_type->get_concrete_type() == from_type) 
-					? "__cake_default" 
-					: *m_d.first_significant_type(from_type)->get_name();
+			// this gives us concrete and artificial info in one go
+			to_typestring = get_type_name(to_type);
+			// extract artificial info
+// 			to_artificial_tagstring = 
+// 				(to_type->get_concrete_type() == to_type) 
+// 					? "__cake_default" 
+// 					: *m_d.first_significant_type(to_type)->get_name();
+		}
+		else if (to_typeof) 
+		{
+			// this only gives us concrete info! 
+			to_typestring = "__typeof(" + *to_typeof + ")";
+// 			// ... so artificial tagstring is just the default
+// 			to_artificial_tagstring = "__cake_default";
 		}
 		else
 		{
-			from_artificial_tagstring = "__cake_default";
+			/* Here we have to recover the "to" type from the "from" type. 
+			 * It makes a difference if our "from" thing is typedef/artificial. */
+			to_typestring = std::string("::cake::") + "corresponding_type_to_"
+				+ ((to_module == ifaces.first) 
+					? ("second< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"
+						+ "::" + from_artificial_tagstring + "__to_" + to_artificial_tagstring + "_in_first")
+					: ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"
+						+ "::" + from_artificial_tagstring + "__to_" + to_artificial_tagstring + "_in_second"));
+						// this one --^ is WHAT?       this one --^ is WHAT?
+						// answer: art.tag in source   answer: art.tag in sink
 		}
-		
-        	// nowe we ALWAYS use the function template
-            //m_out << component_pair_classname(ifaces);
-			
-			//ostringstream rule_tag_str; rule_tag_str << rule_tag;
-			std::string to_typestring;
-			std::string to_artificial_tagstring;
-			if (to_type) 
-			{
-				// this gives us concrete and artificial info in one go
-				to_typestring = get_type_name(to_type);
-				// extract artificial info
-				to_artificial_tagstring = 
-					(to_type->get_concrete_type() == to_type) 
-						? "__cake_default" 
-						: *m_d.first_significant_type(to_type)->get_name();
-			}
-			else if (to_typeof) 
-			{
-				// this only gives us concrete info! 
-				to_typestring = "__typeof(" + *to_typeof + ")";
-				// ... so artificial tagstring is just the default
-				to_artificial_tagstring = "__cake_default";
-			}
-			else
-			{
-				/* Here we have to recover the "to" type from the "from" type. 
-				 * It makes a difference if our "from" thing is typedef/artificial. */
-				to_artificial_tagstring = "__cake_default";
-				to_typestring = std::string("::cake::") + "corresponding_type_to_"
-					+ ((to_module == ifaces.first) 
-						? ("second< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"
-							+ "::" + from_artificial_tagstring + "__to_" + to_artificial_tagstring + "_in_first")
-						: ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"
-							+ "::" + from_artificial_tagstring + "__to_" + to_artificial_tagstring + "_in_second"));
-							// this one --^ is WHAT?       this one --^ is WHAT?
-							// answer: art.tag in source   answer: art.tag in sink
-			}
-			
-			/* This is messed up.
-			 * Since we rely on __typeof, we don't know the DWARF types of
-			 * some variables. This means we can't use DWARF types to lookup
-			 * the artificial data types.
-			 * How should it work?
-			 * We generate (and number) all the rules we can.
-			 * Then we associate with each *ident* an (optional) artificial interpretation string,
-			 * as we bind it?
-			 * I think this will work, because even if we have "as" applied to arbitrary expressions,
-			 * the effect of this is just to bind a new ident and store the artificial string in *that*.
-			 * We need some way to map from __typeof() and artificial ident strings 
-			 * to rule tags at runtime. 
-			 * So our generated code will be rule_tag<T>::some_ident
-			 *                          concrete type-^   ^-- artificial tag
-			 * Seems like we can extend the corresponding_type_to_first (etc.) classes here.
-			 * What do we do for typedefs? What are their artificial tags?
-			 * Can we use the DWARF offset? i.e. typedef some_concrete_type __dwarf_typedef_at_0xbeef?
-			 * YES. Then we assign the artificial string "__dwarf_typedef_at_0xbeef" to the ident
-			 * whose type is typedef'd in the object file. 
-			 * Actually our code will look like
-			 * class rule_tag<T> { // or actually corresponding_type_to_second 
-			 *  enum { 
-			 *     some_artificial_ident = TAG; 
-			 *  // ...
-			 *   };
-			 * };*/
-			//int rule_tag; // = 0; // FIXME: handle annotations / typedefs in the *source*
-			/* How do we choose the rule tag? 
-			 * - from our source and sink types, if they are typedefs; 
-			 * - from "as" annotations in the originating rules. 
-			 *   How do we find out about these?
-			 *   - If there are any, they will be attached to bound args/values (in event corresps)
-			 *                                                or fields (in value corresps)
-			 * ... in the AST. 
-			 * The cxx types don't distinguish; by definition, they're the concrete types, which
-			 * are all the same for all values of rule_tag. */
-			
-			/* What are these source_artificial_identifier and sink_artificial_identifier?
-			 * Roughly, they're the ident used with "as", or an identifier for a typedef. 
-			 * They're different across the two modules, because 
-			 * they might be corresponded explicitly
-			 * rather than by name-matching.
-			 * them. */
-			
-			//optional<string> source_artificial_identifier
-			// = (from_type
-			//
-			//;// = extract_artificial_data_type(
-			//	///*source_expr*/ 0, ctxt);
-			//optional<string> sink_artificial_identifier; // = extract_artificial_data_type(
-			//	///*sink_expr*/ 0, ctxt);
-			
-			// PROBLEM: we need ctxt to tell us exactly which syntactic fragment
-			// the current crossover is handling, so that we can scan the AST for
-			// which "as" expressions are relevant. And what if no "as" expressions
-			// are relevant, but instead, the DWARF typedefs bound to each identifer?
-			
-			// PROBLEM: we need to propagate type information through expressions.
-			// Otherwise, how are we going to handle
-			//          foo(a as LengthInMetres) --> bar(a+1); // bar(padded_length: LengthInCm)
-			// What does this mean? 
-			// When 'a' is introduced to the environment, it should be associated with its DWARF element,
-			// hence its typedef.
-			// When we do 
-			// new_ident = a + 1;
-			// we want to propagate the information to new_ident
-			// What about if we had 
-			// a+b?  (and only one of them was a typedef, the other being the corresponding concrete type)?
-			// In other words,
-			// we need to propagate type info through an environment somehow -- be it statically or dynamically.
-			// The properly Cake-like way to do it is dynamically, if we are a dynamic language.
-			// Save a full version of this for the DwarfPython / PIE version of Cake
-			// This definitely needs tackling there.
-			// Specifically, we need *rules for how typedefs propagate dynamically*!
-			// This definitely isn't handled already.
-			// Some strawman examples: always discard; use synonym dependency as specificity relation
-			// and tie-break on leftmore operands of binary operations; others?
-			// FOR NOW: 
-			// we commit the horrible HACK of 
-			// basically doing "always discard"
-			// and extending bound_var_info with an "origin" field
-			// that is a has_type_describing_layout DIE.
-			// What about propagating this across crossovers (and through __cake_it)? Do we need to?
-			// We're in the middle of a crossover when we get called right here. 
-			// YES we want to propagate e.g. the typedef that the crossed-over a corresponds to
-			// -- if there is one! There might not be, for artificial data types. OH, but there will be a
-			// corresponding data type, and that might be artificial.
-			
-			
-			//string source_artificial_fragment = source_artificial_identifier ? 
-			//	*source_artificial_identifier : "__cake_default";
-			//string sink_artificial_fragment = sink_artificial_identifier ? 
-			//	*sink_artificial_identifier : "__cake_default";
-				
-			bool target_is_in_first = (to_module == ifaces.first);
-			std::string rule_tag_str = std::string(" ::cake::") + "corresponding_type_to_"
-				+ (target_is_in_first ? 
-					("second< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>")
-				  : ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"))
-				+ "::rule_tag_in_" + (target_is_in_first ? "first" : "second" ) 
-				+ "_given_" + (target_is_in_first ? "second" : "first" ) + "_artificial_name_"
-				+ from_artificial_tagstring //source_artificial_fragment
-				+ "::" + to_artificial_tagstring; //sink_artificial_fragment;
-			
-			/* GAH: we can't use template specialisation to give us defaults
-			 * for which typedef to use, because template specialisation is insensitive to typedefs. 
-			 * Can we specialise on DWARF offsets, and give each "as" a fake DWARF offset? 
-			 * Maybe, but there will be many DWARF offsets for a given typedef. */
-				
-			//(target_is_in_first ? "::in_first" : "::in_second")
-			//lookup_rule_tag(
-			//	source_data_type,
-			//	sink_data_type,
-			//	source_artificial_identifier,
-			//	sink_artificial_identifier,
-			//	false // is_init
-			//);
+
+		/* This is messed up.
+		 * Since we rely on __typeof, we don't know the DWARF types of
+		 * some variables. This means we can't use DWARF types to lookup
+		 * the artificial data types.
+		 * How should it work?
+		 * We generate (and number) all the rules we can.
+		 * Then we associate with each *ident* an (optional) artificial interpretation string,
+		 * as we bind it?
+		 * I think this will work, because even if we have "as" applied to arbitrary expressions,
+		 * the effect of this is just to bind a new ident and store the artificial string in *that*.
+		 * We need some way to map from __typeof() and artificial ident strings 
+		 * to rule tags at runtime. 
+		 * So our generated code will be rule_tag<T>::some_ident
+		 *                          concrete type-^   ^-- artificial tag
+		 * Seems like we can extend the corresponding_type_to_first (etc.) classes here.
+		 * What do we do for typedefs? What are their artificial tags?
+		 * Can we use the DWARF offset? i.e. typedef some_concrete_type __dwarf_typedef_at_0xbeef?
+		 * YES. Then we assign the artificial string "__dwarf_typedef_at_0xbeef" to the ident
+		 * whose type is typedef'd in the object file. 
+		 * Actually our code will look like
+		 * class rule_tag<T> { // or actually corresponding_type_to_second 
+		 *  enum { 
+		 *     some_artificial_ident = TAG; 
+		 *  // ...
+		 *   };
+		 * };*/
+		//int rule_tag; // = 0; // FIXME: handle annotations / typedefs in the *source*
+		/* How do we choose the rule tag? 
+		 * - from our source and sink types, if they are typedefs; 
+		 * - from "as" annotations in the originating rules. 
+		 *   How do we find out about these?
+		 *   - If there are any, they will be attached to bound args/values (in event corresps)
+		 *                                                or fields (in value corresps)
+		 * ... in the AST. 
+		 * The cxx types don't distinguish; by definition, they're the concrete types, which
+		 * are all the same for all values of rule_tag. */
+
+		/* What are these source_artificial_identifier and sink_artificial_identifier?
+		 * Roughly, they're the ident used with "as", or an identifier for a typedef. 
+		 * They're different across the two modules, because 
+		 * they might be corresponded explicitly
+		 * rather than by name-matching.
+		 * them. */
+
+		//optional<string> source_artificial_identifier
+		// = (from_type
+		//
+		//;// = extract_artificial_data_type(
+		//	///*source_expr*/ 0, ctxt);
+		//optional<string> sink_artificial_identifier; // = extract_artificial_data_type(
+		//	///*sink_expr*/ 0, ctxt);
+
+		// PROBLEM: we need ctxt to tell us exactly which syntactic fragment
+		// the current crossover is handling, so that we can scan the AST for
+		// which "as" expressions are relevant. And what if no "as" expressions
+		// are relevant, but instead, the DWARF typedefs bound to each identifer?
+
+		// PROBLEM: we need to propagate type information through expressions.
+		// Otherwise, how are we going to handle
+		//          foo(a as LengthInMetres) --> bar(a+1); // bar(padded_length: LengthInCm)
+		// What does this mean? 
+		// When 'a' is introduced to the environment, it should be associated with its DWARF element,
+		// hence its typedef.
+		// When we do 
+		// new_ident = a + 1;
+		// we want to propagate the information to new_ident
+		// What about if we had 
+		// a+b?  (and only one of them was a typedef, the other being the corresponding concrete type)?
+		// In other words,
+		// we need to propagate type info through an environment somehow -- be it statically or dynamically.
+		// The properly Cake-like way to do it is dynamically, if we are a dynamic language.
+		// Save a full version of this for the DwarfPython / PIE version of Cake
+		// This definitely needs tackling there.
+		// Specifically, we need *rules for how typedefs propagate dynamically*!
+		// This definitely isn't handled already.
+		// Some strawman examples: always discard; use synonym dependency as specificity relation
+		// and tie-break on leftmore operands of binary operations; others?
+		// FOR NOW: 
+		// we commit the horrible HACK of 
+		// basically doing "always discard"
+		// and extending bound_var_info with an "origin" field
+		// that is a has_type_describing_layout DIE.
+		// What about propagating this across crossovers (and through __cake_it)? Do we need to?
+		// We're in the middle of a crossover when we get called right here. 
+		// YES we want to propagate e.g. the typedef that the crossed-over a corresponds to
+		// -- if there is one! There might not be, for artificial data types. OH, but there will be a
+		// corresponding data type, and that might be artificial.
+
+
+		//string source_artificial_fragment = source_artificial_identifier ? 
+		//	*source_artificial_identifier : "__cake_default";
+		//string sink_artificial_fragment = sink_artificial_identifier ? 
+		//	*sink_artificial_identifier : "__cake_default";
+
+		bool target_is_in_first = (to_module == ifaces.first);
+		std::string rule_tag_str = std::string(" ::cake::") + "corresponding_type_to_"
+			+ (target_is_in_first ? 
+				("second< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>")
+			  : ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"))
+			+ "::rule_tag_in_" + (target_is_in_first ? "first" : "second" ) 
+			+ "_given_" + (target_is_in_first ? "second" : "first" ) + "_artificial_name_"
+			+ from_artificial_tagstring //source_artificial_fragment
+			+ "::" + to_artificial_tagstring; //sink_artificial_fragment;
+
+		/* GAH: we can't use template specialisation to give us defaults
+		 * for which typedef to use, because template specialisation is insensitive to typedefs. 
+		 * Can we specialise on DWARF offsets, and give each "as" a fake DWARF offset? 
+		 * Maybe, but there will be many DWARF offsets for a given typedef. */
+
+		//(target_is_in_first ? "::in_first" : "::in_second")
+		//lookup_rule_tag(
+		//	source_data_type,
+		//	sink_data_type,
+		//	source_artificial_identifier,
+		//	sink_artificial_identifier,
+		//	false // is_init
+		//);
 //             
 //             if (ifaces.first == from_module)
 //             {
 //             	assert(ifaces.second == to_module);
-                
-                //m_out << "::value_convert_from_first_to_second< " 
-                ///<< to_typestring //(" ::cake::unspecified_wordsize_type" )
-                //<< ", " << rule_tag << ">(";
-				m_out << "::cake::value_convert<" << std::endl
-					<< "\t/* from type: */ " << from_typestring << ", " << std::endl
-					<< "\t/* to type: */ " << to_typestring << ", " << std::endl
-					<< "\t/* FromComponent: */ " << ns_prefix + "::" + m_d.name_of_module(from_module) << "::marker," << std::endl
-					<< "\t/* ToComponent: */ " << ns_prefix + "::" + m_d.name_of_module(to_module) << "::marker, " << std::endl
-					<< "\t/* rule tag: */ " << rule_tag_str << std::endl
-					<<  ">()(";
+
+            //m_out << "::value_convert_from_first_to_second< " 
+            ///<< to_typestring //(" ::cake::unspecified_wordsize_type" )
+            //<< ", " << rule_tag << ">(";
+			m_out << "::cake::value_convert<" << std::endl
+				<< "\t/* from type: */ " << from_typestring << ", " << std::endl
+				<< "\t/* to type: */ " << to_typestring << ", " << std::endl
+				<< "\t/* FromComponent: */ " << ns_prefix + "::" + m_d.name_of_module(from_module) << "::marker," << std::endl
+				<< "\t/* ToComponent: */ " << ns_prefix + "::" + m_d.name_of_module(to_module) << "::marker, " << std::endl
+				<< "\t/* rule tag: */ " << rule_tag_str << std::endl
+				<<  ">()(";
 //             }
 //             else 
 //             {

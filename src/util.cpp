@@ -670,6 +670,8 @@ namespace cake
 		if (!node) return boost::shared_ptr<dwarf::spec::basic_die>();
 //		antlr::tree::Tree *prev_node = 0;
 		assert(GET_TYPE(node) == CAKE_TOKEN(IDENT));
+		cerr << "Considering use contexts of ident " << CCP(TO_STRING_TREE(node))
+			<< endl;
 
 		// first we do a depthfirst walk of the tree from the ancestor,
 		// looking for the node
@@ -710,24 +712,38 @@ namespace cake
 				case CAKE_TOKEN(INVOKE_WITH_ARGS): {
 					antlr::tree::Tree *invoked_function = GET_CHILD(node, GET_CHILD_COUNT(node) - 1);
 					assert(invoked_function && 
-						GET_TYPE(invoked_function) == CAKE_TOKEN(DEFINITE_MEMBER_NAME));
+						(GET_TYPE(invoked_function) == CAKE_TOKEN(DEFINITE_MEMBER_NAME)
+						|| (GET_TYPE(invoked_function) == CAKE_TOKEN(IDENT))));
+					cerr << "Found a function call, to " << CCP(TO_STRING_TREE(invoked_function)) << endl;
 					// we only match if we're directly underneath an argument position
-					if (GET_PARENT(begin_node) == node)
+					if (GET_PARENT(begin_node) && GET_PARENT(GET_PARENT(begin_node)) == node)
 					{
-						auto dmn = read_definite_member_name(invoked_function);
+						definite_member_name dmn;
+						if (GET_TYPE(invoked_function) == CAKE_TOKEN(IDENT))
+						{ dmn.push_back(CCP(GET_TEXT(invoked_function))); }
+						else dmn = read_definite_member_name(invoked_function);
 						auto found_dwarf = dwarf_context->get_ds().toplevel()->visible_resolve(
 							dmn.begin(), dmn.end());
 						auto found_subp = dynamic_pointer_cast<dwarf::spec::subprogram_die>(found_dwarf);
 						assert(found_dwarf); assert(found_subp);
+						cerr << "We think that this subtree is a call to " << *found_subp << endl;
 						int num = 0;
 						for (auto i_fp = found_subp->formal_parameter_children_begin(); i_fp != 
 							found_subp->formal_parameter_children_end(); ++i_fp, ++num)
 						{
-							if (GET_CHILD(node, num) == /**i_path */ prev_node) return *i_fp;
+							cerr << "Is our context argument " << num 
+								<< " of " << CCP(TO_STRING_TREE(node))
+								<< "? ";
+							if (GET_CHILD(GET_CHILD(node, 0), num) == /**i_path */ begin_node) 
+							{
+								cerr << "yes." << endl;
+								return *i_fp;
+							}
+							else cerr << "no." << endl;
 						}
 					}
-					
-					break;
+					cerr << "Ident grandparent is not this function call." << endl;
+					goto failed;
 				}
 				case CAKE_TOKEN(IDENT):
 				case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
@@ -737,6 +753,7 @@ namespace cake
 				default: break; // signal exit
 			}
 		}
+	failed:
 		return boost::shared_ptr<dwarf::spec::basic_die>();
 	}
 		

@@ -46,7 +46,16 @@ namespace tree {
 #define GET_PARENT(node) (node)->getParent((node))
 #define GET_CHILD_COUNT(node) (node)->getChildCount((node))
 #define TO_STRING_TREE(node) (node)->toStringTree((node))
-#define GET_CHILD(node, i) (reinterpret_cast<antlr::tree::Tree*>((node)->getChild((node), i)))
+// HACK: libantlr3c doesn't seem to create parent pointers right now. So when we
+// get a child, update its parent pointer.
+static inline antlr::tree::Tree *get_child_(antlr::tree::Tree *n, int i)
+{
+	antlr::tree::Tree *child = reinterpret_cast<antlr::tree::Tree *>(n->getChild(n, i));
+	if (child) ((pANTLR3_COMMON_TREE)(child->super))->parent = (pANTLR3_COMMON_TREE)(n->super);
+	return child;
+}
+// #define GET_CHILD(node, i) (reinterpret_cast<antlr::tree::Tree*>((node)->getChild((node), i)))
+#define GET_CHILD(node, i) (get_child_((node), (i)))
 #define CAKE_TOKEN(tokname) tokname
 
 /* Since antlr doesn't provide us with named tree elements, or a convenient way of

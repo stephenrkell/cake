@@ -624,7 +624,7 @@ namespace cake
 	{
 		INIT;
 		// first check ourselves
-		if (GET_TYPE(t) == CAKE_TOKEN(IDENT))
+		if (GET_TYPE(t) == CAKE_TOKEN(IDENT) && CCP(GET_TEXT(t)) == ident)
 		{
 			out.push_back(t);
 		}
