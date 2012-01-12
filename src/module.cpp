@@ -15,6 +15,18 @@
 #include "parser.hpp"
 #include "module.hpp"
 
+using boost::shared_ptr;
+using boost::optional;
+using boost::dynamic_pointer_cast;
+using std::string;
+using dwarf::spec::opt;
+using dwarf::spec::basic_die;
+using dwarf::spec::type_die;
+using dwarf::spec::base_type_die;
+using dwarf::spec::pointer_type_die;
+using dwarf::spec::typedef_die;
+using namespace dwarf;
+
 namespace cake
 {
 	ifstream_holder::ifstream_holder(std::string& filename) : this_ifstream(filename.c_str(), std::ios::in) 
@@ -253,5 +265,167 @@ namespace cake
 		return retval;
 	} // end function
 
-    const Dwarf_Off module_described_by_dwarf::private_offsets_begin = 1<<30; // 1GB of original DWARF information should be enough
+	const Dwarf_Off module_described_by_dwarf::private_offsets_begin = 1<<30; // 1GB of original DWARF information should be enough
+	
+				
+	shared_ptr<type_die> module_described_by_dwarf::existing_dwarf_type(antlr::tree::Tree *t)
+	{
+		/* We descend the type AST looking for a type that matches. */
+		switch(GET_TYPE(t))
+		{
+			case CAKE_TOKEN(KEYWORD_BASE): {
+				// we match base types structurally, i.e. in terms of the encoding
+				INIT;
+				BIND3(t, header, DWARF_BASE_TYPE);
+				{
+					int bytesize = -1;
+					INIT;
+					BIND3(header, encoding, IDENT);
+					BIND3(header, baseTypeAttributeList, DWARF_BASE_TYPE_ATTRIBUTE_LIST);
+					if (GET_CHILD_COUNT(t) > 2)
+					{
+						BIND3(header, byteSizeParameter, INT);
+						bytesize = atoi(CCP(GET_TEXT(byteSizeParameter)));
+					}
+					
+					/* For each base type in the DWARF info, does it match these? */
+					for (auto i_dfs = get_ds().begin(); i_dfs != get_ds().end(); ++i_dfs)
+					{
+						if ((*i_dfs)->get_tag() == DW_TAG_base_type)
+						{
+							auto as_base_type = dynamic_pointer_cast<base_type_die>(*i_dfs);
+							if (as_base_type)
+							{
+								bool encoding_matched = false;
+								bool attributes_matched = false;
+								bool bytesize_matched = false;
+								// some things are not supported in dwarfidl yet
+								assert(!as_base_type->get_bit_offset() && !as_base_type->get_bit_size());
+
+								if (as_base_type->get_encoding() && 
+									string((*i_dfs)->get_spec().encoding_lookup(
+										as_base_type->get_encoding()
+									)).substr((sizeof "DW_AT_") - 1)
+									 == CCP(GET_TEXT(encoding))) encoding_matched = true;
+								if ((bytesize == -1 && !as_base_type->get_byte_size())
+								|| (as_base_type->get_byte_size() && 
+									*as_base_type->get_byte_size() == bytesize)) bytesize_matched = true;
+								// HACK: no support for attributes yet
+								if (GET_CHILD_COUNT(baseTypeAttributeList) == 0) attributes_matched = true;
+								
+								if (bytesize_matched 
+								&& encoding_matched 
+								&& attributes_matched) return dynamic_pointer_cast<type_die>(as_base_type);
+							}
+						}
+					}
+				}
+			} break;
+			case CAKE_TOKEN(IDENT): {
+				// we resolve the ident and check it resolves to a type
+				definite_member_name dmn; dmn.push_back(CCP(GET_TEXT(t)));
+				auto found = this->all_compile_units()->visible_resolve(
+					dmn.begin(),
+					dmn.end()
+				);
+				if (found)
+				{
+					auto as_type = dynamic_pointer_cast<type_die>(found);
+					return as_type;
+				} else return dynamic_pointer_cast<type_die>(found);
+			}
+			case CAKE_TOKEN(KEYWORD_OBJECT): {
+				// HMM... structural treatment also, it seems. 
+				// FIXME: this means dwarfidl can't express 
+				// "a structure type, named <like so>, structured <like so...>"
+				assert(false);
+				} break;
+			case CAKE_TOKEN(KEYWORD_PTR): {
+				// find the pointed-to type, then find a pointer type pointing to it
+				antlr::tree::Tree *pointed_to = GET_CHILD(t, 0);
+				auto found = existing_dwarf_type(t);
+				
+				// special case
+				bool is_void_ptr = (GET_CHILD_COUNT(t) == 1)
+				 && GET_TYPE(GET_CHILD(t, 0)) == CAKE_TOKEN(KEYWORD_VOID);
+				
+				if (found || is_void_ptr)
+				{
+					for (auto i_dfs = get_ds().begin(); i_dfs != get_ds().end(); ++i_dfs)
+					{
+						if ((*i_dfs)->get_tag() == DW_TAG_pointer_type)
+						{
+							shared_ptr<pointer_type_die> as_pointer_type
+							 = dynamic_pointer_cast<pointer_type_die>(*i_dfs);
+							assert(as_pointer_type);
+							if (( is_void_ptr && !as_pointer_type->get_type())
+							||  (!is_void_ptr &&  (
+									as_pointer_type->get_type()->get_offset()
+									 == found->get_offset())
+								)
+							)
+							{
+								return dynamic_pointer_cast<type_die>(as_pointer_type);
+							}
+						}
+					}
+				}
+				return found;
+			}
+			case CAKE_TOKEN(ARRAY): assert(false);
+			case CAKE_TOKEN(KEYWORD_VOID): assert(false); // for now
+			case CAKE_TOKEN(KEYWORD_ENUM): assert(false); // for now
+			case CAKE_TOKEN(FUNCTION_ARROW): assert(false); // for now
+			default: assert(false);
+		}
+	}
+	
+	shared_ptr<type_die> module_described_by_dwarf::ensure_dwarf_type(antlr::tree::Tree *t)
+	{
+		auto found = existing_dwarf_type(t);
+		if (!found) return create_dwarf_type(t);
+		else return found;
+	}
+	
+	shared_ptr<type_die> module_described_by_dwarf::create_dwarf_type(antlr::tree::Tree *t)
+	{
+		auto first_cu = *this->get_ds().toplevel()->compile_unit_children_begin();
+		shared_ptr<encap::basic_die> first_encap_cu = dynamic_pointer_cast<encap::basic_die>(first_cu);
+
+		/* We descend the type AST looking for dependencies. */
+		switch(GET_TYPE(t))
+		{
+			case CAKE_TOKEN(KEYWORD_BASE): 
+				// no dependencies
+				assert(false);
+			case CAKE_TOKEN(IDENT): 
+				// error: we can't create a named type without its definition
+				throw Not_supported("creating named type without definition");
+			
+			case CAKE_TOKEN(KEYWORD_OBJECT): 
+				// dependencies are the type of each member
+				// FIXME: recursive data types require special support to avoid infinite loops here
+				assert(false);
+			case CAKE_TOKEN(KEYWORD_PTR): {
+				auto pointed_to = ensure_dwarf_type(GET_CHILD(t, 0));
+				assert(pointed_to);
+				auto created =
+					dwarf::encap::factory::for_spec(
+						dwarf::spec::DEFAULT_DWARF_SPEC
+					).create_die(DW_TAG_pointer_type,
+						first_encap_cu,
+						opt<const string&>() // no name
+					);
+				auto created_as_pointer_type = dynamic_pointer_cast<encap::pointer_type_die>(created);
+				created_as_pointer_type->set_type(pointed_to);
+				return dynamic_pointer_cast<spec::type_die>(created_as_pointer_type);
+			}
+			case CAKE_TOKEN(ARRAY): assert(false);
+			case CAKE_TOKEN(KEYWORD_VOID): assert(false); // for now
+			case CAKE_TOKEN(KEYWORD_ENUM): assert(false); // for now
+			case CAKE_TOKEN(FUNCTION_ARROW): assert(false); // for now
+			default: assert(false);
+		}
+	}
+
 }

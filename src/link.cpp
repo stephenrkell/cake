@@ -381,6 +381,7 @@ namespace cake
 							struct pattern_info
 							{
 								vector<optional<string> > call_argnames;
+								vector<optional<antlr::tree::Tree *> > call_interps;
 								antlr::tree::Tree *pattern;
 								ev_corresp *corresp;
 							};
@@ -427,6 +428,7 @@ namespace cake
 											BIND3(p, eventCountPredicate, EVENT_COUNT_PREDICATE);
 											BIND3(p, eventParameterNamesAnnotation, KEYWORD_NAMES);
 											vector<optional<string> > argnames;
+											vector<optional<antlr::tree::Tree *> > interps;
 											auto dmn = read_definite_member_name(memberNameExpr);
 											if (subprogram->get_name() && dmn.size() == 1 
 												&& dmn.at(0) == *subprogram->get_name())
@@ -457,17 +459,12 @@ namespace cake
 																argnames.push_back(s.str());
 																cerr << "Pushed an argument name: " 
 																	<< s.str() << endl;
-																if (interpretation)
-																{
-																	cerr << "FIXME: ignoring interpretation: "
-																		<< CCP(TO_STRING_TREE(interpretation))
-																		<< endl;
-																}
+																interps.push_back(interpretation ? 
+																	interpretation : 0);
 																break;
 															}
 															case CAKE_TOKEN(KEYWORD_CONST):
 																// no information about arg name here
-
 																argnames.push_back(
 																	optional<string>());
 																break;
@@ -481,6 +478,7 @@ namespace cake
 													dmn,
 													(pattern_info) {
 													argnames,
+													interps,
 													p,
 													&i_corresp->second
 													}
@@ -567,47 +565,99 @@ namespace cake
 									// (except we can't yet *produce* DWARF).
 									// This is the third-best way. 
 									// So don't spend too much time on it.
+									
+									vector<optional<antlr::tree::Tree *> >::iterator i_interp
+									 =  i_pattern->second.call_interps.begin();
+									auto i_fp = subprogram->formal_parameter_children_begin();
 									for (auto i_arg = i_pattern->second.call_argnames.begin();
 										i_arg != i_pattern->second.call_argnames.end();
-										++i_arg)
+										++i_arg, ++i_interp, ++i_fp)
 									{
+										assert(i_interp != i_pattern->second.call_interps.end());
+										
 										vector<antlr::tree::Tree *> contexts;
-										if (!*i_arg) continue;
-										find_usage_contexts(**i_arg,
-											i_pattern->second.corresp->sink_expr,
-											contexts);
-										if (contexts.size() > 0)
+										if (*i_interp)
 										{
-											cerr << "Considering type expectations "
-												<< "for stub uses of identifier " 
-												<< **i_arg << endl;
-											for (auto i_ctxt = contexts.begin(); 
-												i_ctxt != contexts.end();
-												++i_ctxt)
+											INIT;
+											/* Given an interpretation, there are several cases: 
+											 * - the type just names an existing type;
+											 * - the type AST explicitly defines a type that doesn't currently exist in DWARF info;
+											 * - the type is an ident which should become an artificial 
+											 **/
+											BIND2(**i_interp, dwarfType);
+											// FIXME: pay attention to the kind (as, in_as, out_as)
+											// of the interpretation
+											auto existing = i_mod->second->existing_dwarf_type(dwarfType);
+											// if no existing, then try creating one
+											if (!existing)
 											{
-												auto found_die = map_stub_context_to_dwarf_element(
-													*i_ctxt,
-													i_pattern->second.corresp->sink);
-												
-												if (found_die)
+												existing = i_mod->second->create_dwarf_type(dwarfType);
+												// if this failed, it means it was just a reference
+												// (ident) not a definition
+												// -- this might be okay for us, as we can create a typedef
+												if (!existing)
 												{
-													cerr << "FIXME: found a stub function call using ident " 
-														<< **i_arg 
-														<< " as " << *found_die
-														<< ", child of " << *found_die->get_parent()
-														<< endl;
-													// FIXME: extract its type information
+													assert(false);
+													// when we finish the code below, it would be sensible
+													// to create a typedef here, pointing to the type
+													// discovered below. For now, do nothing.
 												}
 											}
-											// when we get here, we may have identified some
-											// type expectations, or we may not.
-											// FIXME: finish this code by
-											// - checking all the type expectations are
-											// the same
-											// - invoking unique_correpsonding_type
-											// - filling in the output of this in the fp die
+											assert(existing);
+											cerr << "existing type: " << *existing << endl;
+											// Now let's update the fp
+											// FIXME: check for unanimity
+											auto encap_fp = dynamic_pointer_cast<encap::formal_parameter_die>(
+												*i_fp);
+											encap_fp->set_type(existing);
 											
-										} // end if contexts.size() > 0
+										}
+										
+										// if the vector contains a null entry, it means that 
+										// we saw no name for this argument.
+										if (!*i_arg)
+										{
+											// we saw no name for it, but we might have an interpretation
+											
+										}
+										else // it definitely has a name, so we can search for its uses
+										{
+											find_usage_contexts(**i_arg,
+												i_pattern->second.corresp->sink_expr,
+												contexts);
+											if (contexts.size() > 0)
+											{
+												cerr << "Considering type expectations "
+													<< "for stub uses of identifier " 
+													<< **i_arg << endl;
+												for (auto i_ctxt = contexts.begin(); 
+													i_ctxt != contexts.end();
+													++i_ctxt)
+												{
+													auto found_die = map_stub_context_to_dwarf_element(
+														*i_ctxt,
+														i_pattern->second.corresp->sink);
+
+													if (found_die)
+													{
+														cerr << "FIXME: found a stub function call using ident " 
+															<< **i_arg 
+															<< " as " << *found_die
+															<< ", child of " << *found_die->get_parent()
+															<< endl;
+														// FIXME: extract its type information
+													}
+												}
+												// when we get here, we may have identified some
+												// type expectations, or we may not.
+												// FIXME: finish this code by
+												// - checking all the type expectations are
+												// the same
+												// - invoking unique_correpsonding_type
+												// - filling in the output of this in the fp die
+
+											} // end if contexts.size() > 0
+										}
 									}
 								} // end for i_pattern
 							}
@@ -1088,7 +1138,7 @@ namespace cake
                        << "_to_"
                        << ((inner_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
                               *(*inner_type_synonymy_chain.begin())->get_name())
-                       << "in_first;" << endl;
+                       << "_in_first;" << endl;
 				}
 				for (auto i_tag_in_second = corresps_by_artificial_names_for_second_type.begin();
 				          i_tag_in_second != corresps_by_artificial_names_for_second_type.end();
@@ -1164,7 +1214,7 @@ namespace cake
                        << "_to_"
                        << ((inner_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
                               *(*inner_type_synonymy_chain.begin())->get_name())
-                       << "in_second;" << endl;
+                       << "_in_second;" << endl;
 				}
 				// now go round again, outputting the numbering enum
 				// What should go in it?

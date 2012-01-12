@@ -14,12 +14,15 @@
 #include <indenting_ostream.hpp>
 #include "parser.hpp"
 
-using namespace dwarf::lib;
 
 namespace antlr { namespace tree { typedef ANTLR3_BASE_TREE Tree; } }
 
 namespace cake
 {
+	using namespace dwarf::lib;
+	using dwarf::spec::type_die;
+	using boost::shared_ptr;
+	
 	class definite_member_name;
     class derivation;
 	class link_derivation;
@@ -121,6 +124,11 @@ namespace cake
         module_described_by_dwarf(const std::string& filename, dwarf::encap::dieset& ds) 
          : 	described_module(filename), dies(ds),
          	private_offsets_next(private_offsets_begin) {}
+			
+		shared_ptr<type_die> existing_dwarf_type(antlr::tree::Tree *t);
+		shared_ptr<type_die> create_dwarf_type(antlr::tree::Tree *t);
+		shared_ptr<type_die> ensure_dwarf_type(antlr::tree::Tree *t);
+		
 	};
 
 	class elf_module : 	private ifstream_holder, 

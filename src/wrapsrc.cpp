@@ -213,7 +213,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 										read_definite_member_name(definiteMemberName);
 									if (mn.size() > 1) RAISE(valuePattern, "may not be compound");
 									// output the variable type, or unspecified_wordsize_type
-									if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? " ::cake::unspecified_wordsize_type" : compiler.name_for(
+									if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? " ::cake::unspecified_wordsize_type" : get_type_name(
 										(*i_arg)->get_type()));
 									// output the variable name, prefixed 
 									m_out << ' ' << arg_name_prefix << argnum /*<< '_' << mn.at(0)*/;
@@ -222,7 +222,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							case CAKE_TOKEN(METAVAR):
 							case CAKE_TOKEN(KEYWORD_CONST):
 								// output the argument type and a dummy name
-								if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? "::cake::unspecified_wordsize_type" : compiler.name_for(
+								if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? "::cake::unspecified_wordsize_type" : get_type_name(
 									(*i_arg)->get_type()));
 								m_out << ' ' << arg_name_prefix << argnum /*<< "_dummy" << argnum*/;
 								break;
@@ -537,9 +537,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 			auto status2 = 
 				(sink_infix_stub && GET_CHILD_COUNT(sink_infix_stub) > 0) ?
 					emit_stub_expression_as_statement_list(
-					ctxt,
-					sink_infix_stub/*,
-					shared_ptr<type_die>()*/) // FIXME: really no type expectations here?
+						ctxt,
+						sink_infix_stub
+					) // FIXME: really no type expectations here?
 					: (post_emit_status){NO_VALUE, "true", environment()};
 			auto saved_env2 = ctxt.env;
 			auto new_env2 = merge_environment(ctxt.env, status2.new_bindings);
@@ -1254,6 +1254,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 							*i_ctxt,
 							remote_module // dwarf context is the remote module
 							);
+						cerr << "Finished searching for DWARF element, status: "
+							<< std::boolalpha << (found_die ? true : false) << endl;
 						// if we didn't find a DIE, that means... what?
 						shared_ptr<formal_parameter_die> found_fp
 						 = dynamic_pointer_cast<formal_parameter_die>(found_die);
@@ -1261,9 +1263,16 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 						if (found_fp)
 						{
-							if (!found_type) found_type = found_fp->get_type();
-							else if (found_type != found_fp->get_type()) RAISE(
-								*i_ctxt, "non-unanimous types for usage contexts");
+							if (!found_type)
+							{
+								found_type = found_fp->get_type();
+							} else if (found_type != found_fp->get_type()) RAISE(
+							*i_ctxt, "non-unanimous types for usage contexts");
+							
+							cerr << "found type at offset 0x" << std::hex << found_type->get_offset()
+								<< std::dec << ", name: " 
+								<< (found_type->get_name() ? *found_type->get_name() : "(no name)")
+								<< endl;
 						}
 					}
 					shared_ptr<type_die> unq_t = found_type->get_unqualified_type();
@@ -1529,9 +1538,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 			to_typestring = std::string("::cake::") + "corresponding_type_to_"
 				+ ((to_module == ifaces.first) 
 					? ("second< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"
-						+ "::" + from_artificial_tagstring + "__to_" + to_artificial_tagstring + "_in_first")
+						+ "::" + from_artificial_tagstring + "_to_" + to_artificial_tagstring + "_in_first")
 					: ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"
-						+ "::" + from_artificial_tagstring + "__to_" + to_artificial_tagstring + "_in_second"));
+						+ "::" + from_artificial_tagstring + "_to_" + to_artificial_tagstring + "_in_second"));
 						// this one --^ is WHAT?       this one --^ is WHAT?
 						// answer: art.tag in source   answer: art.tag in sink
 		}
@@ -1697,41 +1706,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 		return s.str();
 	}
     
-    /* We can emit stub expressions as *either* expressions or statements. As a statement 
-     * just means that we bind names to the result and success values. Sequencing expressions
-     * cannot be emitted as expressions. If we run into a nested sequencing expression... WHAT? 
-     * We have to backtrack: emit the nested expression *first*, bind a name to it,
-     * then reference it by name in the current expression. If we run into a nested
-     * success-conditional sequencing expression, WHAT?
-     * If we run into a SUCCESS or FAIL expression, WHAT?
-     * If we run into a CONDITIONAL, what?
-     * We could use the comma operator, but that would be horrible to debug. 
-     
-     PROBLEM: if we want to backtrack and emit temporaries, we can't assume that the
-     output stream is in an appropriate position for this: what if we'd just done
-     call_function( ) 
-     
-     and then wanted to insert expressions for each argument? 
-     Is calling functions special?  Clearly we do value conversions there where we
-     otherwise don't. (Actually: we do so when accessing names that are bound to
-     data originating in other components).
-     
-     I vote for a complete flattening approach: all subexpressions are evaluated in
-     their own statements and given names. Then we can reference their result by name.
-     This will make debugging the generated code easier, although perhaps verbose. */
 
 	wrapper_file::post_emit_status
 	wrapper_file::emit_stub_expression_as_statement_list(
 			const context& ctxt,
-			antlr::tree::Tree *expr/*,
-			shared_ptr<type_die> expected_cxx_type*/)
-// 			,
-// 			link_derivation::iface_pair ifaces_context,
-// 			const request::module_name_pair& context, // sink module
-// 			const request::module_name_pair& source_context, // source module
-// 			///*boost::shared_ptr<dwarf::spec::type_die>*/ const std::string& cxx_result_type_name,
-// 			boost::shared_ptr<dwarf::spec::type_die> cxx_result_type,
-// 			environment env)
+			antlr::tree::Tree *expr)
 	{
 		std::string ident;
 		switch(GET_TYPE(expr))
@@ -1740,16 +1719,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				// and so is assert!
 				return emit_stub_function_call(
 					ctxt,
-					expr/*,
-					expected_cxx_type*/);
-					
-//					expr,
-//					ifaces_context,
-//					context, // sink module
-//					source_context,
-//					//cxx_result_type_name,
-//					cxx_result_type,
-//					env);
+					expr);
 			case CAKE_TOKEN(STRING_LIT):
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
@@ -1766,9 +1736,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 				m_out << "cake::style_traits<0>::float_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
 				return (post_emit_status){ident, "true", environment()};
 			case CAKE_TOKEN(KEYWORD_VOID):
-				//std::string ident = new_ident("temp");
-				//m_out << "auto " << ident << " = ";
-				//m_out << "cake::style_traits<0>::void_value()";
 				return (post_emit_status){NO_VALUE, "true", environment()};
 			case CAKE_TOKEN(KEYWORD_NULL):
 				ident = new_ident("temp");
@@ -1787,26 +1754,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 				return (post_emit_status){ident, "true", environment()};
 			case CAKE_TOKEN(IDENT):
 				{
-// 					/* If it's in our environment, it might need value conversion. */
-// 					std::string s = CCP(GET_TEXT(expr));
-// 					if (ctxt.env.find(s) != ctxt.env.end())
-// 					{
-// 						ident = new_ident("temp");
-// 						m_out << "auto " << ident << " = ";
-// 						emit_bound_var_rvalue(ctxt, *ctxt.env.find(s)/*, ifaces_context, context, 
-// 							*env.find(s), env, cxx_result_type*/);
-// 						m_out << ";" << std::endl;
-// 						return std::make_pair("true", ident);
-// 					}
-// 					/* Even if it isn't, it might need value conversion. */
-// 					/* Otherwise it might be an argument (hence need value conversion)
-// 					 * or a global/static thing (defined in the dwarfhpp-generated headers). */
-// 					else return std::make_pair("true", 
-// 						ctxt.ns_prefix + "::" // namespace for the current link block
-// 						+ /*callee_namespace_name*//*context.second*/ name_for_module(ctxt.modules.sink) + "::" // namespace for the current module
-// 						+ CCP(TO_STRING(expr)) // the ident itself
-// 						); 
-// 						// FIXME: should resolve in DWARF info
 					if (ctxt.env.find(unescape_ident(CCP(GET_TEXT(expr)))) == ctxt.env.end())
 					{
 						std::cerr << "Used name " 
@@ -1820,24 +1767,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 						}
 						assert(false);
 					}
-					/* When do we get asked to emit an IDENT?
-					 * Suppose we're recursively evaluating a big expression.
-					 * Eventually we will get down to the idents.
-					 * There's no point expanding an ident to an ident.
-					 * So broaden our interface slightly:
-					 * just as "names.second" can include "true" for trivial successes,
-					 * so "names.first" can include a simple ident reference or
-					 * value conversion. */
-					//assert(false);
-					
-					//emit_bound_var_rvalue(ctxt, *ctxt.env.find(CCP(GET_TEXT(expr))));
 					assert(ctxt.env[unescape_ident(CCP(GET_TEXT(expr)))].valid_in_module
 						== ctxt.modules.current);
 					return (post_emit_status){ ctxt.env[unescape_ident(CCP(GET_TEXT(expr)))].cxx_name,
 						"true", environment() };
-					//return std::make_pair(
-					//	reference_bound_variable(ctxt, *ctxt.env.find(CCP(GET_TEXT(expr)))),
-					//	"true");
 				}
 			case CAKE_TOKEN(KEYWORD_THIS):
 				assert(ctxt.env.find("__cake_this") != ctxt.env.end());
@@ -1896,7 +1829,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 			
 			/* HACK: for unary and binary arithmetic/logic ops, we just
 			 * blast out the C++ code*/
-
 			unary_al_ops: //__attribute__((unused))
 			case CAKE_TOKEN(COMPLEMENT):
 			case CAKE_TOKEN(NOT):
@@ -1932,12 +1864,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 			{
 				auto resultL = emit_stub_expression_as_statement_list(
 					ctxt,
-					GET_CHILD(expr, 0)/*,
-					shared_ptr<type_die>()*/);
+					GET_CHILD(expr, 0));
 				auto resultR = emit_stub_expression_as_statement_list(
 					ctxt,
-					GET_CHILD(expr, 1)/*,
-					shared_ptr<type_die>()*/);
+					GET_CHILD(expr, 1));
 				ident = new_ident("temp");
 
 				m_out << "auto " << ident << " = "
@@ -1985,99 +1915,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 				assert(false);
 		}
 	}
-
-// 	//void
-// 	std::string
-// 	//wrapper_file::emit_bound_var_rvalue(
-// 	wrapper_file::reference_bound_variable(
-// 		const context& ctxt, 
-// 		const binding& bound_var) // FIXME: need cxx_result_type too
-// 	{
-// 		/* There are a few cases here:
-// 		 * -- the bound var was defined as an argument;
-// 		 * -- the bound var was defined in an infix stub on the remote side;
-// 		 * -- the bound var was defined in an infix stub on the local side;
-// 		 * -- the bound var was defined in the local stub itself;
-// 		 * -- FIXME: stuff to do with return events 
-// 		 
-// 		 * We disambiguate using our args & other context, 
-// 		 * deduce the C++ variable name/prefix that we require,
-// 		 * and insert value conversions as necessary. */
-// 		
-// 		if (ctxt.modules.sink == bound_var.second.defining_module)
-// 		{
-// 			/* We don't need a value conversion in this case. */
-// 			std::string name = cxx_name_for_binding(bound_var);
-// 			m_out << name;
-// 			//return std::make_pair("true", name);
-// 		}
-// 		else
-// 		{
-// 			/* If we need to name a target type every time we open a value conversion,
-// 			 * this could get difficult. Or perhaps not -- this could/should be the
-// 			 * only place where we do it. So what do we really need to know? Thesis says:
-// 			 *
-// 			 * "All value correspondences are implicitly invoked from within an event
-// 			 * correspondence or another value correspondence. In these contexts, both a
-// 			 * "from" and a "to" data type are usually available. Ambiguity in either one
-// 			 * of these may therefore be tolerated, if their pairing is sufficient to
-// 			 * select a unique correspondence."
-// 			 *
-// 			 * In other words, whenever we're evaluating an expression, we should have a 
-// 			 " "to" data type in mind. But we'll need it only in a few cases. 
-// 			 * We hopefully won't need it for intermediate results of the same expression,
-// 			 * because we won't be applying value correspondences there.
-// 			 * But WAIT: what if our bound variables are deep within some complex stub 
-// 			 * expression structure? What's the relationship between the C++ type that
-// 			 * we have to convert the bound variable to, and the "overall" required C++ type
-// 			 * for the expression? Can we compute this as we're recursing down the
-// 			 * expression? It's possible, yes. This means we're doing type-checking of our
-// 			 * stub code whether we like it or not! Note that types are always simple
-// 			 * because we're not following indirection---pointers are opaque.
-// 			 * What about polymorphic operators like arithmetic? If our stub says:
-// 			 * foo(a, b) --> { 2 * (a + b) }
-// 			 * then how do we disambiguate between potentially many correspondences
-// 			 * between typeof(a) and typeof(b) in the RHS component?
-// 			 * I think the answer is that for operators, we fall back on "auto" in C++-land
-// 			 * which is good for picking up the compiler's treatment of primitive types,
-// 			 * but this has the knock-on effect that we require a unique corresponding type
-// 			 * for typeof(a) and typeof(b).
-// 			 * Can argue that this is reasonable: polymorphic operators are more likely
-// 			 * to be working on base types,
-// 			 * whereas user-defined types are more likely to have their own specific
-// 			 * functions for dealing with them.
-// 			 * It'd be a different story if we have foo(a,b) --> f(a,b)
-// 			 * because we have a type expectation for each argument.
-// 			 * So we are in fact making use of type constraints in our given interfaces
-// 			 * to select among value correspondences
-// 			 * Python would not solve this problem,
-// 			 * and arguably has it worse? Hmm, probably not.
-// 			 * This thing about propagating type information should really be in the
-// 			 * thesis. I mean, it is, in the paragraph that we quote, but it's not clear
-// 			 * enough. A one-sentence addition would be helpful.
-// 			 * We could get around this "cleanly" i.e. arse-coveringly
-// 			 * by decreeing
-// 			 * (1) that Cake's built-in operators are only defined for particular DWARF types;
-// 			 * (2) that these must correspond uniquely across components, and
-// 			 * (3) not just uniquely, but "sanely" i.e. meaning-preservingly.
-// 			 */
-// 			assert(result_type);
-// 			open_value_conversion(
-// 				//ifaces_context,
-// 				link_derivation::sorted(ctxt.modules.source, ctxt.modules.sink),
-// 				
-// 				bound_var.second.type,
-// 				bound_var.second.defining_module,
-// 				result_type, 
-// 				module_of_die(result_type)
-// 				);
-// 				
-// 			std::string name = cxx_name_for_binding(bound_var);
-// 			m_out << name;
-// 			
-// 			close_value_conversion();
-// 		}
-// 	}
 	
 	std::vector<
 		std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
@@ -2449,60 +2286,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 		return (post_emit_status){value_ident, success_ident, environment()};
 	}
-            
-//         	    ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
-//                 {
-//             	    INIT;
-//                     BIND2(n, valuePattern);
-//                     switch (GET_TYPE(valuePattern))
-//                     {
-//                         case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
-//                             {
-//                         	    // FIXME: better treatment of bound identifiers here
-//                                 definite_member_name mn = 
-//                                     read_definite_member_name(valuePattern);
-//                                 if (mn.size() > 1) RAISE(valuePattern, "may not be compound");
-//                                 // mn.at(0) is one of our argument names
-//                                 open_value_conversion(
-//                             	    // "from" is the calling argument type, "to" is the callee's
-//                                     treat_subprogram_as_untyped(source_signature) ? 
-//                                         boost::shared_ptr<dwarf::spec::type_die>() : 
-//                                 	    env.find(mn.at(0))->second.type,
-//                                     ns_prefix + "::" + env.find(mn.at(0))->second.module.second, 
-//                                     treat_subprogram_as_untyped(callee_subprogram) ? 
-//                                         boost::shared_ptr<dwarf::spec::type_die>() : 
-//                                         *(*i_callee_arg)->get_type(),
-//                                     callee_prefix);
-//                                 m_out << mn.at(0);
-//                                 close_value_conversion();
-// 	                        } break;
-// 
-// 
-//                         case CAKE_TOKEN(KEYWORD_CONST):
-//                             // output the argument type and a dummy name
-//                             emit_constant_expr(valuePattern, sink_context);
-//                             break;
-//                         default: RAISE_INTERNAL(valuePattern, "not a value pattern");
-//                     }
-//                 }
-//                 if (i+1 < childcount) m_out << ", ";
-//                 ++i_callee_arg;
-//             }
-//         }
-//         // grab iterator pointing at the first argument...
-//         dwarf::encap::formal_parameters_iterator i_callee_arg 
-//          = dynamic_cast<dwarf::encap::Die_encap_subprogram&>(*callee).formal_parameters_begin();
-// 
-//         if (!subprogram_returns_void(callee_subprogram)) open_value_conversion(
-//         	callee_return_type ? *callee_return_type : boost::shared_ptr<dwarf::spec::type_die>(), 
-//         	callee_prefix,
-//             convert_to ? *convert_retval_to : boost::shared_ptr<dwarf::spec::type_die>(), 
-//             caller_prefix);
-// 
-//         
-//         if (!subprogram_returns_void(callee_subprogram)) close_value_conversion();
-//     }
-    
+
 	std::string wrapper_file::constant_expr_eval_and_cxxify(
 		const context& ctxt,
 		antlr::tree::Tree *constant_expr)

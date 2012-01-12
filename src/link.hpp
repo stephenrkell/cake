@@ -50,44 +50,31 @@ namespace cake {
 		// ^-- this will give us all subprograms, even static / non-visible ones...
 		// ... so push the visibility test into these predicats too --v
 		
-		//struct is_visible : public unary_function<subprograms_in_file_iterator, bool>
 		struct is_visible : public unary_function<shared_ptr<spec::subprogram_die>, bool>
 		{
-			// delegate to is_visible in spec::file_toplevel_die
-			//bool operator()(subprograms_in_file_iterator i_subp) const
 			bool operator()(shared_ptr<spec::subprogram_die> p_subp) const
 			{
-// 				return spec::file_toplevel_die::is_visible()(
-// 					dynamic_pointer_cast<spec::basic_die>(*i_subp)
-// 					);
 				return spec::file_toplevel_die::is_visible()(
 					dynamic_pointer_cast<spec::basic_die>(p_subp)
 					);
 			}
 		};
-		//struct is_provided : public unary_function<subprograms_in_file_iterator, bool>
+
 		struct is_provided : public unary_function<shared_ptr<spec::subprogram_die>, bool>
 		{
-//			bool operator()(subprograms_in_file_iterator i_subp) const
 			bool operator()(shared_ptr<spec::subprogram_die> p_subp) const
 			{ 
 				is_visible is_v; 
-// 				return is_v(i_subp) && (
-// 					!((*i_subp)->get_declaration()) 
-// 				|| (!(*((*i_subp)->get_declaration())))); 
 				return is_v(p_subp) && (
 					!(p_subp->get_declaration()) 
 				|| (!(*(p_subp->get_declaration())))); 
 			}
 		};
-//		struct is_required : public unary_function<subprograms_in_file_iterator, bool>
 		struct is_required : public unary_function<shared_ptr<spec::subprogram_die>, bool>
 		{
-//			bool operator()(subprograms_in_file_iterator i_subp) const
 			bool operator()(shared_ptr<spec::subprogram_die> p_subp) const
 			{
 				is_provided is_p; is_visible is_v; 
-//				return is_v(i_subp) && !(is_p(i_subp)); 
 				return is_v(p_subp) && !(is_p(p_subp)); 
 			}
 		};
@@ -96,23 +83,7 @@ namespace cake {
         typedef boost::filter_iterator<is_required, subprograms_in_file_iterator>
         	 required_funcs_iter;
 
-//         struct is_provided : public std::unary_function<dwarf::encap::subprogram_die, bool>
-//         {
-//             bool operator()(const dwarf::encap::subprogram_die *p_subp) const
-//             { return (!(p_subp->get_declaration()) || (!(*(p_subp->get_declaration())))); }
-//         };
-//         struct is_required : public std::unary_function<dwarf::encap::subprogram_die, bool>
-//         {
-//             bool operator()(const dwarf::encap::subprogram_die *p_subp) const
-//             { is_provided is_p; return !(is_p(p_subp)); }
-//         };
-//         typedef boost::filter_iterator<is_provided, dwarf::encap::subprograms_iterator>
-//         	 provided_funcs_iter;
-//         typedef boost::filter_iterator<is_required, dwarf::encap::subprograms_iterator>
-//         	 required_funcs_iter;
-
-        
-        struct ev_corresp
+       struct ev_corresp
         {
         	module_ptr source;
         	antlr::tree::Tree *source_pattern;
@@ -132,19 +103,6 @@ namespace cake {
             }
         };
         
-// 		struct basic_value_conversion
-// 		{
-//         	module_ptr source;
-//         	boost::shared_ptr<dwarf::spec::type_die> source_data_type;
-//         	antlr::tree::Tree *source_infix_stub;
-//         	module_ptr sink;
-//         	boost::shared_ptr<dwarf::spec::type_die> sink_data_type;
-//         	antlr::tree::Tree *sink_infix_stub;
-//         	antlr::tree::Tree *refinement;
-// 			bool source_is_on_left;
-//         	antlr::tree::Tree *corresp; // for generating errors
-// 		}; 
-		//typedef ::cake::basic_value_conversion basic_value_conversion;
         typedef value_conversion val_corresp;
     
     public:
@@ -156,17 +114,7 @@ namespace cake {
         set<iface_pair> all_iface_pairs;
     
 		typedef multimap<iface_pair, ev_corresp> ev_corresp_map_t;
-//		struct val_corresp_map_t
 		typedef multimap<iface_pair, shared_ptr<val_corresp> > val_corresp_map_t;
-// 		{
-// 			typedef multimap<iface_pair, shared_ptr<val_corresp> > super;
-// 			iterator insert(const value_type& x)
-// 			{
-// 				this->super::insert(x);
-// 				/* Now calculate the id*/
-// 			}
-// 		}
-		//unordered_map< shared_ptr<val_corresp>, int > val_corresp_numbering;
         std::map< shared_ptr<val_corresp>, int > val_corresp_numbering;
 		
         typedef ev_corresp_map_t::value_type ev_corresp_entry;
