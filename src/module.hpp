@@ -97,8 +97,9 @@ namespace cake
       public boost::enable_shared_from_this<module_described_by_dwarf>
 	{
     protected:
-		static const Dwarf_Off private_offsets_begin; 
+		//static const Dwarf_Off private_offsets_begin; 
 		dwarf::encap::dieset& dies;
+		Dwarf_Off m_greatest_preexisting_offset;
 		Dwarf_Off private_offsets_next;
 		Dwarf_Off next_private_offset() { return private_offsets_next++; }
         virtual const dwarf::spec::abstract_def& get_spec() = 0;
@@ -120,10 +121,13 @@ namespace cake
 			Dwarf_Off current_die);
         
         virtual dwarf::spec::abstract_dieset& get_ds() = 0;
+		Dwarf_Off greatest_preexisting_offset() const { return m_greatest_preexisting_offset; }
         
         module_described_by_dwarf(const std::string& filename, dwarf::encap::dieset& ds) 
          : 	described_module(filename), dies(ds),
-         	private_offsets_next(private_offsets_begin) {}
+		    m_greatest_preexisting_offset(
+				(dies.map_end() == dies.map_begin()) ? 0UL : (--dies.map_end())->first),
+         	private_offsets_next(m_greatest_preexisting_offset + 1) {}
 			
 		shared_ptr<type_die> existing_dwarf_type(antlr::tree::Tree *t);
 		shared_ptr<type_die> create_dwarf_type(antlr::tree::Tree *t);
@@ -132,8 +136,8 @@ namespace cake
 	};
 
 	class elf_module : 	private ifstream_holder, 
-    					public module_described_by_dwarf, 
-                        private dwarf::encap::file
+                        private dwarf::encap::file,
+    					public module_described_by_dwarf
 	{
 		boost::shared_ptr<std::ifstream> input_stream;
         					
@@ -172,27 +176,26 @@ namespace cake
 
 	public:
 		elf_external_sharedlib_module(std::string local_filename, std::string libname) 
-        : elf_module(local_filename, libname) {}
+		: elf_module(local_filename, libname) {}
 	};
-    
-    class derived_module : public module_described_by_dwarf
-    {
-    	// here we actually instantiate a dieset; our base class just keeps a reference
-    	dwarf::encap::dieset dies;
-    	derivation& m_derivation;
-    protected:
-    	const dwarf::spec::abstract_def& get_spec() { return dwarf::spec::dwarf3; }
-        const std::string m_id;
-        
-    public:
-    	derived_module(derivation& d, const std::string id, const std::string& filename) 
-         :	module_described_by_dwarf(filename, dies),
-         	dies(get_spec()),
-            m_derivation(d),
-            m_id(id)
-         	{}
-	    dwarf::spec::abstract_dieset& get_ds() { return dies; }
-    };
+
+	class derived_module : private dwarf::encap::dieset, 
+	                       public module_described_by_dwarf
+	{
+		derivation& m_derivation;
+	protected:
+		const dwarf::spec::abstract_def& get_spec() { return dwarf::spec::dwarf3; }
+		const std::string m_id;
+
+	public:
+		derived_module(derivation& d, const std::string id, const std::string& filename) 
+		:	dwarf::encap::dieset(get_spec()),
+			module_described_by_dwarf(filename, *this),
+			m_derivation(d),
+			m_id(id)
+		{}
+		dwarf::spec::abstract_dieset& get_ds() { return dies; }
+	};
 }
 
 #endif

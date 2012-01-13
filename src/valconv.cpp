@@ -759,6 +759,9 @@ namespace cake
 				"__cake_default",
 				"__cake_default"
 			};
+		// the semantics of "that" mean that we have to remember this value
+		assert(extended_env1.find("__cake_it") != extended_env1.end());
+		extended_env1["__cake_source_value"] = extended_env1["__cake_it"];
 
 		/* Now we can evaluate the pre-stub if there is one. It should use "this" if
 		 * it depends on the field value. */
@@ -780,10 +783,12 @@ namespace cake
 		}
 		// stash the result in the basic env
 		assert(extended_env2.find("__cake_it") != extended_env2.end());
+		assert(extended_env2.find("__cake_source_value") != extended_env2.end());
 		basic_env[/*"__cake_source_" + target_field_selector.substr(1)*/ "__cake_it"]
 		 = extended_env2["__cake_it"];
+		basic_env["__cake_source_value"] = extended_env2["__cake_it"];
 
-		// revert to the basic env, with this "it" extension
+		// revert to the basic env, with this "it" and "source value" extensions
 		ctxt.env = basic_env;
 		//ctxt.env.erase("__cake_from");
 
@@ -811,15 +816,19 @@ namespace cake
 		/* Now we add "that", "there" and "here" (but not "this") to the environment. */
 		if (unique_source_field_selector)
 		{
-			ctxt.env.insert(make_pair("__cake_that",
-				(wrapper_file::bound_var_info) {
-					"__cake_nonconst_from" + *unique_source_field_selector, // cxx name
-					"__cake_nonconst_from" + *unique_source_field_selector, // typeof
-					target_module,
-					false,
-					"__cake_default",
-					"__cake_default"
-				}));
+			/* Semantics of "that" -- it's the result of converting the value
+			 * on the other side. */
+			assert(ctxt.env.find("__cake_source_value") != ctxt.env.end());
+			ctxt.env.insert(make_pair("__cake_that", ctxt.env["__cake_source_value"]));
+			
+			//	(wrapper_file::bound_var_info) {
+			//		"__cake_nonconst_from" + *unique_source_field_selector, // cxx name
+			//		"__cake_nonconst_from" + *unique_source_field_selector, // typeof
+			//		target_module,
+			//		false,
+			//		"__cake_default",
+			//		"__cake_default"
+			//	}));
 
 			ctxt.env.insert(make_pair("__cake_there",
 				(wrapper_file::bound_var_info) {
@@ -842,26 +851,25 @@ namespace cake
 				"__cake_default",
 				"__cake_default"
 			}));
-		// we can also always add "it"!
-		ctxt.env.insert(make_pair("__cake_it", ctxt.env[
-			/*"__cake_source_" + target_field_selector.substr(1)*/ "__cake_it"]));
+		// we should have "it" in the environment, just from crossover
+		assert(ctxt.env.find("__cake_it") != ctxt.env.end());
 
 		/* Now emit the post-stub. */
-		auto new_env3 = ctxt.env; // provisional value
+		//auto new_env3 = ctxt.env; // provisional value
 		if (sink_infix && GET_CHILD_COUNT(sink_infix) > 0)
 		{
 			auto status3 = w.emit_stub_expression_as_statement_list(ctxt,
 				sink_infix);
-			new_env3 = w.merge_environment(ctxt.env, status3.new_bindings);
-				if (status3.result_fragment != w.NO_VALUE) new_env3["__cake_it"] = 
-					(wrapper_file::bound_var_info) {
-						status3.result_fragment,
-						status3.result_fragment,  //shared_ptr<type_die>(),
-						ctxt.modules.sink,
-						false,
-						"__cake_default",
-						"__cake_default"
-					};
+			ctxt.env = w.merge_environment(ctxt.env, status3.new_bindings);
+			if (status3.result_fragment != w.NO_VALUE) ctxt.env["__cake_it"] = 
+				(wrapper_file::bound_var_info) {
+					status3.result_fragment,
+					status3.result_fragment,  //shared_ptr<type_die>(),
+					ctxt.modules.sink,
+					false,
+					"__cake_default",
+					"__cake_default"
+				};
 		}
 
 		/* Now we have an "it": either the output of the stub, if there was one,

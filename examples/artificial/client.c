@@ -16,7 +16,7 @@ int main(void)
 	
 	printf("Frobbing with length 69,105...\n");
 	hundredths_t frob_ret = frob(69105.0);
-	printf("Received %d hundredths in return.\n", frob_ret);
+	printf("Received %f hundredths in return.\n", frob_ret);
 	
 	return 0;
 }

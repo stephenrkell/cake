@@ -17,7 +17,6 @@ derive elf_reloc("artificial.o") artificial = link [client, lib]
 			hundredths_t  (that/10)<--           thousandths_t;
 		}
 		
-		
 		/* We can also introduce them ourselves using "as". */
 		
 		/* We can use "as" at up to one level of indirection. */

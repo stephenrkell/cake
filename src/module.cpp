@@ -89,8 +89,8 @@ namespace cake
 
 	elf_module::elf_module(std::string local_filename, std::string makefile_filename) :
 			ifstream_holder(local_filename),
-			module_described_by_dwarf(makefile_filename, this->ds()),
-			dwarf::encap::file(fileno())
+			dwarf::encap::file(fileno()),
+			module_described_by_dwarf(makefile_filename, this->ds())
 	{
 		// if no debug information was imported, set up a dummy compilation unit
 		if (dies.map_size() <= 1)
@@ -265,7 +265,7 @@ namespace cake
 		return retval;
 	} // end function
 
-	const Dwarf_Off module_described_by_dwarf::private_offsets_begin = 1<<30; // 1GB of original DWARF information should be enough
+	//const Dwarf_Off module_described_by_dwarf::private_offsets_begin = 1<<30; // 1GB of original DWARF information should be enough
 	
 				
 	shared_ptr<type_die> module_described_by_dwarf::existing_dwarf_type(antlr::tree::Tree *t)
@@ -320,6 +320,8 @@ namespace cake
 						}
 					}
 				}
+				// if we got here, we didn't find it
+				return shared_ptr<type_die>();
 			} break;
 			case CAKE_TOKEN(IDENT): {
 				// we resolve the ident and check it resolves to a type
@@ -343,13 +345,13 @@ namespace cake
 			case CAKE_TOKEN(KEYWORD_PTR): {
 				// find the pointed-to type, then find a pointer type pointing to it
 				antlr::tree::Tree *pointed_to = GET_CHILD(t, 0);
-				auto found = existing_dwarf_type(t);
+				auto found_pointed_to = existing_dwarf_type(pointed_to);
 				
 				// special case
 				bool is_void_ptr = (GET_CHILD_COUNT(t) == 1)
 				 && GET_TYPE(GET_CHILD(t, 0)) == CAKE_TOKEN(KEYWORD_VOID);
 				
-				if (found || is_void_ptr)
+				if (found_pointed_to || is_void_ptr)
 				{
 					for (auto i_dfs = get_ds().begin(); i_dfs != get_ds().end(); ++i_dfs)
 					{
@@ -359,9 +361,9 @@ namespace cake
 							 = dynamic_pointer_cast<pointer_type_die>(*i_dfs);
 							assert(as_pointer_type);
 							if (( is_void_ptr && !as_pointer_type->get_type())
-							||  (!is_void_ptr &&  (
+							||  (!is_void_ptr &&  (as_pointer_type->get_type() &&
 									as_pointer_type->get_type()->get_offset()
-									 == found->get_offset())
+									 == found_pointed_to->get_offset())
 								)
 							)
 							{
@@ -370,7 +372,10 @@ namespace cake
 						}
 					}
 				}
-				return found;
+				// if we got here, either 
+				// -- we didn't find the pointed-to type (for non-void), so definitely no pointer type; or
+				// -- we found the pointed-to but not the pointer
+				return shared_ptr<type_die>();
 			}
 			case CAKE_TOKEN(ARRAY): assert(false);
 			case CAKE_TOKEN(KEYWORD_VOID): assert(false); // for now

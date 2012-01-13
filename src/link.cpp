@@ -824,9 +824,23 @@ namespace cake
 					<< " { namespace " << r.module_inverse_tbl[*i] << " {" << endl;
 					
 			wrap_file << "\t#include \"" << (*i)->get_filename() << ".hpp\"" << endl;
+			// also output any extra definitions we have added to the dieset;
+			// these will mainly be typedefs and pointer types
+			for (auto i_die = (*i)->get_ds().find((*i)->greatest_preexisting_offset());
+				i_die != (*i)->get_ds().end();
+				++i_die)
+			{
+				// we skip the first one because we didn't create that one 
+				if (i_die == (*i)->get_ds().find((*i)->greatest_preexisting_offset())) continue;
+				wrap_file << "// FIXME: we seem to have added a DIE of tag " 
+					<< (*i_die)->get_spec().tag_lookup((*i_die)->get_tag()) << ", name "
+					<< ((*i_die)->get_name() ? *(*i_die)->get_name() : "(no name)")
+					<< " at offset 0x" << std::hex << (*i_die)->get_offset() << std::dec << endl;
+			}
+			
 			// also define a marker class, and code to grab a rep_id at init time
 			wrap_file << "\tstruct marker { static int rep_id; }; // used for per-component template specializations" 
-	  				<< endl;
+					<< endl;
 			wrap_file << "\tint marker::rep_id;" << endl;
 			wrap_file << "\tstatic void get_rep_id(void) __attribute__((constructor)); static void get_rep_id(void) { marker::rep_id = next_rep_id++; rep_component_names[marker::rep_id] = \""
 			<< r.module_inverse_tbl[*i] << "\"; }" << endl; // FIXME: C-escape this
@@ -834,22 +848,22 @@ namespace cake
 			wrap_file << "extern \"C\" {" << endl;
 			wrap_file << "\tconst char *__cake_component_" << r.module_inverse_tbl[*i]
 				<< " = ";
-				/* output a bunch of string literals of the form
-				 * <compilation-unit-name>-<full-compil-directory-name>-<compiler-ident> */
-				for (auto i_cu = (*i)->get_ds().toplevel()->compile_unit_children_begin();
-						i_cu != (*i)->get_ds().toplevel()->compile_unit_children_end();
-						++i_cu)
-				{
-					wrap_file << "\t\t\"^" // FIXME: escape these!
-						<< ((*i_cu)->get_name() ? *(*i_cu)->get_name() : "(anonymous)" )
-						<< '^' // FIXME: complain if this char is used elsewhere
-						<< ((*i_cu)->get_comp_dir() ? *(*i_cu)->get_comp_dir(): "(unknown directory)")
-						<< '^'
-						<< ((*i_cu)->get_producer() ? *(*i_cu)->get_producer() : "(unknown producer)")
-						<< "^\""
-						<< endl;
-				}
-				wrap_file << ";" << endl;
+			/* output a bunch of string literals of the form
+			 * <compilation-unit-name>-<full-compil-directory-name>-<compiler-ident> */
+			for (auto i_cu = (*i)->get_ds().toplevel()->compile_unit_children_begin();
+					i_cu != (*i)->get_ds().toplevel()->compile_unit_children_end();
+					++i_cu)
+			{
+				wrap_file << "\t\t\"^" // FIXME: escape these!
+					<< ((*i_cu)->get_name() ? *(*i_cu)->get_name() : "(anonymous)" )
+					<< '^' // FIXME: complain if this char is used elsewhere
+					<< ((*i_cu)->get_comp_dir() ? *(*i_cu)->get_comp_dir(): "(unknown directory)")
+					<< '^'
+					<< ((*i_cu)->get_producer() ? *(*i_cu)->get_producer() : "(unknown producer)")
+					<< "^\""
+					<< endl;
+			}
+			wrap_file << ";" << endl;
 			wrap_file << "} /* end extern \"C\" */" << endl;
 			wrap_file << "} } }" << endl; 
 
@@ -974,7 +988,7 @@ namespace cake
                       //<< "0, " // RuleTag
                       << "true" << ">" // DirectionIsFromSecondToFirst
 << endl << "    {"
-<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default__to___cake_default_in_first;"
+<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_first;"
 << endl << "         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags {"
 << endl << "             __cake_default = 0         "
 << endl << "         }; };"
@@ -990,7 +1004,7 @@ namespace cake
                       //<< "0, " // RuleTag
                       << "false" << ">" // DirectionIsFromFirstToSecond
 << endl << "    {"
-<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default__to___cake_default_in_second;"
+<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_second;"
 << endl << "         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags {"
 << endl << "             __cake_default = 0         "
 << endl << "         }; };"
@@ -1006,7 +1020,7 @@ namespace cake
                       //<< "0, " // RuleTag
                       << "false" << ">" // DirectionIsFromSecondToFirst
 << endl << "    {"
-<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default__to___cake_default_in_first;"
+<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_first;"
 << endl << "         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags {"
 << endl << "             __cake_default = 0         "
 << endl << "         }; };"
@@ -1022,7 +1036,7 @@ namespace cake
                       //<< "0, " // RuleTag
                       << "true" << ">" // DirectionIsFromFirstToSecond
 << endl << "    {"
-<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default__to___cake_default_in_second;"
+<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_second;"
 << endl << "         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags {"
 << endl << "             __cake_default = 0         "
 << endl << "         }; };"
@@ -1110,13 +1124,15 @@ namespace cake
 					(k.source_module == i_pair->first)
 						? (*i_p_corresp)->source_data_type
 						: (*i_p_corresp)->sink_data_type;
-					auto inner_type_synonymy_chain = type_synonymy_chain(outer_type);
+					auto inner_type_synonymy_chain = type_synonymy_chain(inner_type);
 					
 					cerr << "outer type: " << *outer_type
 						<< ", inner type: " << *inner_type
 						<< endl;
 					
    wrap_file << "         // from corresp at " << *i_p_corresp << " " << **i_p_corresp << ", rule " << CCP(TO_STRING_TREE((*i_p_corresp)->corresp)) << endl;
+   wrap_file << "         // inner type name " << (inner_type->get_name() ? *inner_type->get_name() : "(no name)") 
+   				<< ", outer type name " << (outer_type->get_name() ? *outer_type->get_name() : "(no name)")  << endl;
 
 					assert(outer_type_synonymy_chain.size() != 0
 					||    inner_type_synonymy_chain.size() != 0
@@ -1133,10 +1149,10 @@ namespace cake
                                   : (*i_p_corresp)->sink_data_type)
                        << " "
                        << ( (*i_p_corresp)->init_only ? "__init_only_" : "" )
-                       << ((outer_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
+                       << ((outer_type_synonymy_chain.size() == 0) ? "__cake_default" : 
                               *(*outer_type_synonymy_chain.begin())->get_name())
                        << "_to_"
-                       << ((inner_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
+                       << ((inner_type_synonymy_chain.size() == 0) ? "__cake_default" : 
                               *(*inner_type_synonymy_chain.begin())->get_name())
                        << "_in_first;" << endl;
 				}
@@ -1193,14 +1209,20 @@ namespace cake
 						? (*i_p_corresp)->sink_data_type
 						: (*i_p_corresp)->source_data_type;
 					auto outer_type_synonymy_chain = type_synonymy_chain(outer_type);
+					auto outer_type_artificial_tag
+					 = ((outer_type_synonymy_chain.size() == 0) ? "__cake_default" : 
+						*(*outer_type_synonymy_chain.begin())->get_name());
 					
 					// the type to be typedef'd in the struct body
 					shared_ptr<type_die> inner_type = 
 					(k.source_module == i_pair->first)
 						? (*i_p_corresp)->sink_data_type
 						: (*i_p_corresp)->source_data_type;
-					auto inner_type_synonymy_chain = type_synonymy_chain(outer_type);
-					
+					auto inner_type_synonymy_chain = type_synonymy_chain(inner_type);
+					auto inner_type_artificial_tag
+					 = ((inner_type_synonymy_chain.size() == 0) ? "__cake_default" : 
+						*(*inner_type_synonymy_chain.begin())->get_name());
+						
    wrap_file << "         // from corresp at " << *i_p_corresp << " " << **i_p_corresp << ", rule " << CCP(TO_STRING_TREE((*i_p_corresp)->corresp)) << endl;
    wrap_file << "         typedef "
                        << wrap_code.get_type_name(
@@ -1209,11 +1231,9 @@ namespace cake
                                  : (*i_p_corresp)->sink_data_type)
                        << " "
                        << ( (*i_p_corresp)->init_only ? "__init_only_" : "" )
-                       << ((outer_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
-                              *(*outer_type_synonymy_chain.begin())->get_name())
+                       << outer_type_artificial_tag
                        << "_to_"
-                       << ((inner_type_synonymy_chain.size() == 0) ? "__cake_default_" : 
-                              *(*inner_type_synonymy_chain.begin())->get_name())
+                       << inner_type_artificial_tag
                        << "_in_second;" << endl;
 				}
 				// now go round again, outputting the numbering enum
