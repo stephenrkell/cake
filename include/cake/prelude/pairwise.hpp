@@ -26,14 +26,14 @@ extern "C" {
 //        int RuleTag,
         bool DirectionIsFromFirstToSecond
     > struct corresponding_type_to_first <ComponentPair, InFirstIsAPtr*, /*RuleTag, */ DirectionIsFromFirstToSecond>
-    { typedef void *__cake_default__to___cake_default_in_second; }; /* we specialize this for various InSeconds */ 
+    { typedef void *__cake_default_to___cake_default_in_second; }; /* we specialize this for various InSeconds */ 
     template <
         typename ComponentPair, 
         typename InSecondIsAPtr, 
 //        int RuleTag,
         bool DirectionIsFromSecondToFirst
     > struct corresponding_type_to_second<ComponentPair, InSecondIsAPtr*, /*RuleTag, */ DirectionIsFromSecondToFirst> 
-    { typedef void *__cake_default__to___cake_default_in_first; }; /* we specialize this for various InFirsts */ 
+    { typedef void *__cake_default_to___cake_default_in_first; }; /* we specialize this for various InFirsts */ 
 
 namespace cake
 {
@@ -79,7 +79,7 @@ template_head4_map_keyed_on_first_module(InFirstIsAPtr)
 <ComponentPair, InFirstIsAPtr*, /*RuleTag,*/ DirectionIsFromFirstToSecond>
 : public corresponding_type_to_first<ComponentPair, void, /*RuleTag,*/
 	DirectionIsFromFirstToSecond> {
-	typedef void *__cake_default__to___cake_default_in_second;
+	typedef void *__cake_default_to___cake_default_in_second;
          struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags {
 __cake_default = 0         }; };
 };	
@@ -87,7 +87,7 @@ template_head4_map_keyed_on_second_module(InSecondIsAPtr)
 <ComponentPair, InSecondIsAPtr*, /*RuleTag,*/ DirectionIsFromSecondToFirst>
 : public corresponding_type_to_second<ComponentPair, void, /*RuleTag,*/
 	DirectionIsFromSecondToFirst> {
-typedef void *__cake_default__to___cake_default_in_first;
+typedef void *__cake_default_to___cake_default_in_first;
          struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags {
 __cake_default = 0         }; };
 };
@@ -98,7 +98,7 @@ template_head3_map_keyed_on_first_module \
 <ComponentPair, base_type, /*RuleTag,*/ DirectionIsFromFirstToSecond> \
 : public corresponding_type_to_first<ComponentPair, void, /*RuleTag,*/ \
 	DirectionIsFromFirstToSecond> { \
-	typedef base_type __cake_default__to___cake_default_in_second; \
+	typedef base_type __cake_default_to___cake_default_in_second; \
          struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
 __cake_default = 0         }; }; \
 };	 \
@@ -106,7 +106,7 @@ template_head3_map_keyed_on_second_module \
 <ComponentPair, base_type, /*RuleTag,*/ DirectionIsFromSecondToFirst> \
 : public corresponding_type_to_second<ComponentPair, void, /*RuleTag,*/ \
 	DirectionIsFromSecondToFirst> { \
-	typedef base_type __cake_default__to___cake_default_in_first; \
+	typedef base_type __cake_default_to___cake_default_in_first; \
          struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
 __cake_default = 0         }; }; \
 }

@@ -53,7 +53,7 @@ int object_is_live(struct co_object_group *rec);
 void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_rep);
 void init_co_object_from_object(int object_rep, void *object,
 		int co_object_rep, void *co_object);
-void sync_all_co_objects(int from_rep, int to_rep);
+void sync_all_co_objects(int from_rep, int to_rep, ...);
 
 /* object graph walking */
 void walk_bfs(int object_rep, void *object, int co_object_rep,

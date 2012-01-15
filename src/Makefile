@@ -17,7 +17,7 @@ LDLIBS := -lantlr3c
 LDLIBS += -ldwarfpp -ldwarf -lelf
 LDLIBS += -lsrk31c++ -lc++fileno -lboost_filesystem -lboost_regex -lboost_system
 
-CXXFLAGS += -Iparser/include -Iinclude
+CXXFLAGS += -Iparser/include -I../include
 CXXFLAGS += -g3 -O0 -Wall -std=c++0x 
 
 # HACK while various bits of Cake source code are not optimal....

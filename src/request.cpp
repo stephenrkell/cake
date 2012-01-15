@@ -10,26 +10,26 @@
 namespace cake
 {
 	request::request(const char *cakefile, const char *makefile)
-		: 	in_filename(cakefile),
-            in_fileobj(antlr3FileStreamNew(
-                reinterpret_cast<uint8_t*>(
-                    const_cast<char*>(cakefile)), ANTLR3_ENC_UTF8)),
+		:	in_filename(cakefile),
+			in_fileobj(antlr3FileStreamNew(
+				reinterpret_cast<uint8_t*>(
+					const_cast<char*>(cakefile)), ANTLR3_ENC_UTF8)),
 			out_filename(makefile),
 			maybe_out_stream(makefile ? makefile : "/dev/null"),
 			p_out(makefile ? &maybe_out_stream : &std::cout)
-    {
-    	if (!in_fileobj) throw cake::SemanticError("error opening input file");
-		if (!makefile && !maybe_out_stream) cake::SemanticError("error opening output file");
+	{
+		if (!in_fileobj) throw cake::SemanticError("error opening input file");
+		if (!makefile && !maybe_out_stream) throw cake::SemanticError("error opening output file");
 		assert(*p_out);
-    }
+	}
 
 	int request::process()
 	{
-        lexer = cakeCLexerNew(in_fileobj);
-        tokenStream = antlr3CommonTokenStreamSourceNew(ANTLR3_SIZE_HINT, TOKENSOURCE(lexer));
-        parser = cakeCParserNew(tokenStream); 
-        cakeCParser_toplevel_return ret = parser->toplevel(parser);
-        antlr::tree::Tree *tree = ret.tree;
+		lexer = cakeCLexerNew(in_fileobj);
+		tokenStream = antlr3CommonTokenStreamSourceNew(ANTLR3_SIZE_HINT, TOKENSOURCE(lexer));
+		parser = cakeCParserNew(tokenStream); 
+		cakeCParser_toplevel_return ret = parser->toplevel(parser);
+		antlr::tree::Tree *tree = ret.tree;
 		
 		// process the file
 		this->ast = tree;
@@ -53,7 +53,7 @@ namespace cake
 	
 	void request::toplevel()
 	{
-    	// build our tables
+		// build our tables
 		extract_aliases();	
 		//extract_inlines();
 		//build_inlines();
@@ -62,10 +62,10 @@ namespace cake
 		extract_derivations();
 		
 		// topsort derive dependencies
-        
+		
 		// output makerules *and* source code for each derive
 		for (derivation_tbl_t::iterator pd = derivation_tbl.begin(); 
-        	pd != derivation_tbl.end(); pd++)
+			pd != derivation_tbl.end(); pd++)
 		{
 			(*pd)->write_makerules(*p_out);
 		}
@@ -78,20 +78,20 @@ namespace cake
 		FOR_ALL_CHILDREN(ast)
 		{	/* Find all toplevel exists definition */
 			SELECT_ONLY(KEYWORD_EXISTS);
-            add_exists(n);
-        }
-    }
+			add_exists(n);
+		}
+	}
 
 	void request::extract_derivations() 
-    {
-    	INIT;
-    	FOR_ALL_CHILDREN(this->ast)
-        {
-        	SELECT_ONLY(CAKE_TOKEN(KEYWORD_DERIVE));            
-            add_derivation(n);
-        }
-    }
-    
+	{
+		INIT;
+		FOR_ALL_CHILDREN(this->ast)
+		{
+			SELECT_ONLY(CAKE_TOKEN(KEYWORD_DERIVE));			
+			add_derivation(n);
+		}
+	}
+	
 	void request::sort_derivations() {}
 
 }

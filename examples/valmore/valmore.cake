@@ -2,14 +2,14 @@ exists elf_reloc("client.o") client;
 exists elf_reloc("lib.o") lib;
 derive elf_reloc("valmore.o") valmore = link [client, lib]
 {
-    client <--> lib
-    {
+	client <--> lib
+	{
 		/* The point of these rules is to test 
 		 * - initialization rules
 		 * - bidirectional flow of object [references] 
 		 *   i.e. firing of init rules
 		 * - ...? */
-        values gadget <--> gizmo
+		values gadget <--> gizmo
 		{
 			// this rule will fill the unused field on *return*
 			unused <-- 42;
@@ -21,5 +21,5 @@ derive elf_reloc("valmore.o") valmore = link [client, lib]
 			69105 -->? unuzed;
 		};
 		pass(a) --> pass(a);
-    }
+	}
 };

@@ -33,7 +33,7 @@ namespace cake
 		friend class reinterpret_value_conversion;
 		friend class codegen_context;
 	
-        cxx_compiler& compiler;
+        cxx_target& compiler;
         link_derivation& m_d;
         request& m_r;
         indenting_ostream m_out;
@@ -121,6 +121,9 @@ namespace cake
 		);
 		
 		void close_value_conversion();
+		
+		string make_tagstring(optional<string> s)
+		{ assert(!s || *s != ""); return s ? *s : "__cake_default"; }
 		
 		std::vector<
 			pair< 	spec::subprogram_die::formal_parameter_iterator,
@@ -229,7 +232,7 @@ namespace cake
 			bool is_init);
 
     public:
-        wrapper_file(link_derivation& d, cxx_compiler& c, std::ostream& out) 
+        wrapper_file(link_derivation& d, cxx_target& c, std::ostream& out) 
         : 	compiler(c),
         	m_d(d), m_r(d.r), m_out(out), ns_prefix("cake::" + m_d.namespace_name()), 
             binding_count(0) {}

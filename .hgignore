@@ -68,3 +68,6 @@ cake-generated.mk$
 ^libcake/tests/ip$
 ^libcake/tests/stack$
 .*-moved$
+^src/parser/test_parser$
+.*/cake\.log$
+.*/make\.log$

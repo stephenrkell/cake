@@ -25,6 +25,7 @@ extern "C" {
 #include <map>
 #include <set>
 #include <cstdio>
+#include <cstdarg>
 #include <boost/shared_ptr.hpp>
 #include <boost/weak_ptr.hpp>
 #include <boost/make_shared.hpp>
@@ -178,8 +179,38 @@ new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by
 	return group.get();
 }
 
-void sync_all_co_objects(int from_rep, int to_rep)
+void sync_all_co_objects(int from_rep, int to_rep, ...)
 {
+	/* We allow the caller to pass a list of objects (in the from_rep domain) and the
+	 * conversion functions that should be used for them, terminated by "NULL, NULL, NULL".
+	 * How does this interact with the init rule stuff? HMM. The caller is selecting
+	 * a specific function, so the caller should know whether we want to initialize
+	 * or not. BUT the caller is not necessarily in a place to find out! SO the caller
+	 * actually passes *three* arguments: object, conv, init. */
+	
+	struct val
+	{
+		conv_func_t conv;
+		conv_func_t init;
+	};
+	std::map<void*, val> overrides;
+	va_list args;
+	va_start(args, to_rep);
+	void *obj;
+	conv_func_t conv;
+	conv_func_t init;
+	do
+	{
+		obj = va_arg(args, __typeof(obj));
+		conv = va_arg(args, __typeof(conv));
+		init = va_arg(args, __typeof(init));
+		if (obj)
+		{
+			assert(conv && init);
+			overrides[obj] = (struct val) { conv, init };
+		}
+	} while (!(!obj && !conv && !init));
+	 
 	for (auto i_group = groups.begin(); i_group != groups.end(); ++i_group)
 	{
 		if (!i_group->expired())
@@ -188,21 +219,23 @@ void sync_all_co_objects(int from_rep, int to_rep)
 			if (p_group->reps[from_rep] && p_group->reps[to_rep])
 			{
 				/*rep_conv_funcs[from_rep][to_rep][p->form](p->reps[from_rep], p->reps[to_rep]);*/
+				bool is_overridden = (overrides.find(p_group->reps[from_rep]) != overrides.end());
+				
 				if (p_group->co_object_info[to_rep].initialized)
 				{
-					get_rep_conv_func(
+					(is_overridden ? overrides[p_group->reps[from_rep]].conv : get_rep_conv_func(
 						from_rep, to_rep, 
 						p_group->reps[from_rep],
 						p_group->reps[to_rep]
-					)(p_group->reps[from_rep], p_group->reps[to_rep]);
+					))(p_group->reps[from_rep], p_group->reps[to_rep]);
 				}
 				else // not initialized
 				{
-					get_init_func(
+					(is_overridden ? overrides[p_group->reps[from_rep]].init : get_init_func(
 						from_rep, to_rep, 
 						p_group->reps[from_rep],
 						p_group->reps[to_rep]
-					)(p_group->reps[from_rep], p_group->reps[to_rep]);
+					))(p_group->reps[from_rep], p_group->reps[to_rep]);
 					
 					p_group->co_object_info[to_rep].initialized = 1;
 				}

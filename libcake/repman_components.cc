@@ -6,15 +6,15 @@ extern "C"
 	void *components_table;
 	void *component_pairs_table;
 }
+#include "cake/cxx_target.hpp"
 #include "cake/prelude/runtime.hpp"
 
 #include <dwarfpp/spec_adt.hpp>
-#include <dwarfpp/cxx_compiler.hpp>
+#include <dwarfpp/cxx_model.hpp>
 #include <libreflect.hpp>
 #include <map>
 #include <string>
 #include <sstream>
-#include <dwarfpp/spec_adt.hpp>
 
 extern "C"
 {
@@ -25,7 +25,7 @@ int component_pairs_table_inited;
 namespace cake {
 
 //process_image image(-1); // now in libreflect
-dwarf::tool::cxx_compiler compiler(std::vector<std::string>(1, "g++"));
+cake_cxx_target compiler;
 
 }
 

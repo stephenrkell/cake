@@ -7,6 +7,7 @@
 #include "parser.hpp"
 #include "link.hpp"
 #include "wrapsrc.hpp"
+#include "cake/cxx_target.hpp"
 
 using boost::make_shared;
 using boost::dynamic_pointer_cast;
@@ -65,15 +66,14 @@ namespace cake
 	link_derivation::link_derivation(cake::request& r, antlr::tree::Tree *t,
 		const string& id,
 		const string& output_module_filename) 
-	 : 	derivation(r, t), 
-	 	compiler(vector<string>(1, string("g++"))),
-	 	output_namespace("link_" + id + "_"), 
-	 	wrap_file_makefile_name(
+	:	derivation(r, t), 
+		output_namespace("link_" + id + "_"), 
+		wrap_file_makefile_name(
 			boost::filesystem::path(id + "_wrap.cpp").string()),
-	 	wrap_file_name((boost::filesystem::path(r.in_filename).branch_path() 
+		wrap_file_name((boost::filesystem::path(r.in_filename).branch_path() 
 				/ wrap_file_makefile_name).string()),
-	 	wrap_file(wrap_file_name.c_str()),
-	 	p_wrap_code(new wrapper_file(*this, compiler, wrap_file)), wrap_code(*p_wrap_code)
+		wrap_file(wrap_file_name.c_str()),
+		p_wrap_code(new wrapper_file(*this, compiler, wrap_file)), wrap_code(*p_wrap_code)
 	{
 		/* Add a derived module to the module table, and keep the pointer. */
 		assert(r.module_tbl.find(output_module_filename) == r.module_tbl.end());
@@ -381,7 +381,7 @@ namespace cake
 							struct pattern_info
 							{
 								vector<optional<string> > call_argnames;
-								vector<optional<antlr::tree::Tree *> > call_interps;
+								vector<antlr::tree::Tree *> call_interps;
 								antlr::tree::Tree *pattern;
 								ev_corresp *corresp;
 							};
@@ -428,7 +428,7 @@ namespace cake
 											BIND3(p, eventCountPredicate, EVENT_COUNT_PREDICATE);
 											BIND3(p, eventParameterNamesAnnotation, KEYWORD_NAMES);
 											vector<optional<string> > argnames;
-											vector<optional<antlr::tree::Tree *> > interps;
+											vector<antlr::tree::Tree *> interps;
 											auto dmn = read_definite_member_name(memberNameExpr);
 											if (subprogram->get_name() && dmn.size() == 1 
 												&& dmn.at(0) == *subprogram->get_name())
@@ -459,8 +459,7 @@ namespace cake
 																argnames.push_back(s.str());
 																cerr << "Pushed an argument name: " 
 																	<< s.str() << endl;
-																interps.push_back(interpretation ? 
-																	interpretation : 0);
+																interps.push_back(interpretation);
 																break;
 															}
 															case CAKE_TOKEN(KEYWORD_CONST):
@@ -566,7 +565,7 @@ namespace cake
 									// This is the third-best way. 
 									// So don't spend too much time on it.
 									
-									vector<optional<antlr::tree::Tree *> >::iterator i_interp
+									vector<antlr::tree::Tree *>::iterator i_interp
 									 =  i_pattern->second.call_interps.begin();
 									auto i_fp = subprogram->formal_parameter_children_begin();
 									for (auto i_arg = i_pattern->second.call_argnames.begin();
@@ -584,7 +583,7 @@ namespace cake
 											 * - the type AST explicitly defines a type that doesn't currently exist in DWARF info;
 											 * - the type is an ident which should become an artificial 
 											 **/
-											BIND2(**i_interp, dwarfType);
+											BIND2(*i_interp, dwarfType);
 											// FIXME: pay attention to the kind (as, in_as, out_as)
 											// of the interpretation
 											auto existing = i_mod->second->existing_dwarf_type(dwarfType);
@@ -832,10 +831,47 @@ namespace cake
 			{
 				// we skip the first one because we didn't create that one 
 				if (i_die == (*i)->get_ds().find((*i)->greatest_preexisting_offset())) continue;
-				wrap_file << "// FIXME: we seem to have added a DIE of tag " 
-					<< (*i_die)->get_spec().tag_lookup((*i_die)->get_tag()) << ", name "
-					<< ((*i_die)->get_name() ? *(*i_die)->get_name() : "(no name)")
-					<< " at offset 0x" << std::hex << (*i_die)->get_offset() << std::dec << endl;
+				
+				// now output something if we know how
+				switch((*i_die)->get_tag())
+				{
+					case DW_TAG_pointer_type: {
+						string name_to_use
+						 = (*i_die)->get_name() 
+						 ? compiler.cxx_name_from_string(*(*i_die)->get_name(), "_dwarfhpp_") 
+						 : compiler.create_ident_for_anonymous_die(*i_die);
+
+						if (!dynamic_pointer_cast<spec::pointer_type_die>(*i_die)->get_type())
+						{
+							wrap_file << "typedef void *" 
+								<< compiler.protect_ident(name_to_use) 
+								<< ";" << endl;
+						}
+						else 
+						{
+							wrap_file << compiler.make_typedef(
+								dynamic_pointer_cast<spec::type_die>(*i_die),
+								name_to_use
+							) << endl;
+						}
+					}
+					break;
+					case DW_TAG_typedef:
+						wrap_file << compiler.make_typedef(
+							dynamic_pointer_cast<spec::typedef_die>(*i_die),
+							(*i_die)->get_name() 
+							? *(*i_die)->get_name()
+							: compiler.create_ident_for_anonymous_die(*i_die)
+						) << endl;
+					break;
+					default:
+						wrap_file << "// FIXME: we seem to have added a DIE of tag " 
+							<< (*i_die)->get_spec().tag_lookup((*i_die)->get_tag()) << ", name "
+							<< ((*i_die)->get_name() ? *(*i_die)->get_name() : "(no name)")
+							<< " at offset 0x" << std::hex << (*i_die)->get_offset() << std::dec << endl;
+					break;
+				}
+				
 			}
 			
 			// also define a marker class, and code to grab a rep_id at init time

@@ -37,11 +37,15 @@ namespace cake
 		//shared_ptr<with_type_describing_layout_die> dwarf_origin;
 		
 		/** The key used to look up value conversion. This is the name of a top-level typedef 
-		 *  in the module, or an artificial typename used in Cake source code. It should always
-		 *  have a non-empty value -- the default is "__cake_default". */
-		string local_tagstring;
+		 *  in the module, or an artificial typename used in Cake source code. */
+		optional<string> local_tagstring;
 		/** Similar, but for remote uses. */
-		string remote_tagstring;
+		optional<string> remote_tagstring;
+		
+		optional<string> indirect_local_tagstring_in;
+		optional<string> indirect_local_tagstring_out;
+		optional<string> indirect_remote_tagstring_in;
+		optional<string> indirect_remote_tagstring_out;
 	};
 	//typedef std::map<std::string, bound_var_info> environment;
 	struct environment : public map<string, bound_var_info>

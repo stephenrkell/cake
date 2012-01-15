@@ -4,8 +4,9 @@
 #include <fstream>
 #include <set>
 #include <unordered_map>
-#include <dwarfpp/cxx_compiler.hpp>
+#include <dwarfpp/cxx_model.hpp>
 #include <boost/iterator/filter_iterator.hpp>
+#include "cake/cxx_target.hpp"
 #include "request.hpp"
 #include "parser.hpp"
 #include "valconv.hpp"
@@ -27,28 +28,29 @@ namespace cake {
 	using boost::optional;
 	using namespace dwarf;
 	using dwarf::spec::type_die;
+	using dwarf::tool::cxx_target;
 	
 	class link_derivation : public derivation
 	{
 		friend class wrapper_file;
-        tool::cxx_compiler compiler;
-    public:
-    	typedef pair<module_ptr,module_ptr> iface_pair;
-        string name_of_module(module_ptr m) { return this->r.module_inverse_tbl[m]; }
-        module_ptr module_for_dieset(spec::abstract_dieset& ds)
-        { 
-            for (auto i_mod = r.module_tbl.begin(); i_mod != r.module_tbl.end(); i_mod++)
-            {
-            	if (&i_mod->second->get_ds() == &ds) return i_mod->second;
-            }
-            assert(false);
-    	}
+		cake_cxx_target compiler;
+	public:
+		typedef pair<module_ptr,module_ptr> iface_pair;
+		string name_of_module(module_ptr m) { return this->r.module_inverse_tbl[m]; }
+		module_ptr module_for_dieset(spec::abstract_dieset& ds)
+		{ 
+			for (auto i_mod = r.module_tbl.begin(); i_mod != r.module_tbl.end(); i_mod++)
+			{
+				if (&i_mod->second->get_ds() == &ds) return i_mod->second;
+			}
+			assert(false);
+		}
 	private:
 		typedef srk31::conjoining_iterator<
 			encap::compile_unit_die::subprogram_iterator>
 				subprograms_in_file_iterator;
 		// ^-- this will give us all subprograms, even static / non-visible ones...
-		// ... so push the visibility test into these predicats too --v
+		// ... so push the visibility test into these predicates too --v
 		
 		struct is_visible : public unary_function<shared_ptr<spec::subprogram_die>, bool>
 		{

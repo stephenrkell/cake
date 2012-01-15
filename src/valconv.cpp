@@ -707,18 +707,14 @@ namespace cake
 					"__cake_nonconst_from" + *unique_source_field_selector, // cxx name
 					"__cake_nonconst_from" + *unique_source_field_selector, // typeof
 					source_module,
-					false,
-					"__cake_default",
-					"__cake_default"
+					false
 				}));
 			extra_env.insert(make_pair("__cake_here",
 				(wrapper_file::bound_var_info) {
 					"&__cake_from" + *unique_source_field_selector, // cxx name
 					"&__cake_nonconst_from" + *unique_source_field_selector, // typeof
 					source_module,
-					false,
-					"__cake_default"
-					"__cake_default"
+					false
 				}));
 		}
 		// we always have a "there"
@@ -727,9 +723,7 @@ namespace cake
 				"&((*__cake_p_buf)" + target_field_selector + ")", // cxx name
 				"&((*__cake_p_buf)" + target_field_selector + ")", // typeof
 				source_module,
-				false,
-				"__cake_default",
-				"__cake_default"
+				false
 			}));
 
 		// compute the merged environment
@@ -755,9 +749,7 @@ namespace cake
 				status1.result_fragment,
 				status1.result_fragment,  //shared_ptr<type_die>(),
 				ctxt.modules.source,
-				false,
-				"__cake_default",
-				"__cake_default"
+				false
 			};
 		// the semantics of "that" mean that we have to remember this value
 		assert(extended_env1.find("__cake_it") != extended_env1.end());
@@ -776,9 +768,7 @@ namespace cake
 						status2.result_fragment,
 						status2.result_fragment,  //shared_ptr<type_die>(),
 						ctxt.modules.source,
-						false,
-						"__cake_default",
-						"__cake_default"
+						false
 					};
 		}
 		// stash the result in the basic env
@@ -835,9 +825,7 @@ namespace cake
 					"&__cake_nonconst_from" + *unique_source_field_selector, // cxx name
 					"&__cake_nonconst_from" + *unique_source_field_selector, // typeof
 					target_module,
-					false,
-					"__cake_default",
-					"__cake_default"
+					false
 				}));
 		} 
 
@@ -847,9 +835,7 @@ namespace cake
 				"&((*__cake_p_buf)" + target_field_selector + ")", // cxx name
 				"&((*__cake_p_buf)" + target_field_selector + ")", // typeof
 				target_module,
-				false,
-				"__cake_default",
-				"__cake_default"
+				false
 			}));
 		// we should have "it" in the environment, just from crossover
 		assert(ctxt.env.find("__cake_it") != ctxt.env.end());
@@ -866,9 +852,7 @@ namespace cake
 					status3.result_fragment,
 					status3.result_fragment,  //shared_ptr<type_die>(),
 					ctxt.modules.sink,
-					false,
-					"__cake_default",
-					"__cake_default"
+					false
 				};
 		}
 
@@ -960,9 +944,7 @@ namespace cake
 					string("__cake_nonconst_from.") + *(*i_field)->get_name(), // cxx name
 					"__cake_nonconst_from." + *(*i_field)->get_name(), // typeof
 					source_module,
-					true, // do not crossover!
-					"__cake_default",
-					"__cake_default"
+					true // do not crossover!
 				}));
 		}
 		// environment complete for now; create a context out of this environment
