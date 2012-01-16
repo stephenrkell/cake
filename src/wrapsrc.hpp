@@ -101,17 +101,39 @@ namespace cake
 			const environment& env,
 			const environment& new_bindings
 			);
-		environment crossover_environment(
+		environment crossover_environment_and_sync(
 			module_ptr old_module_context,
 			const environment& env,
 			module_ptr new_module_context,
-			const std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& constraints
+			const std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& constraints,
+			bool outward,
+			bool do_not_sync = false
 			);
 
+		struct value_conversion_params_t
+		{
+			string from_typestring;
+			string to_typestring;
+			string from_component_class;
+			string to_component_class;
+			string rule_tag_str;
+		};
+		value_conversion_params_t resolve_value_conversion_params(
+			link_derivation::iface_pair ifaces_context,
+			const binding& source_binding,
+			bool is_indirect,
+			shared_ptr<spec::type_die> from_type, // most precise
+			shared_ptr<spec::type_die> to_type, 
+			optional<string> from_typeof = optional<string>(), // mid-precise
+			optional<string> to_typeof = optional<string>(),
+			module_ptr from_module = module_ptr(),
+			module_ptr to_module = module_ptr()
+		);		
 		void open_value_conversion(
 			link_derivation::iface_pair ifaces_context,
 			//int rule_tag,
 			const binding& source_binding,
+			bool is_indirect,
 			shared_ptr<spec::type_die> from_type, // most precise
 			shared_ptr<spec::type_die> to_type, 
 			optional<string> from_typeof = optional<string>(), // mid-precise
@@ -119,8 +141,18 @@ namespace cake
 			module_ptr from_module = module_ptr(),
 			module_ptr to_module = module_ptr()
 		);
-		
 		void close_value_conversion();
+		string make_value_conversion_funcname(
+			link_derivation::iface_pair ifaces_context,
+			const binding& source_binding,
+			bool is_indirect,
+			shared_ptr<spec::type_die> from_type, // most precise
+			shared_ptr<spec::type_die> to_type, 
+			optional<string> from_typeof = optional<string>(), // mid-precise
+			optional<string> to_typeof = optional<string>(),
+			module_ptr from_module = module_ptr(),
+			module_ptr to_module = module_ptr()
+		);
 		
 		string make_tagstring(optional<string> s)
 		{ assert(!s || *s != ""); return s ? *s : "__cake_default"; }

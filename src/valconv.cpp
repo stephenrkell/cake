@@ -29,6 +29,11 @@ namespace cake
 	{ return w.ns_prefix + "::" + w.m_d.name_of_module(source); }
 	string value_conversion::sink_fq_namespace() const
 	{ return w.ns_prefix + "::" + w.m_d.name_of_module(sink); }
+	link_derivation::iface_pair
+	codegen_context::get_ifaces() const
+	{
+		return derivation.sorted(make_pair(modules.source, modules.sink));
+	}
 	
 	shared_ptr<value_conversion> create_value_conversion(module_ptr source,
             shared_ptr<dwarf::spec::type_die> source_data_type,
@@ -796,9 +801,10 @@ namespace cake
 		// crossover point
 		ctxt.modules.current = target_module;
 		m_out << "// source->sink crossover point" << endl;
-		auto crossed_env = w.crossover_environment(source_module, basic_env, target_module, 
+		auto crossed_env = w.crossover_environment_and_sync(
+			source_module, basic_env, target_module, 
 			/* no constraints */ 
-			std::multimap< string, shared_ptr<type_die> >());
+			std::multimap< string, shared_ptr<type_die> >(), true, true);
 
 		// always start with crossed-over environment
 		ctxt.env = crossed_env;

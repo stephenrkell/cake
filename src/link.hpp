@@ -9,7 +9,6 @@
 #include "cake/cxx_target.hpp"
 #include "request.hpp"
 #include "parser.hpp"
-#include "valconv.hpp"
 
 namespace cake {
 	using std::string;
@@ -29,6 +28,9 @@ namespace cake {
 	using namespace dwarf;
 	using dwarf::spec::type_die;
 	using dwarf::tool::cxx_target;
+	
+	class wrapper_file;
+	class value_conversion;
 	
 	class link_derivation : public derivation
 	{
@@ -204,7 +206,7 @@ namespace cake {
 			module_ptr corresp_module,
 			bool flow_from_type_module_to_corresp_module);
 		
-		void merge_guessed_argument_info_at_callsites();
+		void merge_implicit_dwarf_info();
 		
 		void 
 		find_type_expectations_in_stub(module_ptr module,

@@ -526,25 +526,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				sink, sink_infix_stub, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
 			m_d.find_type_expectations_in_stub(
 				sink, action, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
-			auto tmp_env = crossover_environment(source, new_env1, sink, constraints);
-			m_out << "sync_all_co_objects(REP_ID(" << m_d.name_of_module(source)
-				<< "), REP_ID(" << m_d.name_of_module(sink) << "), ";
-			// for each binding that is being crossed over, and that has an indirect tagstring,
-			// we add it to the list
-			for (auto i_binding = ctxt.env.begin(); i_binding != ctxt.env.end(); ++i_binding)
-			{
-				if (i_binding->second.indirect_local_tagstring_in
-					|| i_binding->second.indirect_remote_tagstring_in)
-				{
-					m_out << "// FIXME: override for binding " << i_binding->first << endl;
-					// NOTE that whether ther actually *is* an effective override
-					// depends on whether the rule tag selected by the two tagstrings
-					// actually is different from the default -- and a similar for init
-				}
-			}
-			ctxt.env = tmp_env;
-			m_out << "NULL, NULL, NULL);" << std::endl;
-			// -- we need to modify the environment:
+			ctxt.env = crossover_environment_and_sync(source, new_env1, sink, constraints, true);
 
 			// FIXME: here goes the post-arrow infix stub
 			auto status2 = 
@@ -588,21 +570,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 			
 			// crossover point
 			m_out << "// source<-sink crossover point" << std::endl;
-			m_out << "sync_all_co_objects(REP_ID(" << m_d.name_of_module(sink)
-				<< "), REP_ID(" << m_d.name_of_module(source) << "), ";
-			for (auto i_binding = ctxt.env.begin(); i_binding != ctxt.env.end(); ++i_binding)
-			{
-				if (i_binding->second.indirect_local_tagstring_out
-					|| i_binding->second.indirect_remote_tagstring_out)
-				{
-					m_out << "// FIXME: override for binding " << i_binding->first << endl;
-					// NOTE that whether ther actually *is* an effective override
-					// depends on whether the rule tag selected by the two tagstrings
-					// actually is different from the default -- and a similar for init
-				}
-			}
-			m_out << "NULL, NULL, NULL);" << std::endl;
-			ctxt.modules.current = ctxt.modules.source;
 			// update environment
 			std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> > 
 				return_constraints;
@@ -632,7 +599,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 					m_out << "// crossover logic thinks there's no return value" << std::endl;
 				}
 			}
-			ctxt.env = crossover_environment(sink, new_env3, source, return_constraints);
+
+			ctxt.modules.current = ctxt.modules.source;
+			ctxt.env = crossover_environment_and_sync(sink, new_env3, source, return_constraints, false);
 			
 			std::string final_success_fragment = status3.success_fragment;
 			
@@ -713,11 +682,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 	}
 
 	wrapper_file::environment 
-	wrapper_file::crossover_environment(
+	wrapper_file::crossover_environment_and_sync(
 		module_ptr old_module,
 		const environment& env,
 		module_ptr new_module,
-		const std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& constraints
+		const std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& constraints,
+		bool outward,
+		bool do_not_sync /* = false */
 		)
 	{
 		/* Here we:
@@ -773,6 +744,61 @@ assert(false && "disabled support for inferring positional argument mappings");
 		for (auto i_binding = env.begin(); i_binding != env.end(); ++i_binding)
 		{
 			bindings_by_cxxname[i_binding->second.cxx_name].insert(i_binding->first);
+		}
+
+		// if inward, do the sync here
+		if (!outward && !do_not_sync)
+		{
+			m_out << "sync_all_co_objects(REP_ID(" << m_d.name_of_module(old_module)
+				<< "), REP_ID(" << m_d.name_of_module(new_module) << "), ";
+			for (auto i_cxxname = bindings_by_cxxname.begin(); 
+				i_cxxname != bindings_by_cxxname.end(); ++i_cxxname)
+			{
+				// now we have a group of bindings
+				assert(i_cxxname->second.begin() != i_cxxname->second.end());
+				environment::iterator i_binding = new_env.end();;
+				// search for the corresponding bound name to this cxxname
+				for (auto i_cakename = i_cxxname->second.begin();
+					i_cakename != i_cxxname->second.end();
+					++i_cakename)
+				{
+					auto found = new_env.find(*i_cakename);
+					if (found != new_env.end()) 
+					{
+						i_binding = found;
+						break;
+					}
+					else cerr << "cakename " << *i_cakename 
+						<< " of cxxname " << i_cxxname->first 
+						<< " not found in the new environment" << endl;
+				}
+				// some Cake names, like "__cake_it", will not be in the new env? hm.
+				if (i_binding == new_env.end()) continue;
+				
+				if (i_binding->second.indirect_local_tagstring_out
+					|| i_binding->second.indirect_remote_tagstring_out)
+				{
+					m_out << "// override for binding " << i_binding->first << endl;
+					// NOTE that whether ther actually *is* an effective override
+					// depends on whether the rule tag selected by the two tagstrings
+					// actually is different from the default -- and a similar for init
+					auto funcname = make_value_conversion_funcname(
+							link_derivation::sorted(make_pair(old_module, new_module)),
+							*i_binding,
+							true,
+							shared_ptr<spec::type_die>(),
+							shared_ptr<spec::type_die>(),
+							"*" + i_binding->first, // NOTE: relies on static typing!
+							optional<string>(),
+							old_module,
+							new_module);
+					m_out << i_binding->second.cxx_name << ", " << funcname << ", " << funcname << ", ";
+					// NOTE that whether ther actually *is* an effective override
+					// depends on whether the rule tag selected by the two tagstrings
+					// actually is different from the default -- and a similar for init
+				}
+			}
+			m_out << "NULL, NULL, NULL);" << std::endl;
 		}
 		
 		// for each unique cxxname...
@@ -945,6 +971,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				link_derivation::sorted(new_module, i_first_binding->second.valid_in_module),
 				//rule_tag, // defaults to 0, but may have been set above
 				*i_first_binding, // from_artificial_tagstring is in our binding -- easy
+				false,
 				boost::shared_ptr<dwarf::spec::type_die>(), // no precise from type
 				precise_to_type, // defaults to "no precise to type", but may have been set above
 				(is_a_pointer ? std::string("((void*)0)") : *collected_cxx_typeof), // from typeof
@@ -1027,6 +1054,46 @@ assert(false && "disabled support for inferring positional argument mappings");
 				<< ")" << std::endl;
 		}
 		m_out << "*/" << std::endl;
+		
+		// do the crossover here
+		if (outward && !do_not_sync)
+		{
+			m_out << "sync_all_co_objects(REP_ID(" << m_d.name_of_module(old_module)
+				<< "), REP_ID(" << m_d.name_of_module(new_module) << "), ";
+			// for each binding that is being crossed over, and that has an indirect tagstring,
+			// we add it to the list
+			// NOTE: we use the *old* env!
+			for (auto i_cxxname = bindings_by_cxxname.begin(); 
+				i_cxxname != bindings_by_cxxname.end(); ++i_cxxname)
+			{
+				// now we have a group of bindings
+				// HACK: just look at the first one, for now
+				assert(i_cxxname->second.begin() != i_cxxname->second.end());
+				auto i_binding = env.find(*i_cxxname->second.begin());
+				assert(i_binding != env.end());
+				
+				if (i_binding->second.indirect_local_tagstring_out
+					|| i_binding->second.indirect_remote_tagstring_out)
+				{
+					m_out << "// override for binding " << i_binding->first << endl;
+					// NOTE that whether ther actually *is* an effective override
+					// depends on whether the rule tag selected by the two tagstrings
+					// actually is different from the default -- and a similar for init
+					auto funcname = make_value_conversion_funcname(
+							link_derivation::sorted(make_pair(old_module, new_module)),
+							*i_binding,
+							true,
+							shared_ptr<spec::type_die>(),
+							shared_ptr<spec::type_die>(),
+							"*" + i_binding->first, // NOTE: requires precise static typing
+							optional<string>(),
+							old_module,
+							new_module);
+					m_out << i_binding->second.cxx_name << ", " << funcname << ", " << funcname << ", ";
+				}
+			}
+			m_out << "NULL, NULL, NULL);" << std::endl;
+		}
 		
 		return new_env;
 	}
@@ -1206,52 +1273,79 @@ assert(false && "disabled support for inferring positional argument mappings");
 							 = (*i_caller_arg)->get_type() && 
 							   (*i_caller_arg)->get_type()->get_concrete_type()->get_tag() 
 							     == DW_TAG_pointer_type;
-							shared_ptr<type_die> artificial_type;
+							shared_ptr<type_die> interpretation_target_type;
 							if (GET_CHILD_COUNT(valuePattern) > 1)
 							{
 								BIND2(valuePattern, interpretation); assert(interpretation);
-								artificial_type = source_module->ensure_dwarf_type(
+								interpretation_target_type = source_module->ensure_dwarf_type(
 									GET_CHILD(interpretation, 0));
+								bool use_artificial;
+								if (interpretation_target_type->get_unqualified_type()
+									== interpretation_target_type->get_concrete_type())
+								{
+									// this means it's a NOT a typedef
+									use_artificial = false;
+								} else use_artificial = true;
 								switch (GET_TYPE(interpretation))
 								{
 									/* We want to resolve the named type, and be sensitive
 									 * to whether the pattern is referring to a pointer or
 									 * not. */
 									case CAKE_TOKEN(KEYWORD_AS):
-									case CAKE_TOKEN(KEYWORD_INTERPRET_AS): 
-										assert(artificial_type);
+									case CAKE_TOKEN(KEYWORD_INTERPRET_AS):  {
+										assert(interpretation_target_type);
+										// we only set the tagstrings if the interpretation
+										// is directing us to a non-concrete type
+										// (cf. just an annotation)
+
+										// ... even then, if there is no special behaviour
+										// defined for this typedef, we should not generate
+										// any different behaviour (but will still use the
+										// tagstring, and hope it's equivalent to __cake_default).
+										
 										// if this created a pointer type,
 										// and we were not declared as a pointer,
 										// it means the parameter really is a pointer
 										// and we should use the indirect string
-										if (artificial_type->get_concrete_type()->get_tag()
+										if (interpretation_target_type->get_concrete_type()->get_tag()
 										     == DW_TAG_pointer_type)
 										{
 											if (!refers_to_pointer) refers_to_pointer = true;
 											auto pointed_to_type = 
 												dynamic_pointer_cast<pointer_type_die>(
-													artificial_type->get_concrete_type()
+													interpretation_target_type->get_concrete_type()
 													)->get_type();
 											assert(pointed_to_type);
 											auto pointed_to_typename = pointed_to_type->get_name();
 											assert(pointed_to_typename);
-											indirect_local_tagstring_in = 
+											// we only set the tagstrings if the interpretation
+											// is directing us to a non-concrete type. 
+											if (use_artificial) indirect_local_tagstring_in = 
 												indirect_local_tagstring_out = 
 													*pointed_to_typename;
 										}
-										else local_tagstring = *artificial_type->get_name();
-										break;
+										else if (use_artificial) local_tagstring
+										 = *interpretation_target_type->get_name();
+									} break;
 									case CAKE_TOKEN(KEYWORD_IN_AS):
-										assert(artificial_type->get_concrete_type()->get_tag()
+										assert(interpretation_target_type->get_concrete_type()->get_tag()
 											== DW_TAG_pointer_type);
-										assert(artificial_type->get_name());
-										indirect_local_tagstring_in = *artificial_type->get_name();
+										assert(interpretation_target_type->get_name());
+										if (use_artificial)
+										{ 
+											indirect_local_tagstring_in
+											 = *interpretation_target_type->get_name(); 
+										}
 										break;
 									case CAKE_TOKEN(KEYWORD_OUT_AS):
-										assert(artificial_type->get_concrete_type()->get_tag()
+										assert(interpretation_target_type->get_concrete_type()->get_tag()
 											== DW_TAG_pointer_type);
-										assert(artificial_type->get_name());
-										indirect_local_tagstring_out = *artificial_type->get_name();
+										assert(interpretation_target_type->get_name());
+										if (use_artificial) 
+										{
+											indirect_local_tagstring_out
+											 = *interpretation_target_type->get_name();
+										}
 										break;
 									default: assert(false);
 								}
@@ -1495,35 +1589,37 @@ assert(false && "disabled support for inferring positional argument mappings");
 // 	}
 
 	module_ptr 
-    wrapper_file::module_of_die(boost::shared_ptr<dwarf::spec::basic_die> p_d)
-    {
-    	//return dynamic_cast<module_described_by_dwarf&>(p_d->get_ds()).shared_this();
-        return m_d.module_for_dieset(p_d->get_ds());
-    }
+	wrapper_file::module_of_die(boost::shared_ptr<dwarf::spec::basic_die> p_d)
+	{
+		//return dynamic_cast<module_described_by_dwarf&>(p_d->get_ds()).shared_this();
+		return m_d.module_for_dieset(p_d->get_ds());
+	}
 
-    std::string 
-    wrapper_file::get_type_name(
-            boost::shared_ptr<dwarf::spec::type_die> t)
-    {
-    	const std::string& namespace_prefix
-         = ns_prefix + "::" + m_d.name_of_module(module_of_die(t));
-         
+	std::string 
+	wrapper_file::get_type_name(
+			boost::shared_ptr<dwarf::spec::type_die> t)
+	{
+		const std::string& namespace_prefix
+		 = ns_prefix + "::" + m_d.name_of_module(module_of_die(t));
+		 
 		return /*m_out <<*/ ((t->get_tag() == DW_TAG_base_type) ?
-        	compiler.local_name_for(t)
-            : (namespace_prefix + "::" + compiler.fq_name_for(t)));
-    }
-    
-	void wrapper_file::open_value_conversion(
+			compiler.local_name_for(t)
+			: (namespace_prefix + "::" + compiler.fq_name_for(t)));
+	}
+	
+	wrapper_file::value_conversion_params_t
+	wrapper_file::resolve_value_conversion_params(
 		link_derivation::iface_pair ifaces,
 		//int rule_tag,
 		const binding& source_binding,
+		bool is_indirect,
 		boost::shared_ptr<dwarf::spec::type_die> from_type, // most precise
 		boost::shared_ptr<dwarf::spec::type_die> to_type, 
 		boost::optional<std::string> from_typeof /* = boost::optional<std::string>()*/, // mid-precise
 		boost::optional<std::string> to_typeof/* = boost::optional<std::string>()*/,
 		module_ptr from_module/* = module_ptr()*/,
 		module_ptr to_module/* = module_ptr()*/)
-    {
+	{
 		assert((from_type || from_module)
 			&& (to_type || to_module));
 		// fill in less-precise info from more-precise
@@ -1560,9 +1656,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 		 * only way? If they give us a typestring (typeof),
 		 * it might denote a typedef too. */
 		optional<string> from_artificial_tagstring = 
-			source_binding.second.local_tagstring;
+			is_indirect 
+			? source_binding.second.indirect_local_tagstring_in // FIXME: handle "out"
+			: source_binding.second.local_tagstring;
 		optional<string> to_artificial_tagstring = 
-			source_binding.second.remote_tagstring;
+			is_indirect
+			? source_binding.second.indirect_remote_tagstring_in // FIXME: handle "out"
+			: source_binding.second.remote_tagstring;
 		
 // 		if (from_type)
 // 		{
@@ -1746,13 +1846,13 @@ assert(false && "disabled support for inferring positional argument mappings");
             //m_out << "::value_convert_from_first_to_second< " 
             ///<< to_typestring //(" ::cake::unspecified_wordsize_type" )
             //<< ", " << rule_tag << ">(";
-			m_out << "::cake::value_convert<" << std::endl
-				<< "\t/* from type: */ " << from_typestring << ", " << std::endl
-				<< "\t/* to type: */ " << to_typestring << ", " << std::endl
-				<< "\t/* FromComponent: */ " << ns_prefix + "::" + m_d.name_of_module(from_module) << "::marker," << std::endl
-				<< "\t/* ToComponent: */ " << ns_prefix + "::" + m_d.name_of_module(to_module) << "::marker, " << std::endl
-				<< "\t/* rule tag: */ " << rule_tag_str << std::endl
-				<<  ">()(";
+			return (value_conversion_params_t) { 
+				from_typestring,
+				to_typestring,
+				ns_prefix + "::" + m_d.name_of_module(from_module) + "::marker",
+				ns_prefix + "::" + m_d.name_of_module(to_module) + "::marker",
+				rule_tag_str
+			};
 //             }
 //             else 
 //             {
@@ -1765,23 +1865,86 @@ assert(false && "disabled support for inferring positional argument mappings");
 //             }
 //        }
     }
-    
-    void wrapper_file::close_value_conversion()
-    {
+	
+	void
+	wrapper_file::open_value_conversion(
+		link_derivation::iface_pair ifaces,
+		//int rule_tag,
+		const binding& source_binding,
+		bool is_indirect,
+		boost::shared_ptr<dwarf::spec::type_die> from_type, // most precise
+		boost::shared_ptr<dwarf::spec::type_die> to_type, 
+		boost::optional<std::string> from_typeof /* = boost::optional<std::string>()*/, // mid-precise
+		boost::optional<std::string> to_typeof/* = boost::optional<std::string>()*/,
+		module_ptr from_module/* = module_ptr()*/,
+		module_ptr to_module/* = module_ptr()*/)
+	{
+		auto params = resolve_value_conversion_params(
+			ifaces,
+			source_binding,
+			is_indirect,
+			from_type,
+			to_type,
+			from_typeof,
+			to_typeof,
+			from_module,
+			to_module
+		);
+		m_out << "::cake::value_convert<" << std::endl
+			<< "\t/* from type: */ " << params.from_typestring << ", " << std::endl
+			<< "\t/* to type: */ " << params.to_typestring << ", " << std::endl
+			<< "\t/* FromComponent: */ " << params.from_component_class << ", " << std::endl
+			<< "\t/* ToComponent: */ " << params.to_component_class << ", " << std::endl
+			<< "\t/* rule tag: */ " << params.rule_tag_str << std::endl
+			<<  ">()(";
+	}
+	string wrapper_file::make_value_conversion_funcname(
+		link_derivation::iface_pair ifaces,
+		const binding& source_binding,
+		bool is_indirect,
+		shared_ptr<spec::type_die> from_type, // most precise
+		shared_ptr<spec::type_die> to_type, 
+		optional<string> from_typeof /* = optional<string>() */, // mid-precise
+		optional<string> to_typeof /* = optional<string>() */,
+		module_ptr from_module /* = module_ptr() */,
+		module_ptr to_module /* = module_ptr() */
+	)
+	{
+		auto params = resolve_value_conversion_params(
+			ifaces,
+			source_binding,
+			is_indirect,
+			from_type,
+			to_type,
+			from_typeof,
+			to_typeof,
+			from_module,
+			to_module
+		);
+		return string("::cake::value_convert_function<") + "\n"
+			+ "\t/* from type: */ " + params.from_typestring + ", " + "\n"
+			+ "\t/* to type: */ " + params.to_typestring + ", " + "\n"
+			+ "\t/* FromComponent: */ " + params.from_component_class + ", " + "\n"
+			+ "\t/* ToComponent: */ " + params.to_component_class + ", " + "\n"
+			+ "\t/* rule tag: */ " + params.rule_tag_str + "\n"
+			+ ">";
+	}
+
+	void wrapper_file::close_value_conversion()
+	{
 		m_out << ")";
 	}
-    
-    std::string wrapper_file::component_pair_classname(link_derivation::iface_pair ifaces_context)
-    {
+
+	std::string wrapper_file::component_pair_classname(link_derivation::iface_pair ifaces_context)
+	{
 		std::ostringstream s;
-    	s << "cake::component_pair< " 
-        		<< ns_prefix << "::" << m_d.name_of_module(ifaces_context.first) << "::marker"
-        		<< ", "
-              	<< ns_prefix << "::" << m_d.name_of_module(ifaces_context.second) << "::marker"
-                << ">";
+		s << "cake::component_pair< " 
+				<< ns_prefix << "::" << m_d.name_of_module(ifaces_context.first) << "::marker"
+				<< ", "
+				<< ns_prefix << "::" << m_d.name_of_module(ifaces_context.second) << "::marker"
+				<< ">";
 		return s.str();
 	}
-    
 
 	wrapper_file::post_emit_status
 	wrapper_file::emit_stub_expression_as_statement_list(

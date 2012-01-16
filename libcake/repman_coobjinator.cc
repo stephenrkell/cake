@@ -210,6 +210,7 @@ void sync_all_co_objects(int from_rep, int to_rep, ...)
 			overrides[obj] = (struct val) { conv, init };
 		}
 	} while (!(!obj && !conv && !init));
+	va_end(args);
 	 
 	for (auto i_group = groups.begin(); i_group != groups.end(); ++i_group)
 	{

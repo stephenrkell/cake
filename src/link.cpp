@@ -115,6 +115,11 @@ namespace cake
 			}
 		}
 		
+		// propagate guessed argument info
+		// -- we do this sooner rather than later, so that artificial types are available
+		// when the relevant correspondences are read in. 
+		merge_implicit_dwarf_info();
+		
 		// add explicit correspondences from the Cake syntax tree
 		{
 			INIT;
@@ -248,8 +253,6 @@ namespace cake
 			}
 		}
 		
-		// propagate guessed argument info
-		merge_guessed_argument_info_at_callsites();
 		
 		// assign numbers to value corresps
 		assign_value_corresp_numbers();
@@ -335,35 +338,57 @@ namespace cake
 		}
 	}
 	
-	void link_derivation::merge_guessed_argument_info_at_callsites()
+	template <typename Func>
+	void walk_ast_depthfirst(
+		antlr::tree::Tree *t, 
+		std::vector<antlr::tree::Tree *>& out,
+		const Func& is_interesting)
 	{
-		/* For each declared function that is untyped, 
-		 * we look for an event pattern which matches it
-		 * (across all event correspondences)
-		 * -- we might get zero or more.
-		 * If they don't agree on at least the cardinality of arguments,
-		 * we raise a warning (since varargs doesn't work as hoped yet).
-		 * We add a DWARF formal_parameter DIE for each of these.
-		 * For each of these, we may add a name
-		 * -- if each of the found event patterns uses the same name, make that the name.
-		 * For each, we may also add a type
-		 * -- if the pattern has an ident,
-		 *    and that ident is used in the RHS stub,
-		 *    and we can work out a type from this
-		 * HMM... sounds like we want to refactor the stub emission code
-		 * s.t. we can re-use the logic for expanding in_args...
-		 * emission is somewhat separate from walking?
-		 * Some aspects of emission are done in a pre-pass?
-		 * Want the "type analysis" walking here too: 
-		 * find places where an ident is interpreted "as"
-		 * or used in a context where the originating or expected type is a typedef
-		 * having distinct correspondences. */
-		 
-		for (auto i_mod = r.module_tbl.begin(); i_mod != r.module_tbl.end(); ++i_mod)
+		if (t)
 		{
-			for (auto i_dfs = i_mod->second->get_ds().begin();
-				i_dfs != i_mod->second->get_ds().end();
-				++i_dfs)
+			if (is_interesting(t)) out.push_back(t);
+			for (int i = 0; i < GET_CHILD_COUNT(t); ++i)
+			{
+				walk_ast_depthfirst(GET_CHILD(t, i), out, is_interesting);
+			}
+		}
+	}
+	
+	void link_derivation::merge_implicit_dwarf_info()
+	{
+		// we walk various parts of the derivation AST and look for
+		// - typenames, which we ensure exist
+		// - interpretations of arguments, which we use to 
+		//   supplement caller-side info that is currently missing
+		
+		std::vector<antlr::tree::Tree *> event_patterns;
+		walk_ast_depthfirst(this->t, event_patterns, 
+			[](antlr::tree::Tree *t)
+			{
+				return (GET_TYPE(t) == CAKE_TOKEN(EVENT_PATTERN));
+			});
+		std::vector<antlr::tree::Tree *> interpretations;
+		walk_ast_depthfirst(this->t, interpretations, 
+			[](antlr::tree::Tree *t)
+			{
+				return (GET_TYPE(t) == CAKE_TOKEN(KEYWORD_AS)
+				||      GET_TYPE(t) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
+				||      GET_TYPE(t) == CAKE_TOKEN(KEYWORD_IN_AS)
+				||      GET_TYPE(t) == CAKE_TOKEN(KEYWORD_OUT_AS));
+			});
+		std::vector<antlr::tree::Tree *> stub_calls;
+		walk_ast_depthfirst(this->t, stub_calls, 
+			[](antlr::tree::Tree *t)
+			{
+				return (GET_TYPE(t) == CAKE_TOKEN(INVOKE_WITH_ARGS));
+			});
+		// also build a list of the functions that are arginfo-less
+		std::vector<shared_ptr<spec::subprogram_die> > bare_subprograms;
+		for (auto i_mod = input_modules.begin(); i_mod != input_modules.end(); ++i_mod)
+		{
+			for (auto i_dfs = (*i_mod)->get_ds().begin();
+					i_dfs != (*i_mod)->get_ds().end();
+					++i_dfs)
 			{
 				if ((*i_dfs)->get_tag() == DW_TAG_subprogram)
 				{
@@ -377,294 +402,323 @@ namespace cake
 							&& subprogram->unspecified_parameters_children_begin()
 							!= subprogram->unspecified_parameters_children_end())
 						{
-							// we're on! search for event patterns
-							struct pattern_info
-							{
-								vector<optional<string> > call_argnames;
-								vector<antlr::tree::Tree *> call_interps;
-								antlr::tree::Tree *pattern;
-								ev_corresp *corresp;
-							};
-							multimap<string, pattern_info> patterns;
-							vector<string> callnames;
-							// patterns could be in any link block featuring this module...
-							// ... so we just want to check against the source module
-							for (auto i_corresp = ev_corresps.begin();
-								i_corresp != ev_corresps.end();
-								++i_corresp)
-							{
-								if (i_corresp->second.source == i_mod->second
-									&& i_corresp->second.source_pattern)
-								{
-									auto p = i_corresp->second.source_pattern;
-									assert(GET_TYPE(p) == CAKE_TOKEN(EVENT_PATTERN));
-									switch (GET_TYPE(p))
-									{
-										case CAKE_TOKEN(EVENT_WITH_CONTEXT_SEQUENCE): {
-// 											INIT;
-// 											BIND3(p, sequenceHead, CONTEXT_SEQUENCE);
-// 											{
-// 												// descend looking for atomic patterns
-// 												FOR_ALL_CHILDREN(sequenceHead)
-// 												{
-// 													switch(GET_TYPE(n))
-// 													{
-// 														case CAKE_TOKEN(KEYWORD_LET):
-// 															
-// 
-// 														case CAKE_TOKEN(ELLIPSIS):
-// 															continue;
-// 														default: RAISE_INTERNAL(n, 
-// 															"not a context predicate");
-// 												}
-// 											}
-											assert(false); // see to this later
-										}
-										case CAKE_TOKEN(EVENT_PATTERN):
-										{
-											INIT;
-											BIND3(p, eventContext, EVENT_CONTEXT);
-											BIND3(p, memberNameExpr, DEFINITE_MEMBER_NAME); // name of call being matched -- can ignore this here
-											BIND3(p, eventCountPredicate, EVENT_COUNT_PREDICATE);
-											BIND3(p, eventParameterNamesAnnotation, KEYWORD_NAMES);
-											vector<optional<string> > argnames;
-											vector<antlr::tree::Tree *> interps;
-											auto dmn = read_definite_member_name(memberNameExpr);
-											if (subprogram->get_name() && dmn.size() == 1 
-												&& dmn.at(0) == *subprogram->get_name())
-											{
-												FOR_REMAINING_CHILDREN(p)
-												{
-													INIT;
-													ALIAS3(n, annotatedValueBindingPatternHead, 
-														ANNOTATED_VALUE_PATTERN);
-													{
-														INIT;
-														BIND2(annotatedValueBindingPatternHead, arg);
-														assert(arg);
-														switch(GET_TYPE(arg))
-														{
-															case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
-																assert(false); // no longer used
-															case CAKE_TOKEN(NAME_AND_INTERPRETATION):
-															{
-																INIT;
-																antlr::tree::Tree *interpretation = 0;
-																BIND3(arg, memberName, DEFINITE_MEMBER_NAME);
-																if (GET_CHILD_COUNT(arg) > 1) {
-																	interpretation = GET_CHILD(arg, 1);
-																}
-																ostringstream s;
-																s << read_definite_member_name(memberName);
-																argnames.push_back(s.str());
-																cerr << "Pushed an argument name: " 
-																	<< s.str() << endl;
-																interps.push_back(interpretation);
-																break;
-															}
-															case CAKE_TOKEN(KEYWORD_CONST):
-																// no information about arg name here
-																argnames.push_back(
-																	optional<string>());
-																break;
-															default: assert(false);
-
-														}
-													}
-												}
-												// add this pattern
-												patterns.insert(make_pair(
-													dmn,
-													(pattern_info) {
-													argnames,
-													interps,
-													p,
-													&i_corresp->second
-													}
-												));
-												callnames.push_back(dmn);
-											} // end if name matches
-											else if (dmn.size() != 1)
-											{
-												cerr << "Warning: encountered function name of size " 
-													<< dmn.size()
-													<< endl;
-											}
-										} // end case EVENT_PATTERN
-										break;
-										default: RAISE(p, "didn't understand event pattern");
-									} // end switch(GET_TYPE(p))
-								} // end if we found a source pattern in this module
-							} // end for all corresps
-							
-							// now we've gathered all the patterns we can, 
-							// iterate through them by call names
-							for (auto i_callname = callnames.begin(); i_callname != callnames.end();
-								++i_callname)
-							{
-								auto patterns_seq = patterns.equal_range(*i_callname);
-								optional<vector<optional< string> > >
-									seen_argnames;
-								bool argnames_identical = true;
-								for (auto i_pattern = patterns_seq.first;
-									i_pattern != patterns_seq.second;
-									++i_pattern)
-								{
-									if (!seen_argnames) seen_argnames = i_pattern->second.call_argnames;
-									else if (i_pattern->second.call_argnames != *seen_argnames)
-									{
-										// HMM: seen non-equivalent argnames for the same arg
-										argnames_identical = false;
-										cerr << "Warning: different patterns use non-identical argnames "
-											<< "for subprogram " 
-											<< *subprogram->get_name() << endl;
-										seen_argnames = optional<vector<optional<string> > >();
-									}
-								}
-								if (argnames_identical)
-								{
-									/* Okay, go ahead and add name attrs */
-									assert(seen_argnames);
-									auto encap_subprogram =
-										dynamic_pointer_cast<dwarf::encap::subprogram_die>(
-											subprogram);
-									for (auto i_name = seen_argnames->begin();
-										i_name != seen_argnames->end();
-										++i_name)
-									{
-										auto created =
-											dwarf::encap::factory::for_spec(
-												dwarf::spec::DEFAULT_DWARF_SPEC
-											).create_die(DW_TAG_formal_parameter,
-												encap_subprogram,
-												*i_name ? 
-												opt<const string&>(**i_name)
-												: opt<const string&>());
-										cerr << "created fp of subprogram "
-											<< *subprogram->get_name()
-											<< " with name " <<  (*i_name ? **i_name : "(no name)")
-											<< " at offset " << created->get_offset()
-											<< endl;
-									}
-								}
-
-								for (auto i_pattern = patterns_seq.first;
-									i_pattern != patterns_seq.second;
-									++i_pattern)
-								{
-									// plough onwards: for each arg, 
-									// where is it used in the RHS?
-									// try to get a type expectation,
-									// and if we find one, 
-									// translate it to the source context
-									// HMM. The right way to solve this whole problem
-									// is to patch gcc.
-									// The next right way to solve this problem
-									// is to write a ld wrapper 
-									// (except we can't yet *produce* DWARF).
-									// This is the third-best way. 
-									// So don't spend too much time on it.
-									
-									vector<antlr::tree::Tree *>::iterator i_interp
-									 =  i_pattern->second.call_interps.begin();
-									auto i_fp = subprogram->formal_parameter_children_begin();
-									for (auto i_arg = i_pattern->second.call_argnames.begin();
-										i_arg != i_pattern->second.call_argnames.end();
-										++i_arg, ++i_interp, ++i_fp)
-									{
-										assert(i_interp != i_pattern->second.call_interps.end());
-										
-										vector<antlr::tree::Tree *> contexts;
-										if (*i_interp)
-										{
-											INIT;
-											/* Given an interpretation, there are several cases: 
-											 * - the type just names an existing type;
-											 * - the type AST explicitly defines a type that doesn't currently exist in DWARF info;
-											 * - the type is an ident which should become an artificial 
-											 **/
-											BIND2(*i_interp, dwarfType);
-											// FIXME: pay attention to the kind (as, in_as, out_as)
-											// of the interpretation
-											auto existing = i_mod->second->existing_dwarf_type(dwarfType);
-											// if no existing, then try creating one
-											if (!existing)
-											{
-												existing = i_mod->second->create_dwarf_type(dwarfType);
-												// if this failed, it means it was just a reference
-												// (ident) not a definition
-												// -- this might be okay for us, as we can create a typedef
-												if (!existing)
-												{
-													assert(false);
-													// when we finish the code below, it would be sensible
-													// to create a typedef here, pointing to the type
-													// discovered below. For now, do nothing.
-												}
-											}
-											assert(existing);
-											cerr << "existing type: " << *existing << endl;
-											// Now let's update the fp
-											// FIXME: check for unanimity
-											auto encap_fp = dynamic_pointer_cast<encap::formal_parameter_die>(
-												*i_fp);
-											encap_fp->set_type(existing);
-											
-										}
-										
-										// if the vector contains a null entry, it means that 
-										// we saw no name for this argument.
-										if (!*i_arg)
-										{
-											// we saw no name for it, but we might have an interpretation
-											
-										}
-										else // it definitely has a name, so we can search for its uses
-										{
-											find_usage_contexts(**i_arg,
-												i_pattern->second.corresp->sink_expr,
-												contexts);
-											if (contexts.size() > 0)
-											{
-												cerr << "Considering type expectations "
-													<< "for stub uses of identifier " 
-													<< **i_arg << endl;
-												for (auto i_ctxt = contexts.begin(); 
-													i_ctxt != contexts.end();
-													++i_ctxt)
-												{
-													auto found_die = map_stub_context_to_dwarf_element(
-														*i_ctxt,
-														i_pattern->second.corresp->sink);
-
-													if (found_die)
-													{
-														cerr << "FIXME: found a stub function call using ident " 
-															<< **i_arg 
-															<< " as " << *found_die
-															<< ", child of " << *found_die->get_parent()
-															<< endl;
-														// FIXME: extract its type information
-													}
-												}
-												// when we get here, we may have identified some
-												// type expectations, or we may not.
-												// FIXME: finish this code by
-												// - checking all the type expectations are
-												// the same
-												// - invoking unique_correpsonding_type
-												// - filling in the output of this in the fp die
-
-											} // end if contexts.size() > 0
-										}
-									}
-								} // end for i_pattern
-							}
+							bare_subprograms.push_back(subprogram);
 						}
 					}
 				}
 			}
 		}
+		
+		// for each event pattern
+		
+		
+		
+		/* For each declared function that is untyped, 
+		 * we look for an event pattern which matches it
+		 * (across all event correspondences)
+		 * -- we might get zero or more.
+		 * If they don't agree on at least the cardinality of arguments,
+		 * we raise a warning (since varargs doesn't work as hoped yet).
+		 * We add a DWARF formal_parameter DIE for each of these.
+		 * For each of these, we may add a name
+		 * -- if each of the found event patterns uses the same name, make that the name.
+		 * For each, we may also add a type
+		 * -- if the pattern has an ident,
+		 *    and that ident is used in the RHS stub,
+		 *    and we can work out a type from this
+		 */
+		 
+		for (auto i_subp = bare_subprograms.begin(); i_subp != bare_subprograms.end(); ++i_subp)
+		{
+			auto subprogram = *i_subp;
+			
+			struct pattern_info
+			{
+				vector<optional<string> > call_argnames;
+				vector<antlr::tree::Tree *> call_interps;
+				antlr::tree::Tree *pattern;
+				ev_corresp *corresp;
+			};
+			multimap<string, pattern_info> patterns;
+			vector<string> callnames;
+			
+			// we've already harvested all the event patterns and calls we know about...
+			// BUT they are deprived of module context
+			
+			// patterns could be in any link block featuring this module...
+			// ... so we just want to check against the source module
+			for (auto i_corresp = ev_corresps.begin();
+				i_corresp != ev_corresps.end();
+				++i_corresp)
+			{
+				if (i_corresp->second.source == i_mod->second
+					&& i_corresp->second.source_pattern)
+				{
+					auto p = i_corresp->second.source_pattern;
+					assert(GET_TYPE(p) == CAKE_TOKEN(EVENT_PATTERN));
+					switch (GET_TYPE(p))
+					{
+						case CAKE_TOKEN(EVENT_WITH_CONTEXT_SEQUENCE): {
+// 							INIT;
+// 							BIND3(p, sequenceHead, CONTEXT_SEQUENCE);
+// 							{
+// 								// descend looking for atomic patterns
+// 								FOR_ALL_CHILDREN(sequenceHead)
+// 								{
+// 									switch(GET_TYPE(n))
+// 									{
+// 										case CAKE_TOKEN(KEYWORD_LET):
+// 
+// 
+// 										case CAKE_TOKEN(ELLIPSIS):
+// 											continue;
+// 										default: RAISE_INTERNAL(n, 
+// 											"not a context predicate");
+// 								}
+// 							}
+							assert(false); // see to this later
+						}
+						case CAKE_TOKEN(EVENT_PATTERN):
+						{
+							INIT;
+							BIND3(p, eventContext, EVENT_CONTEXT);
+							BIND3(p, memberNameExpr, DEFINITE_MEMBER_NAME); // name of call being matched -- can ignore this here
+							BIND3(p, eventCountPredicate, EVENT_COUNT_PREDICATE);
+							BIND3(p, eventParameterNamesAnnotation, KEYWORD_NAMES);
+							vector<optional<string> > argnames;
+							vector<antlr::tree::Tree *> interps;
+							auto dmn = read_definite_member_name(memberNameExpr);
+							if (subprogram->get_name() && dmn.size() == 1 
+								&& dmn.at(0) == *subprogram->get_name())
+							{
+								FOR_REMAINING_CHILDREN(p)
+								{
+									INIT;
+									ALIAS3(n, annotatedValueBindingPatternHead, 
+										ANNOTATED_VALUE_PATTERN);
+									{
+										INIT;
+										BIND2(annotatedValueBindingPatternHead, arg);
+										assert(arg);
+										switch(GET_TYPE(arg))
+										{
+											case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+												assert(false); // no longer used
+											case CAKE_TOKEN(NAME_AND_INTERPRETATION):
+											{
+												INIT;
+												antlr::tree::Tree *interpretation = 0;
+												BIND3(arg, memberName, DEFINITE_MEMBER_NAME);
+												if (GET_CHILD_COUNT(arg) > 1) {
+													interpretation = GET_CHILD(arg, 1);
+												}
+												ostringstream s;
+												s << read_definite_member_name(memberName);
+												argnames.push_back(s.str());
+												cerr << "Pushed an argument name: " 
+													<< s.str() << endl;
+												interps.push_back(interpretation);
+												break;
+											}
+											case CAKE_TOKEN(KEYWORD_CONST):
+												// no information about arg name here
+												argnames.push_back(
+													optional<string>());
+												break;
+											default: assert(false);
+
+										}
+									}
+								}
+								// add this pattern
+								patterns.insert(make_pair(
+									dmn,
+									(pattern_info) {
+									argnames,
+									interps,
+									p,
+									&i_corresp->second
+									}
+								));
+								callnames.push_back(dmn);
+							} // end if name matches
+							else if (dmn.size() != 1)
+							{
+								cerr << "Warning: encountered function name of size " 
+									<< dmn.size()
+									<< endl;
+							}
+						} // end case EVENT_PATTERN
+						break;
+						default: RAISE(p, "didn't understand event pattern");
+					} // end switch(GET_TYPE(p))
+				} // end if we found a source pattern in this module
+			} // end for all corresps
+
+			// now we've gathered all the patterns we can, 
+			// iterate through them by call names
+			for (auto i_callname = callnames.begin(); i_callname != callnames.end();
+				++i_callname)
+			{
+				auto patterns_seq = patterns.equal_range(*i_callname);
+				optional<vector<optional< string> > >
+					seen_argnames;
+				bool argnames_identical = true;
+				for (auto i_pattern = patterns_seq.first;
+					i_pattern != patterns_seq.second;
+					++i_pattern)
+				{
+					if (!seen_argnames) seen_argnames = i_pattern->second.call_argnames;
+					else if (i_pattern->second.call_argnames != *seen_argnames)
+					{
+						// HMM: seen non-equivalent argnames for the same arg
+						argnames_identical = false;
+						cerr << "Warning: different patterns use non-identical argnames "
+							<< "for subprogram " 
+							<< *subprogram->get_name() << endl;
+						seen_argnames = optional<vector<optional<string> > >();
+					}
+				}
+				if (argnames_identical)
+				{
+					/* Okay, go ahead and add name attrs */
+					assert(seen_argnames);
+					auto encap_subprogram =
+						dynamic_pointer_cast<dwarf::encap::subprogram_die>(
+							subprogram);
+					for (auto i_name = seen_argnames->begin();
+						i_name != seen_argnames->end();
+						++i_name)
+					{
+						auto created =
+							dwarf::encap::factory::for_spec(
+								dwarf::spec::DEFAULT_DWARF_SPEC
+							).create_die(DW_TAG_formal_parameter,
+								encap_subprogram,
+								*i_name ? 
+								opt<const string&>(**i_name)
+								: opt<const string&>());
+						cerr << "created fp of subprogram "
+							<< *subprogram->get_name()
+							<< " with name " <<  (*i_name ? **i_name : "(no name)")
+							<< " at offset " << created->get_offset()
+							<< endl;
+					}
+				}
+
+				for (auto i_pattern = patterns_seq.first;
+					i_pattern != patterns_seq.second;
+					++i_pattern)
+				{
+					// plough onwards: for each arg, 
+					// where is it used in the RHS?
+					// try to get a type expectation,
+					// and if we find one, 
+					// translate it to the source context
+					// HMM. The right way to solve this whole problem
+					// is to patch gcc.
+					// The next right way to solve this problem
+					// is to write a ld wrapper 
+					// (except we can't yet *produce* DWARF).
+					// This is the third-best way. 
+					// So don't spend too much time on it.
+
+					vector<antlr::tree::Tree *>::iterator i_interp
+					 =  i_pattern->second.call_interps.begin();
+					auto i_fp = subprogram->formal_parameter_children_begin();
+					for (auto i_arg = i_pattern->second.call_argnames.begin();
+						i_arg != i_pattern->second.call_argnames.end();
+						++i_arg, ++i_interp, ++i_fp)
+					{
+						assert(i_interp != i_pattern->second.call_interps.end());
+
+						vector<antlr::tree::Tree *> contexts;
+						if (*i_interp)
+						{
+							INIT;
+							/* Given an interpretation, there are several cases: 
+							 * - the type just names an existing type;
+							 * - the type AST explicitly defines a type that doesn't currently exist in DWARF info;
+							 * - the type is an ident which should become an artificial 
+							 **/
+							BIND2(*i_interp, dwarfType);
+							// FIXME: pay attention to the kind (as, in_as, out_as)
+							// of the interpretation
+							auto existing = i_mod->second->existing_dwarf_type(dwarfType);
+							// if no existing, then try creating one
+							if (!existing)
+							{
+								existing = i_mod->second->create_dwarf_type(dwarfType);
+								// if this failed, it means it was just a reference
+								// (ident) not a definition
+								// -- this might be okay for us, as we can create a typedef
+								if (!existing)
+								{
+									assert(false);
+									// when we finish the code below, it would be sensible
+									// to create a typedef here, pointing to the type
+									// discovered below. For now, do nothing.
+								}
+							}
+							assert(existing);
+							cerr << "existing type: " << *existing << endl;
+							// Now let's update the fp
+							// FIXME: check for unanimity
+							auto encap_fp = dynamic_pointer_cast<encap::formal_parameter_die>(
+								*i_fp);
+							encap_fp->set_type(existing);
+
+						}
+
+						// if the vector contains a null entry, it means that 
+						// we saw no name for this argument.
+						if (!*i_arg)
+						{
+							// we saw no name for it, but we might have an interpretation
+
+						}
+						else // it definitely has a name, so we can search for its uses
+						{
+							find_usage_contexts(**i_arg,
+								i_pattern->second.corresp->sink_expr,
+								contexts);
+							if (contexts.size() > 0)
+							{
+								cerr << "Considering type expectations "
+									<< "for stub uses of identifier " 
+									<< **i_arg << endl;
+								for (auto i_ctxt = contexts.begin(); 
+									i_ctxt != contexts.end();
+									++i_ctxt)
+								{
+									auto found_die = map_stub_context_to_dwarf_element(
+										*i_ctxt,
+										i_pattern->second.corresp->sink);
+
+									if (found_die)
+									{
+										cerr << "FIXME: found a stub function call using ident " 
+											<< **i_arg 
+											<< " as " << *found_die
+											<< ", child of " << *found_die->get_parent()
+											<< endl;
+										// FIXME: extract its type information
+									}
+								}
+								// when we get here, we may have identified some
+								// type expectations, or we may not.
+								// FIXME: finish this code by
+								// - checking all the type expectations are
+								// the same
+								// - invoking unique_correpsonding_type
+								// - filling in the output of this in the fp die
+
+							} // end if contexts.size() > 0
+						}
+					}
+				} // end for i_pattern
+			} // end for i_callname
+		} // end for i_subp
 	}
 	
 	void 

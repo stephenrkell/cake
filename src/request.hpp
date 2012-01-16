@@ -120,7 +120,7 @@ namespace cake
         
 		void extract_inlines();
 		void build_inlines();
-	    module_ptr::pointer create_existing_module(std::string& constructor,
+	    module_ptr create_existing_module(std::string& constructor,
 	    	std::string& filename);
         
 		void extract_exists();

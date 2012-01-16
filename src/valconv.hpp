@@ -6,6 +6,7 @@
 #include <vector>
 #include <dwarfpp/encap.hpp>
 #include <dwarfpp/cxx_compiler.hpp>
+#include "link.hpp"
 
 namespace cake
 {
@@ -31,7 +32,7 @@ namespace cake
 		/** The unique module for which this binding is meaningful. */
 		module_ptr valid_in_module;
 		
-		/** Whether to discard this binding at the next crossover point. Used for? FIXME. */
+		/** Whether to discard this binding at the next crossover point. Used for temporaries. */
 		bool do_not_crossover;
 		
 		//shared_ptr<with_type_describing_layout_die> dwarf_origin;
@@ -76,7 +77,8 @@ namespace cake
 			module_ptr sink;
 			module_ptr current;
 		} modules;
-
+		link_derivation::iface_pair get_ifaces() const;
+		
 		// source event 
 		struct source_info_s
 		{

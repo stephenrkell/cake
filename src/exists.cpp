@@ -12,6 +12,7 @@
 #include "module.hpp"
 #include <dwarfpp/encap.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/make_shared.hpp>
 #include <stdio.h>
 #include <ext/stdio_filebuf.h>
 
@@ -71,21 +72,15 @@ namespace cake
 		}
 	}
 
-	module_ptr::pointer request::create_existing_module(std::string& constructor,
+	module_ptr request::create_existing_module(std::string& constructor,
 		std::string& filename)
 	{
 		std::string unescaped_filename = unescape_string_lit(filename);
-		#define CASE(s, f, ...) (constructor == #s ) ? static_cast<module_ptr::pointer>(new s ## _module((f) , ##__VA_ARGS__))
-		return	
-			CASE(elf_external_sharedlib, lookup_solib(unescaped_filename), unescaped_filename)
-		:	CASE(elf_reloc, make_absolute_pathname(unescaped_filename), unescaped_filename)
-		:	0;
-		#undef CASE
-		
-		// the code above appears to be exception-safe, because the only possibly-throwing thing
-		// we do, no matter which arm of the conditional we take, is the new() -- we don't have to
-		// worry about interleaving of different (sub)expressions.
-		// (see Herb Sutter article about exception safety...)
+		// #define CASE(s, f, ...) (constructor == #s ) ? (boost::make_shared<s ## _module>((f) , ##__VA_ARGS__))
+		if       (constructor == "elf_external_sharedlib") return boost::make_shared<elf_external_sharedlib_module>(lookup_solib(unescaped_filename), unescaped_filename);
+		else if  (constructor == "elf_reloc") return              boost::make_shared<elf_reloc_module>(make_absolute_pathname(unescaped_filename), unescaped_filename);
+		return module_ptr();
+		// #undef CASE
 	}
 
 	void request::add_existing_module(std::string& constructor,
@@ -97,8 +92,7 @@ namespace cake
 			<< " and module identifier " << module_ident << std::endl;
 			
 		/* Add a module to the module table. */
-		module_tbl[module_ident] = module_ptr(
-			create_existing_module(constructor, filename));
+		module_tbl[module_ident] = create_existing_module(constructor, filename);
 		module_inverse_tbl[module_tbl[module_ident]] = module_ident;
 	}	
 	

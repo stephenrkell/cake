@@ -19,10 +19,28 @@ void unlock(struct lockable_obj *u)
 
 }
 
-int send(struct lockable_obj *u)
+int atomic(struct lockable_obj *u)
 {
 	printf("Received an object, and it is %s\n", 
 		u->locked ? "locked" : "unlocked");
+	
+	return 0;
+}
+
+int nonatomic(struct lockable_obj *u)
+{
+	printf("Received an object, and it is %s\n", 
+		u->locked ? "locked" : "unlocked");
+	
+	return 0;
+}
+
+int locked_on_return(struct lockable_obj *u)
+{
+	printf("Received an object, and it is %s\n", 
+		u->locked ? "locked" : "unlocked");
+	
+	u->locked = 0;
 	
 	return 0;
 }
