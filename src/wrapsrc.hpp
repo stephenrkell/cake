@@ -74,18 +74,10 @@ namespace cake
 //         }
 		
 		typedef codegen_context context;
-
-		// HACK: these are somewhat utility functions
-		bool subprogram_returns_void(
-			shared_ptr<spec::subprogram_die> subprogram);
-		
-		bool treat_subprogram_as_untyped(
-			shared_ptr<spec::subprogram_die> subprogram);
-
-		// HACK: these are _even_ more utility functions
-		module_ptr module_of_die(shared_ptr<spec::basic_die> p_d);
-			
 		string get_type_name(
+			shared_ptr<spec::type_die> t/*,
+				const std::string& namespace_prefix*/);
+		string get_type_name_prefix(
 			shared_ptr<spec::type_die> t/*,
 				const std::string& namespace_prefix*/);
 				

@@ -309,7 +309,7 @@ namespace cake
 									 == CCP(GET_TEXT(encoding))) encoding_matched = true;
 								if ((bytesize == -1 && !as_base_type->get_byte_size())
 								|| (as_base_type->get_byte_size() && 
-									*as_base_type->get_byte_size() == bytesize)) bytesize_matched = true;
+									(signed) *as_base_type->get_byte_size() == bytesize)) bytesize_matched = true;
 								// HACK: no support for attributes yet
 								if (GET_CHILD_COUNT(baseTypeAttributeList) == 0) attributes_matched = true;
 								
@@ -390,6 +390,25 @@ namespace cake
 		auto found = existing_dwarf_type(t);
 		if (!found) return create_dwarf_type(t);
 		else return found;
+	}
+	
+	shared_ptr<spec::type_die> 
+	module_described_by_dwarf::create_typedef(
+		shared_ptr<type_die> p_d,
+		const string& name
+	)
+	{
+		auto cu = p_d->enclosing_compile_unit();
+		shared_ptr<encap::basic_die> encap_cu = dynamic_pointer_cast<encap::basic_die>(cu);
+		auto created =
+			dwarf::encap::factory::for_spec(
+				dwarf::spec::DEFAULT_DWARF_SPEC
+			).create_die(DW_TAG_typedef,
+				encap_cu,
+				opt<const string&>(*(new string(name))) // FIXME: necessary to force a copy here?
+			);
+		dynamic_pointer_cast<encap::typedef_die>(created)->set_type(p_d);
+		return dynamic_pointer_cast<spec::type_die>(created);
 	}
 	
 	shared_ptr<type_die> module_described_by_dwarf::create_dwarf_type(antlr::tree::Tree *t)

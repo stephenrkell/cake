@@ -47,6 +47,10 @@ namespace cake {
 			}
 			assert(false);
 		}
+		// HACK: these are _even_ more utility functions
+		module_ptr module_of_die(shared_ptr<spec::basic_die> p_d);
+		module_ptr module_for_die(shared_ptr<spec::basic_die> p_d);
+
 	private:
 		typedef srk31::conjoining_iterator<
 			encap::compile_unit_die::subprogram_iterator>
@@ -87,42 +91,52 @@ namespace cake {
         typedef boost::filter_iterator<is_required, subprograms_in_file_iterator>
         	 required_funcs_iter;
 
-       struct ev_corresp
-        {
-        	module_ptr source;
-        	antlr::tree::Tree *source_pattern;
-            antlr::tree::Tree *source_infix_stub;
-            module_ptr sink;
-            antlr::tree::Tree *sink_expr;
-            antlr::tree::Tree *sink_infix_stub;
+		struct ev_corresp
+		{
+			module_ptr source;
+			antlr::tree::Tree *source_pattern;
+			antlr::tree::Tree *source_infix_stub;
+			module_ptr sink;
+			antlr::tree::Tree *sink_expr;
+			antlr::tree::Tree *sink_infix_stub;
 
-            antlr::tree::Tree *return_leg;
-            
-            // if we created a temporary AST, for implicit rules, free these ptrs
-            antlr::tree::Tree *source_pattern_to_free; 
-            antlr::tree::Tree *sink_pattern_to_free;
-            ~ev_corresp() { // non-virtual to keep us POD / initializer-constructible etc.
+			antlr::tree::Tree *return_leg;
+			
+			// if we created a temporary AST, for implicit rules, free these ptrs
+			antlr::tree::Tree *source_pattern_to_free; 
+			antlr::tree::Tree *sink_pattern_to_free;
+			~ev_corresp() { // non-virtual to keep us POD / initializer-constructible etc.
 				if (source_pattern_to_free && source_pattern_to_free->free) source_pattern_to_free->free(source_pattern_to_free);
-            	if (sink_pattern_to_free && sink_pattern_to_free->free) sink_pattern_to_free->free(sink_pattern_to_free);
-            }
-        };
-        
-        typedef value_conversion val_corresp;
-    
-    public:
-    	static iface_pair sorted(iface_pair p) 
-        { return p.first < p.second ? p : make_pair(p.second, p.first); }
-    	static iface_pair sorted(module_ptr p, module_ptr q) 
-        { return sorted(make_pair(p, q)); }
-        
-        set<iface_pair> all_iface_pairs;
-    
+				if (sink_pattern_to_free && sink_pattern_to_free->free) sink_pattern_to_free->free(sink_pattern_to_free);
+			}
+		};
+		
+		typedef value_conversion val_corresp;
+		
+		void
+		merge_event_pattern_info_into_bare_subprograms(
+			const std::vector<antlr::tree::Tree *>& event_patterns,
+			const vector<shared_ptr<spec::subprogram_die> >& bare_subprograms
+		);
+
+		void ensure_all_artificial_data_types(
+			antlr::tree::Tree *t,
+			module_ptr p_module);
+	
+	public:
+		static iface_pair sorted(iface_pair p) 
+		{ return p.first < p.second ? p : make_pair(p.second, p.first); }
+		static iface_pair sorted(module_ptr p, module_ptr q) 
+		{ return sorted(make_pair(p, q)); }
+		
+		set<iface_pair> all_iface_pairs;
+	
 		typedef multimap<iface_pair, ev_corresp> ev_corresp_map_t;
 		typedef multimap<iface_pair, shared_ptr<val_corresp> > val_corresp_map_t;
-        std::map< shared_ptr<val_corresp>, int > val_corresp_numbering;
+		std::map< shared_ptr<val_corresp>, int > val_corresp_numbering;
 		
-        typedef ev_corresp_map_t::value_type ev_corresp_entry;
-        typedef val_corresp_map_t::value_type val_corresp_entry;
+		typedef ev_corresp_map_t::value_type ev_corresp_entry;
+		typedef val_corresp_map_t::value_type val_corresp_entry;
 		
 		// we record the value corresps grouped by iface_pair and by
 		// source data type, and later single out a unique init rule

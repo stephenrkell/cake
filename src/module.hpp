@@ -132,6 +132,7 @@ namespace cake
 		shared_ptr<type_die> existing_dwarf_type(antlr::tree::Tree *t);
 		shared_ptr<type_die> create_dwarf_type(antlr::tree::Tree *t);
 		shared_ptr<type_die> ensure_dwarf_type(antlr::tree::Tree *t);
+		shared_ptr<type_die> create_typedef(shared_ptr<type_die> p_d, const string& name);
 		
 	};
 

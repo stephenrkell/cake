@@ -20,6 +20,7 @@
 
 namespace cake
 {
+	using namespace dwarf;
 	using boost::shared_ptr;
 	using dwarf::spec::type_die;
 	using std::vector;
@@ -92,14 +93,22 @@ namespace cake
 	type_synonymy_chain(shared_ptr<type_die> d);
 
 	shared_ptr<dwarf::spec::basic_die>
-	map_stub_context_to_dwarf_element(
+	map_ast_context_to_dwarf_element(
 		antlr::tree::Tree *node,
-		module_ptr dwarf_context
+		module_ptr dwarf_context,
+		bool must_be_immediate
 	);
 	
 	int path_to_node(antlr::tree::Tree *ancestor,
 	antlr::tree::Tree *target, std::deque<int>& out);
 	
+	// HACK: these are somewhat utility functions
+	bool subprogram_returns_void(
+		shared_ptr<spec::subprogram_die> subprogram);
+
+	bool treat_subprogram_as_untyped(
+		shared_ptr<spec::subprogram_die> subprogram);
+
     //boost::optional<definite_member_name> 
     //dwarf_fq_member_name(dwarf::abstract::Die_abstract_base<>& d);
         

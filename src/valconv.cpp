@@ -200,7 +200,7 @@ namespace cake
 		 * check that there is SOME corresponding type to the target type.
 		 * If we have a simple source field, we can check more precisely. */
 		
-		auto found_target = dynamic_pointer_cast<with_named_children_die>(owner->sink_data_type)
+		auto found_target = dynamic_pointer_cast<with_named_children_die>(owner->sink_concrete_type)
 			->resolve(target.begin(), target.end());
 		assert(found_target);
 		
@@ -214,7 +214,7 @@ namespace cake
 		shared_ptr<type_die> found_source_field_type;
 		if (unique_source_field)
 		{
-			auto found_source = dynamic_pointer_cast<with_named_children_die>(owner->source_data_type)
+			auto found_source = dynamic_pointer_cast<with_named_children_die>(owner->source_concrete_type)
 				->resolve(unique_source_field->begin(), unique_source_field->end());
 			assert(found_source);
 			
@@ -274,8 +274,8 @@ namespace cake
 			bool init_only,
 			bool& init_is_identical)
 		:   value_conversion(w, out, basic), 
-			source_module(w.module_of_die(source_data_type)),
-			target_module(w.module_of_die(sink_data_type)),
+			source_module(w.m_d.module_of_die(source_data_type)),
+			target_module(w.m_d.module_of_die(sink_data_type)),
 			modules(link_derivation::sorted(make_pair(source_module, target_module)))
 		
 	{
@@ -335,11 +335,11 @@ namespace cake
 									/* antlr::tree::Tree *stub; */
 										source_is_on_left ? leftValuePattern : rightValuePattern,
 									/* module_ptr pre_context; */
-										source_is_on_left ? w.module_of_die(source_data_type) : w.module_of_die(sink_data_type),
+										source_is_on_left ? w.m_d.module_of_die(source_data_type) : w.m_d.module_of_die(sink_data_type),
 									/* antlr::tree::Tree *pre_stub; */
 										source_is_on_left ? leftInfixStub : rightInfixStub,
 									/* module_ptr post_context; */
-										source_is_on_left ? w.module_of_die(sink_data_type) : w.module_of_die(source_data_type),
+										source_is_on_left ? w.m_d.module_of_die(sink_data_type) : w.m_d.module_of_die(source_data_type),
 									/* antlr::tree::Tree *post_stub; */
 										source_is_on_left ? rightInfixStub : leftInfixStub
 								}));
@@ -368,11 +368,11 @@ namespace cake
 								/* antlr::tree::Tree *stub; */
 									leftStubExpr,
 								/* module_ptr pre_context; */
-									w.module_of_die(source_data_type),
+									w.m_d.module_of_die(source_data_type),
 								/* antlr::tree::Tree *pre_stub; */
 									leftInfixStub,
 								/* module_ptr post_context; */
-									w.module_of_die(sink_data_type),
+									w.m_d.module_of_die(sink_data_type),
 								/* antlr::tree::Tree *post_stub; */
 									rightInfixStub
 							}));
@@ -402,11 +402,11 @@ namespace cake
 								/* antlr::tree::Tree *stub; */
 									rightStubExpr,
 								/* module_ptr pre_context; */
-									w.module_of_die(sink_data_type),
+									w.m_d.module_of_die(sink_data_type),
 								/* antlr::tree::Tree *pre_stub; */
 									rightInfixStub,
 								/* module_ptr post_context; */
-									w.module_of_die(source_data_type),
+									w.m_d.module_of_die(source_data_type),
 								/* antlr::tree::Tree *post_stub; */
 									leftInfixStub
 							}));
@@ -438,11 +438,11 @@ namespace cake
 								/* antlr::tree::Tree *stub; */
 									leftStubExpr,
 								/* module_ptr pre_context; */
-									w.module_of_die(source_data_type),
+									w.m_d.module_of_die(source_data_type),
 								/* antlr::tree::Tree *pre_stub; */
 									leftInfixStub,
 								/* module_ptr post_context; */
-									w.module_of_die(sink_data_type),
+									w.m_d.module_of_die(sink_data_type),
 								/* antlr::tree::Tree *post_stub; */
 									rightInfixStub
 							}));
@@ -473,11 +473,11 @@ namespace cake
 								/* antlr::tree::Tree *stub; */
 									rightStubExpr,
 								/* module_ptr pre_context; */
-									w.module_of_die(sink_data_type),
+									w.m_d.module_of_die(sink_data_type),
 								/* antlr::tree::Tree *pre_stub; */
 									rightInfixStub,
 								/* module_ptr post_context; */
-									w.module_of_die(source_data_type),
+									w.m_d.module_of_die(source_data_type),
 								/* antlr::tree::Tree *post_stub; */
 									leftInfixStub
 							}));
@@ -514,9 +514,9 @@ namespace cake
 
 		/* Name-match toplevel subtrees not mentioned so far. */
 		for (auto i_member
-			 = dynamic_pointer_cast<structure_type_die>(sink_data_type)
+			 = dynamic_pointer_cast<structure_type_die>(sink_concrete_type)
 			 	->member_children_begin();
-			i_member != dynamic_pointer_cast<structure_type_die>(sink_data_type)
+			i_member != dynamic_pointer_cast<structure_type_die>(sink_concrete_type)
 			 	->member_children_end();
 			++i_member)
 		{
@@ -528,7 +528,7 @@ namespace cake
 				 * field in opposing structure. */
 
 				auto source_as_struct = dynamic_pointer_cast<structure_type_die>(
-					source_data_type);
+					source_concrete_type);
 
 				auto found = std::find_if(source_as_struct->member_children_begin(),
 					source_as_struct->member_children_end(),
@@ -584,11 +584,11 @@ namespace cake
 		{
 			auto pair = make_pair(
 					dynamic_pointer_cast<member_die>(
-						dynamic_pointer_cast<with_named_children_die>(this->source_data_type)
+						dynamic_pointer_cast<with_named_children_die>(this->source_concrete_type)
 							->named_child(i_mapping->second.target.at(0))
 						)->get_type(),
 					dynamic_pointer_cast<member_die>(
-						dynamic_pointer_cast<with_named_children_die>(this->sink_data_type)
+						dynamic_pointer_cast<with_named_children_die>(this->sink_concrete_type)
 							->named_child(i_mapping->second.target.at(0))
 						)->get_type()
 					);
@@ -937,9 +937,9 @@ namespace cake
 		 * involving multiple source fields), build a Cake environment containing
 		 * all source fields. */
 		for (auto i_field = dynamic_pointer_cast<with_data_members_die>(
-					source_data_type)->member_children_begin();
+					source_concrete_type)->member_children_begin();
 				i_field != dynamic_pointer_cast<with_data_members_die>(
-					source_data_type)->member_children_end();
+					source_concrete_type)->member_children_end();
 				++i_field)
 		{
 			assert((*i_field)->get_name());

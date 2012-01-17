@@ -11,6 +11,7 @@
 #include "module.hpp"
 
 using boost::shared_ptr;
+using namespace dwarf;
 using dwarf::spec::basic_die;
 using dwarf::spec::type_die;
 using dwarf::spec::typedef_die;
@@ -649,7 +650,7 @@ namespace cake
 	{
 		std::deque<int> retpath;
 		if (ancestor == target) { out = retpath; return 0; }
-		else for (auto i_child = 0; i_child < GET_CHILD_COUNT(ancestor); ++i_child)
+		else for (unsigned i_child = 0U; i_child < GET_CHILD_COUNT(ancestor); ++i_child)
 		{
 			if (0 == path_to_node(GET_CHILD(ancestor, i_child), target, retpath))
 			{
@@ -662,9 +663,10 @@ namespace cake
 	}
 
 	boost::shared_ptr<dwarf::spec::basic_die>
-	map_stub_context_to_dwarf_element(
+	map_ast_context_to_dwarf_element(
 		antlr::tree::Tree *node,
-		module_ptr dwarf_context
+		module_ptr dwarf_context,
+		bool must_be_immediate
 	)
 	{
 		if (!node) return boost::shared_ptr<dwarf::spec::basic_die>();
@@ -691,8 +693,9 @@ namespace cake
 
 		//auto i_path = path.rbegin();
 		antlr::tree::Tree *begin_node = node;
-		antlr::tree::Tree *prev_node;
-		while (node && (prev_node = node, ((node = GET_PARENT(node)) != NULL)))
+		antlr::tree::Tree *prev_node = 0;
+		antlr::tree::Tree *prev_prev_node = 0;
+		while (node && (prev_prev_node = prev_node, prev_node = node, ((node = GET_PARENT(node)) != NULL)))
 		//for (auto i_node = parent_chain.begin(); i_node != parent_chain.end(); ++i_node, ++i_path)
 		{
 			if (!node) 
@@ -704,7 +707,7 @@ namespace cake
 			// if we're not at the end of the chain, we can reach the current node like so...
 			//assert(i_node == parent_chain.end() -1 ||
 			//	GET_CHILD(*(i_node + 1), *i_path) == *i_node);
-				
+			
 			cerr << "Considering subtree " << CCP(TO_STRING_TREE(node))
 				<< endl;
 			switch (GET_TYPE(node))
@@ -716,8 +719,15 @@ namespace cake
 						|| (GET_TYPE(invoked_function) == CAKE_TOKEN(IDENT))));
 					cerr << "Found a function call, to " << CCP(TO_STRING_TREE(invoked_function)) << endl;
 					// we only match if we're directly underneath an argument position
-					if (GET_PARENT(begin_node) && GET_PARENT(GET_PARENT(begin_node)) == node)
+					if (must_be_immediate 
+						&& !(GET_PARENT(begin_node) && GET_PARENT(GET_PARENT(begin_node)) == node))
 					{
+						cerr << "Ident grandparent is not this function call." << endl;
+						goto failed;
+					}
+					else
+					{
+					
 						definite_member_name dmn;
 						if (GET_TYPE(invoked_function) == CAKE_TOKEN(IDENT))
 						{ dmn.push_back(CCP(GET_TEXT(invoked_function))); }
@@ -728,34 +738,111 @@ namespace cake
 						assert(found_dwarf); assert(found_subp);
 						cerr << "We think that this subtree is a call to " << *found_subp << endl;
 						int num = 0;
+						
 						for (auto i_fp = found_subp->formal_parameter_children_begin(); i_fp != 
 							found_subp->formal_parameter_children_end(); ++i_fp, ++num)
 						{
 							cerr << "Is our context argument " << num 
 								<< " of " << CCP(TO_STRING_TREE(node))
 								<< "? ";
-							if (GET_CHILD(GET_CHILD(node, 0), num) == /**i_path */ begin_node) 
+							auto multivalue = GET_CHILD(node, 0); assert(multivalue);
+							if (GET_CHILD(multivalue, num) == /**i_path */ prev_prev_node) 
 							{
 								cerr << "yes." << endl;
 								return *i_fp;
 							}
 							else cerr << "no." << endl;
 						}
+						assert(false);
 					}
-					cerr << "Ident grandparent is not this function call." << endl;
-					goto failed;
 				}
+				case CAKE_TOKEN(EVENT_PATTERN): {
+					unsigned prev_node_pos = 0U;
+					while (prev_node_pos < GET_CHILD_COUNT(node) && GET_CHILD(node, prev_node_pos) != prev_node)
+					{ ++prev_node_pos; }
+					assert(prev_node_pos != GET_CHILD_COUNT(node)); // we should always find prev_node
+					
+					// get the subprogram
+					shared_ptr<spec::subprogram_die> subprogram;
+					{
+						INIT;
+						BIND3(node, eventContext, EVENT_CONTEXT);
+						BIND3(node, memberNameExpr, DEFINITE_MEMBER_NAME); // name of call being matched -- can ignore this here
+						
+						auto dmn = read_definite_member_name(memberNameExpr);
+						assert(dmn.size() == 1);
+						
+						auto found = dwarf_context->get_ds().toplevel()->visible_resolve(
+							dmn.begin(), dmn.end());
+						assert(found);
+						subprogram = dynamic_pointer_cast<spec::subprogram_die>(found);
+						assert(subprogram);
+					}
+					// now look for the pos'th fp
+					unsigned pos = 0;
+					spec::subprogram_die::formal_parameter_iterator i_fp;
+					for (i_fp = subprogram->formal_parameter_children_begin();	
+						i_fp != subprogram->formal_parameter_children_end();	
+						++i_fp, ++pos)
+					{
+						if (pos == prev_node_pos) break;
+					}
+					assert(i_fp != subprogram->formal_parameter_children_end());
+					
+					return *i_fp;
+				} break;
+				// most tokens we silently ascend through
+				
+				case CAKE_TOKEN(RL_DOUBLE_ARROW):
+				case CAKE_TOKEN(LR_DOUBLE_ARROW):
+				case CAKE_TOKEN(BI_DOUBLE_ARROW):
+				case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
+				case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
+					/* Here we've reached the end of the per-module AST. We should really
+					 * check that the context we came from pertains to the argument module (FIXME). */
+					break;
+
+				// if we get to the top of a link block, we're definitely finishing
+				case CAKE_TOKEN(PAIRWISE_BLOCK_LIST):
+				case CAKE_TOKEN(TOPLEVEL):
+					break;
+				
 				case CAKE_TOKEN(IDENT):
 				case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
 				case CAKE_TOKEN(MULTIVALUE):
+				default:
 					continue;
-
-				default: break; // signal exit
 			}
-		}
+		} // end while walking up tree
 	failed:
 		return boost::shared_ptr<dwarf::spec::basic_die>();
 	}
+	
+	bool treat_subprogram_as_untyped(
+		boost::shared_ptr<dwarf::spec::subprogram_die> subprogram)
+	{
+		auto args_begin 
+			= subprogram->formal_parameter_children_begin();
+		auto args_end
+			= subprogram->formal_parameter_children_end();
+		return (args_begin == args_end
+						 && subprogram->unspecified_parameters_children_begin() !=
+						subprogram->unspecified_parameters_children_end());
+	}	
+	bool subprogram_returns_void(
+		shared_ptr<spec::subprogram_die> subprogram)
+	{
+		if (!subprogram->get_type())
+		{
+			if (treat_subprogram_as_untyped(subprogram))
+			{
+				std::cerr << "Warning: assuming function " << *subprogram << " is void-returning."
+					<< std::endl;
+			}
+			return true;
+		}
+		return false;
+	}			
 		
 	std::string solib_constructor = std::string("elf_external_sharedlib");
 	const char *guessed_system_library_path = "/usr/lib:/lib";

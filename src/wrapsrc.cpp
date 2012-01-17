@@ -25,32 +25,6 @@ namespace cake
 			        {source->get_ds().toplevel(),
 			         sink->get_ds().toplevel()}), 
 	  env(initial_env) {}
-
-	bool wrapper_file::treat_subprogram_as_untyped(
-		boost::shared_ptr<dwarf::spec::subprogram_die> subprogram)
-	{
-		auto args_begin 
-			= subprogram->formal_parameter_children_begin();
-		auto args_end
-			= subprogram->formal_parameter_children_end();
-		return (args_begin == args_end
-						 && subprogram->unspecified_parameters_children_begin() !=
-						subprogram->unspecified_parameters_children_end());
-	}	
-	bool wrapper_file::subprogram_returns_void(
-		shared_ptr<subprogram_die> subprogram)
-	{
-		if (!subprogram->get_type())
-		{
-			if (treat_subprogram_as_untyped(subprogram))
-			{
-				std::cerr << "Warning: assuming function " << *subprogram << " is void-returning."
-					<< std::endl;
-			}
-			return true;
-		}
-		return false;
-	}			
 	
    void wrapper_file::write_function_header(
         antlr::tree::Tree *event_pattern,
@@ -430,7 +404,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				corresps.at(0)->second.source_pattern,
 				"__real_" + *callsite_signature->get_name(),
 				callsite_signature,
-				wrapper_arg_name_prefix, module_of_die(callsite_signature), true, unique_called_subprogram);
+				wrapper_arg_name_prefix, m_d.module_of_die(callsite_signature), true, unique_called_subprogram);
 		m_out << " __attribute__((weak));" << std::endl;
 		// output prototype for __wrap_
 		m_out << "namespace cake { namespace " << m_d.namespace_name() << " {" << std::endl;
@@ -438,7 +412,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				corresps.at(0)->second.source_pattern,
 				"__wrap_" + *callsite_signature->get_name(),
 				callsite_signature,
-				wrapper_arg_name_prefix, module_of_die(callsite_signature), true, unique_called_subprogram);
+				wrapper_arg_name_prefix, m_d.module_of_die(callsite_signature), true, unique_called_subprogram);
 		m_out << ';' << std::endl;
 		m_out << "} } // end cake and link namespaces" << std::endl;
 		m_out << "} // end extern \"C\"" << std::endl;
@@ -448,7 +422,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				corresps.at(0)->second.source_pattern,
 				"__wrap_" + *callsite_signature->get_name(),
 				callsite_signature,
-				wrapper_arg_name_prefix, module_of_die(callsite_signature), true, unique_called_subprogram);
+				wrapper_arg_name_prefix, m_d.module_of_die(callsite_signature), true, unique_called_subprogram);
 		m_out << std::endl;
 		m_out << " {";
 		m_out.inc_level();
@@ -674,7 +648,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				corresps.at(0)->second.source_pattern,
 				"__real_" + *callsite_signature->get_name(),
 				callsite_signature,
-				wrapper_arg_name_prefix, module_of_die(callsite_signature), false, unique_called_subprogram);
+				wrapper_arg_name_prefix, m_d.module_of_die(callsite_signature), false, unique_called_subprogram);
 		m_out << ';' << std::endl; // end of return statement
 		m_out.dec_level();
 		m_out << '}' << std::endl; // end of block
@@ -1405,39 +1379,46 @@ assert(false && "disabled support for inferring positional argument mappings");
 							<< ", full tree: " << CCP(TO_STRING_TREE(*i_ctxt)) << endl;
 						assert(CCP(GET_TEXT(*i_ctxt)) == basic_name
 						||     (friendly_name && CCP(GET_TEXT(*i_ctxt)) == *friendly_name));
-						auto found_die = map_stub_context_to_dwarf_element(
+						auto found_die = map_ast_context_to_dwarf_element(
 							*i_ctxt,
-							remote_module // dwarf context is the remote module
+							remote_module, // dwarf context is the remote module
+							false
 							);
 						cerr << "Finished searching for DWARF element, status: "
-							<< std::boolalpha << (found_die ? true : false) << endl;
+							<< (found_die ? "found it" : "did not find it") << endl;
 						// if we didn't find a DIE, that means... what?
+						assert(found_die); 
 						shared_ptr<formal_parameter_die> found_fp
 						 = dynamic_pointer_cast<formal_parameter_die>(found_die);
-						assert(found_die); assert(found_fp);
+						assert(found_fp);
 
-						if (found_fp)
+						if (!found_type)
 						{
-							if (!found_type)
-							{
-								found_type = found_fp->get_type();
-							} else if (found_type != found_fp->get_type()) RAISE(
-							*i_ctxt, "non-unanimous types for usage contexts");
-							
-							cerr << "found type at offset 0x" << std::hex << found_type->get_offset()
-								<< std::dec << ", name: " 
-								<< (found_type->get_name() ? *found_type->get_name() : "(no name)")
-								<< endl;
-						}
+							found_type = found_fp->get_type();
+						} else if (found_type != found_fp->get_type()) RAISE(
+						*i_ctxt, "non-unanimous types for usage contexts");
+
+						cerr << "found type at offset 0x" << std::hex << found_type->get_offset()
+							<< std::dec << ", name: " 
+							<< (found_type->get_name() ? *found_type->get_name() : "(no name)")
+							<< endl;
 					}
-					shared_ptr<type_die> unq_t = found_type->get_unqualified_type();
-					if (unq_t != found_type->get_concrete_type())
+					if (!found_type)
 					{
-						auto tdef = dynamic_pointer_cast<spec::typedef_die>(unq_t);
-						assert(tdef);
-						auto opt_name = tdef->get_name();
-						assert(opt_name);
-						remote_tagstring = *opt_name;
+						// this might happen because we didn't gather any contexts. 
+						// It's okay. We just don't set the tagstring.
+					}
+					else
+					{
+						shared_ptr<type_die> unq_t = found_type->get_unqualified_type();
+						if (unq_t != found_type->get_concrete_type())
+						{
+							auto tdef = dynamic_pointer_cast<spec::typedef_die>(unq_t);
+							assert(tdef);
+							auto opt_name = tdef->get_name();
+							assert(opt_name);
+							remote_tagstring = *opt_name;
+						}
 					}
 					
 					out_env->insert(std::make_pair(basic_name, 
@@ -1588,24 +1569,25 @@ assert(false && "disabled support for inferring positional argument mappings");
 // 			<< get_type_name(target_type) << "*>(&__cake_from);" << std::endl;
 // 	}
 
-	module_ptr 
-	wrapper_file::module_of_die(boost::shared_ptr<dwarf::spec::basic_die> p_d)
-	{
-		//return dynamic_cast<module_described_by_dwarf&>(p_d->get_ds()).shared_this();
-		return m_d.module_for_dieset(p_d->get_ds());
-	}
-
 	std::string 
 	wrapper_file::get_type_name(
 			boost::shared_ptr<dwarf::spec::type_die> t)
 	{
 		const std::string& namespace_prefix
-		 = ns_prefix + "::" + m_d.name_of_module(module_of_die(t));
+		 = get_type_name_prefix(t);
 		 
 		return /*m_out <<*/ ((t->get_tag() == DW_TAG_base_type) ?
 			compiler.local_name_for(t)
 			: (namespace_prefix + "::" + compiler.fq_name_for(t)));
 	}
+	
+	std::string 
+	wrapper_file::get_type_name_prefix(
+			boost::shared_ptr<dwarf::spec::type_die> t)
+	{
+		return ns_prefix + "::" + m_d.name_of_module(m_d.module_of_die(t));
+	}
+	
 	
 	wrapper_file::value_conversion_params_t
 	wrapper_file::resolve_value_conversion_params(
@@ -1623,13 +1605,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 		assert((from_type || from_module)
 			&& (to_type || to_module));
 		// fill in less-precise info from more-precise
-		if (!from_module && from_type) from_module = module_of_die(from_type);
-		if (!to_module && to_type) to_module = module_of_die(to_type);
+		if (!from_module && from_type) from_module = m_d.module_of_die(from_type);
+		if (!to_module && to_type) to_module = m_d.module_of_die(to_type);
 		assert(from_module);
 		assert(to_module);
 		// check consistency
-		assert((!from_type || module_of_die(from_type) == from_module)
-		&& (!to_type || module_of_die(to_type) == to_module));
+		assert((!from_type || m_d.module_of_die(from_type) == from_module)
+		&& (!to_type || m_d.module_of_die(to_type) == to_module));
 		// we must have either a from_type of a from_typeof
 		assert(from_type || from_typeof);
 		// ... this is NOT true for to_type: if we don't have a to_type or a to_typeof, 
@@ -2041,12 +2023,16 @@ assert(false && "disabled support for inferring positional argument mappings");
 			case CAKE_TOKEN(KEYWORD_DELETE):
 			case CAKE_TOKEN(KEYWORD_NEW):
 			case CAKE_TOKEN(KEYWORD_TIE):
+				assert(false);
 
-			// these affect the expected cxx type
+			// these affect the expected cxx type, but
+			// they are processed by scanning the AST -- we don't need to do anything
 			case CAKE_TOKEN(KEYWORD_AS):
 			case CAKE_TOKEN(KEYWORD_IN_AS):
 			case CAKE_TOKEN(KEYWORD_OUT_AS):
-				assert(false);
+				return emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 2));
 			
 			ambiguous_arity_ops: //__attribute__((unused))
 			// may be unary (address-of) or binary
@@ -2455,16 +2441,38 @@ assert(false && "disabled support for inferring positional argument mappings");
 			function_name);		
 		m_out << '(';
 		m_out.inc_level();
+		spec::subprogram_die::formal_parameter_iterator i_fp
+		 = callee_subprogram->formal_parameter_children_begin();
+		bool ran_out_of_fps = false;
 		for (auto i_result = arg_results.begin(); 
-			i_result != arg_results.end(); ++i_result)
+			i_result != arg_results.end(); ++i_result, ++i_fp)
 		{
 			if (i_result != arg_results.begin()) m_out << ", ";
+			
+			if (i_fp == callee_subprogram->formal_parameter_children_end()) ran_out_of_fps = true;
+			
 			m_out << std::endl; // begin each argument on a new line
 			auto name_in_callee = arg_names_in_callee[i_result - arg_results.begin()];
 			m_out << "/* argument name in callee: " 
 				<< (name_in_callee ? *name_in_callee : "(no name)")
 				<< " */ ";
+			// if the callee argument has a pointer type, we insert a cast
+			bool inserting_cast = false;
+			if (!ran_out_of_fps && (*i_fp)->get_type()
+				 && (*i_fp)->get_type()->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
+			{
+				inserting_cast = true;
+				m_out << "reinterpret_cast< ";
+				auto declarator = compiler.cxx_declarator_from_type_die((*i_fp)->get_type(),
+					optional<const string&>(), true,
+					get_type_name_prefix((*i_fp)->get_type()) + "::", false);
+				m_out << declarator;
+				m_out << ">(";
+			}
+			
 			m_out << i_result->result_fragment;
+			
+			if (inserting_cast) m_out << ")";
 		}
 		m_out << ')';
 		m_out.dec_level();

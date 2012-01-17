@@ -25,10 +25,25 @@ using std::map;
 using std::multimap;
 using dwarf::spec::type_die;
 using dwarf::spec::subprogram_die;
+using dwarf::spec::pointer_type_die;
 using dwarf::spec::opt;
 
 namespace cake
 {
+	module_ptr 
+	link_derivation::module_for_die(boost::shared_ptr<dwarf::spec::basic_die> p_d)
+	{
+		assert(p_d);
+		return module_of_die(p_d);
+	}	
+
+	module_ptr 
+	link_derivation::module_of_die(boost::shared_ptr<dwarf::spec::basic_die> p_d)
+	{
+		assert(p_d);
+		return module_for_dieset(p_d->get_ds());
+	}
+	
 	struct satisfies_dep
 	{
 		value_conversion::dep m_dep;
@@ -234,10 +249,10 @@ namespace cake
 						//assert(false);
 						auto source_name_parts = compiler.fq_name_parts_for(source_data_type);
 						auto sink_name_parts = compiler.fq_name_parts_for(sink_data_type);
-						add_value_corresp(wrap_code.module_of_die(source_data_type), 
+						add_value_corresp(module_of_die(source_data_type), 
 							source_data_type,
 							0,
-							wrap_code.module_of_die(sink_data_type),
+							module_of_die(sink_data_type),
 							sink_data_type,
 							0,
 							0,
@@ -328,6 +343,26 @@ namespace cake
 						}
 					}
 					
+					// if we still don't have it, choose the rules whose
+					// declared type is the concrete type
+					if (!found_init) 
+					{
+						for (auto i_candidate = candidates.first;
+							i_candidate != candidates.second;
+							++i_candidate)
+						{
+							if (i_candidate->second->sink_data_type->get_concrete_type()
+							 == i_candidate->second->sink_data_type
+							 && i_candidate->second->source_data_type->get_concrete_type()
+							 == i_candidate->second->source_data_type)
+							{
+								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
+									"multiple non-init rules declared for the same concrete types");
+								else found_init = *i_candidate;
+							}
+						}
+					}
+					
 					if (!found_init) RAISE_INTERNAL(
 						candidates.first->second->corresp,
 						"BUG: can't handle ambiguous selection of initialization rule ");
@@ -347,7 +382,7 @@ namespace cake
 		if (t)
 		{
 			if (is_interesting(t)) out.push_back(t);
-			for (int i = 0; i < GET_CHILD_COUNT(t); ++i)
+			for (unsigned i = 0U; i < GET_CHILD_COUNT(t); ++i)
 			{
 				walk_ast_depthfirst(GET_CHILD(t, i), out, is_interesting);
 			}
@@ -360,6 +395,26 @@ namespace cake
 		// - typenames, which we ensure exist
 		// - interpretations of arguments, which we use to 
 		//   supplement caller-side info that is currently missing
+		
+		/*
+		    This approach is broken because
+			we don't know enough about the semantics of the AST at this point.
+			We want to do a pre-pass to identify typenames that need adding
+			to the DWARF info so that we can correctly read in the correspondences.
+			BUT we can't do the more clever inferences,
+			such as discovering data types of caller-side arguments,
+			until we have build the event correspondences table
+			so can associate event patterns with their sink-side call expressions.
+			
+			In short, we need to do a pre-phase and a post-phase.
+			This function just does the pre-phase.
+			I have commented out the (unfinished, anyway) code for argument type guessing,
+			which needs to be moved to the post-phase.
+			Note that there is a second post-phase buried in initial_environment,
+			which is guessing artificial typestrings for bindings.
+			FIXME: refactor all this stuff into coherent form.
+			
+		 */
 		
 		std::vector<antlr::tree::Tree *> event_patterns;
 		walk_ast_depthfirst(this->t, event_patterns, 
@@ -383,7 +438,7 @@ namespace cake
 				return (GET_TYPE(t) == CAKE_TOKEN(INVOKE_WITH_ARGS));
 			});
 		// also build a list of the functions that are arginfo-less
-		std::vector<shared_ptr<spec::subprogram_die> > bare_subprograms;
+		vector<shared_ptr<spec::subprogram_die> > bare_subprograms;
 		for (auto i_mod = input_modules.begin(); i_mod != input_modules.end(); ++i_mod)
 		{
 			for (auto i_dfs = (*i_mod)->get_ds().begin();
@@ -409,10 +464,35 @@ namespace cake
 			}
 		}
 		
-		// for each event pattern
+		// we add argument records (with names if we can) to untyped (caller-side) subprograms
+		merge_event_pattern_info_into_bare_subprograms(event_patterns, bare_subprograms);
 		
+		// we ensure that any artificial types mentioned in interpretations exist in their target modules
+		// ensure_existence_of_artificial_types(interpretations);
 		
-		
+	}
+// 	void
+// 	link_derivation::ensure_existence_of_artificial_types(
+// 		const std::vector<antlr::tree::Tree *>& interpretations
+// 	)
+// 	{
+// 		for (auto i_interp = intepretations.begin();
+// 			i_interp != interpretations.end(); ++i_interp)
+// 		{
+// 			// which module?
+// 			// GAH: this requires some semantic analysis too.
+// 			// So the soonest we can do it is at the same time as reading corresps
+// 			source_module->ensure_dwarf_type(
+// 				GET_CHILD(interpretation, 0));
+// 		}
+// 	}
+	
+	void
+	link_derivation::merge_event_pattern_info_into_bare_subprograms(
+		const vector<antlr::tree::Tree *>& event_patterns,
+		const vector<shared_ptr<spec::subprogram_die> >& bare_subprograms
+	)
+	{
 		/* For each declared function that is untyped, 
 		 * we look for an event pattern which matches it
 		 * (across all event correspondences)
@@ -427,9 +507,10 @@ namespace cake
 		 *    and that ident is used in the RHS stub,
 		 *    and we can work out a type from this
 		 */
-		 
+		
 		for (auto i_subp = bare_subprograms.begin(); i_subp != bare_subprograms.end(); ++i_subp)
 		{
+			
 			auto subprogram = *i_subp;
 			
 			struct pattern_info
@@ -437,28 +518,16 @@ namespace cake
 				vector<optional<string> > call_argnames;
 				vector<antlr::tree::Tree *> call_interps;
 				antlr::tree::Tree *pattern;
-				ev_corresp *corresp;
+				//ev_corresp *corresp;
+				antlr::tree::Tree *corresp;
 			};
 			multimap<string, pattern_info> patterns;
-			vector<string> callnames;
+			set<string> callnames;
 			
 			// we've already harvested all the event patterns and calls we know about...
 			// BUT they are deprived of module context
 			
-			// patterns could be in any link block featuring this module...
-			// ... so we just want to check against the source module
-			for (auto i_corresp = ev_corresps.begin();
-				i_corresp != ev_corresps.end();
-				++i_corresp)
-			{
-				if (i_corresp->second.source == i_mod->second
-					&& i_corresp->second.source_pattern)
-				{
-					auto p = i_corresp->second.source_pattern;
-					assert(GET_TYPE(p) == CAKE_TOKEN(EVENT_PATTERN));
-					switch (GET_TYPE(p))
-					{
-						case CAKE_TOKEN(EVENT_WITH_CONTEXT_SEQUENCE): {
+//					case CAKE_TOKEN(EVENT_WITH_CONTEXT_SEQUENCE): {
 // 							INIT;
 // 							BIND3(p, sequenceHead, CONTEXT_SEQUENCE);
 // 							{
@@ -476,84 +545,106 @@ namespace cake
 // 											"not a context predicate");
 // 								}
 // 							}
-							assert(false); // see to this later
-						}
-						case CAKE_TOKEN(EVENT_PATTERN):
+// 						assert(false); // see to this later
+			
+			// FIXME: patterns could be in any link block featuring this module...
+			// ... so we just want to check against the source module
+			cerr << "Walking our list of " << event_patterns.size() << " event patterns." << endl;
+			for (auto i_pattern = event_patterns.begin(); 
+				i_pattern != event_patterns.end();
+				++i_pattern)
+			{
+				//auto p = i_corresp->second.source_pattern;
+				auto p = *i_pattern;
+				assert(GET_TYPE(p) == CAKE_TOKEN(EVENT_PATTERN));
+
+				INIT;
+				BIND3(p, eventContext, EVENT_CONTEXT);
+				BIND3(p, memberNameExpr, DEFINITE_MEMBER_NAME); // name of call being matched -- can ignore this here
+				BIND3(p, eventCountPredicate, EVENT_COUNT_PREDICATE);
+				BIND3(p, eventParameterNamesAnnotation, KEYWORD_NAMES);
+				vector<optional<string> > argnames;
+				vector<antlr::tree::Tree *> interps;
+				auto dmn = read_definite_member_name(memberNameExpr);
+				if (subprogram->get_name() && dmn.size() == 1 
+					&& dmn.at(0) == *subprogram->get_name())
+				{
+					cerr << "Pattern " << CCP(TO_STRING_TREE(p)) << " matched function "
+						<< (subprogram->get_name() ? *subprogram->get_name() : "(no name)")
+						<< endl;
+					FOR_REMAINING_CHILDREN(p)
+					{
+						INIT;
+						ALIAS3(n, annotatedValueBindingPatternHead, 
+							ANNOTATED_VALUE_PATTERN);
 						{
 							INIT;
-							BIND3(p, eventContext, EVENT_CONTEXT);
-							BIND3(p, memberNameExpr, DEFINITE_MEMBER_NAME); // name of call being matched -- can ignore this here
-							BIND3(p, eventCountPredicate, EVENT_COUNT_PREDICATE);
-							BIND3(p, eventParameterNamesAnnotation, KEYWORD_NAMES);
-							vector<optional<string> > argnames;
-							vector<antlr::tree::Tree *> interps;
-							auto dmn = read_definite_member_name(memberNameExpr);
-							if (subprogram->get_name() && dmn.size() == 1 
-								&& dmn.at(0) == *subprogram->get_name())
+							BIND2(annotatedValueBindingPatternHead, arg);
+							assert(arg);
+							switch(GET_TYPE(arg))
 							{
-								FOR_REMAINING_CHILDREN(p)
+								/* Each arm MUST push an argname and an interp,
+								 * even if null. */
+							
+								case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+									assert(false); // no longer used
+								case CAKE_TOKEN(NAME_AND_INTERPRETATION):
 								{
 									INIT;
-									ALIAS3(n, annotatedValueBindingPatternHead, 
-										ANNOTATED_VALUE_PATTERN);
-									{
-										INIT;
-										BIND2(annotatedValueBindingPatternHead, arg);
-										assert(arg);
-										switch(GET_TYPE(arg))
-										{
-											case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
-												assert(false); // no longer used
-											case CAKE_TOKEN(NAME_AND_INTERPRETATION):
-											{
-												INIT;
-												antlr::tree::Tree *interpretation = 0;
-												BIND3(arg, memberName, DEFINITE_MEMBER_NAME);
-												if (GET_CHILD_COUNT(arg) > 1) {
-													interpretation = GET_CHILD(arg, 1);
-												}
-												ostringstream s;
-												s << read_definite_member_name(memberName);
-												argnames.push_back(s.str());
-												cerr << "Pushed an argument name: " 
-													<< s.str() << endl;
-												interps.push_back(interpretation);
-												break;
-											}
-											case CAKE_TOKEN(KEYWORD_CONST):
-												// no information about arg name here
-												argnames.push_back(
-													optional<string>());
-												break;
-											default: assert(false);
-
-										}
+									antlr::tree::Tree *interpretation = 0;
+									BIND3(arg, memberName, DEFINITE_MEMBER_NAME);
+									if (GET_CHILD_COUNT(arg) > 1) {
+										interpretation = GET_CHILD(arg, 1);
 									}
+									ostringstream s;
+									s << read_definite_member_name(memberName);
+									argnames.push_back(s.str());
+									cerr << "Pushed an argument name: " 
+										<< s.str() << endl;
+									interps.push_back(interpretation);
+									break;
 								}
-								// add this pattern
-								patterns.insert(make_pair(
-									dmn,
-									(pattern_info) {
-									argnames,
-									interps,
-									p,
-									&i_corresp->second
-									}
-								));
-								callnames.push_back(dmn);
-							} // end if name matches
-							else if (dmn.size() != 1)
-							{
-								cerr << "Warning: encountered function name of size " 
-									<< dmn.size()
-									<< endl;
+								case CAKE_TOKEN(KEYWORD_CONST):
+									// no information about arg name here
+									argnames.push_back(
+										optional<string>());
+									interps.push_back(0);
+									break;
+								default: assert(false);
+
 							}
-						} // end case EVENT_PATTERN
-						break;
-						default: RAISE(p, "didn't understand event pattern");
-					} // end switch(GET_TYPE(p))
-				} // end if we found a source pattern in this module
-			} // end for all corresps
+						}
+					}
+					auto p_corresp = GET_PARENT(*i_pattern);
+					assert(GET_TYPE(p_corresp) == CAKE_TOKEN(BI_DOUBLE_ARROW)
+					||     GET_TYPE(p_corresp) == CAKE_TOKEN(LR_DOUBLE_ARROW)
+					||     GET_TYPE(p_corresp) == CAKE_TOKEN(RL_DOUBLE_ARROW));
+					
+					// add this pattern
+					patterns.insert(make_pair(
+						dmn,
+						(pattern_info) {
+						argnames,
+						interps,
+						p,
+						p_corresp
+						}
+					));
+					callnames.insert(dmn);
+				} // end if name matches
+				else 
+				{
+					cerr << "Pattern " << CCP(TO_STRING_TREE(p)) << " did not match function "
+						<< (subprogram->get_name() ? *subprogram->get_name() : "(no name)")
+						<< endl;
+					if (dmn.size() != 1)
+					{
+						cerr << "Warning: encountered function name of size " 
+							<< dmn.size()
+							<< endl;
+					}
+				}
+			} // end for pattern
 
 			// now we've gathered all the patterns we can, 
 			// iterate through them by call names
@@ -568,6 +659,15 @@ namespace cake
 					i_pattern != patterns_seq.second;
 					++i_pattern)
 				{
+					cerr << "Considering argnames vector: (";
+					for (auto i_argname = i_pattern->second.call_argnames.begin();
+						i_argname != i_pattern->second.call_argnames.end(); ++i_argname)
+					{
+						if (i_argname != i_pattern->second.call_argnames.begin())
+						{ cerr << ", "; }
+						cerr << *i_argname;
+					}
+					cerr << ")" << endl;
 					if (!seen_argnames) seen_argnames = i_pattern->second.call_argnames;
 					else if (i_pattern->second.call_argnames != *seen_argnames)
 					{
@@ -579,6 +679,10 @@ namespace cake
 						seen_argnames = optional<vector<optional<string> > >();
 					}
 				}
+				cerr << "Finished reducing patterns for call " << *i_callname
+					<< ", ended with ";
+				if (!seen_argnames) cerr << "(none)"; else cerr << seen_argnames->size();
+				cerr << " args." << endl;
 				if (argnames_identical)
 				{
 					/* Okay, go ahead and add name attrs */
@@ -630,7 +734,8 @@ namespace cake
 						i_arg != i_pattern->second.call_argnames.end();
 						++i_arg, ++i_interp, ++i_fp)
 					{
-						assert(i_interp != i_pattern->second.call_interps.end());
+						assert(i_interp != i_pattern->second.call_interps.end()
+							&& "as many interps as arguments");
 
 						vector<antlr::tree::Tree *> contexts;
 						if (*i_interp)
@@ -644,11 +749,13 @@ namespace cake
 							BIND2(*i_interp, dwarfType);
 							// FIXME: pay attention to the kind (as, in_as, out_as)
 							// of the interpretation
-							auto existing = i_mod->second->existing_dwarf_type(dwarfType);
+							auto existing = module_for_die(subprogram)
+								->existing_dwarf_type(dwarfType);
 							// if no existing, then try creating one
 							if (!existing)
 							{
-								existing = i_mod->second->create_dwarf_type(dwarfType);
+								existing = module_for_die(subprogram)
+									->create_dwarf_type(dwarfType);
 								// if this failed, it means it was just a reference
 								// (ident) not a definition
 								// -- this might be okay for us, as we can create a typedef
@@ -670,51 +777,51 @@ namespace cake
 
 						}
 
-						// if the vector contains a null entry, it means that 
-						// we saw no name for this argument.
-						if (!*i_arg)
-						{
-							// we saw no name for it, but we might have an interpretation
-
-						}
-						else // it definitely has a name, so we can search for its uses
-						{
-							find_usage_contexts(**i_arg,
-								i_pattern->second.corresp->sink_expr,
-								contexts);
-							if (contexts.size() > 0)
-							{
-								cerr << "Considering type expectations "
-									<< "for stub uses of identifier " 
-									<< **i_arg << endl;
-								for (auto i_ctxt = contexts.begin(); 
-									i_ctxt != contexts.end();
-									++i_ctxt)
-								{
-									auto found_die = map_stub_context_to_dwarf_element(
-										*i_ctxt,
-										i_pattern->second.corresp->sink);
-
-									if (found_die)
-									{
-										cerr << "FIXME: found a stub function call using ident " 
-											<< **i_arg 
-											<< " as " << *found_die
-											<< ", child of " << *found_die->get_parent()
-											<< endl;
-										// FIXME: extract its type information
-									}
-								}
-								// when we get here, we may have identified some
-								// type expectations, or we may not.
-								// FIXME: finish this code by
-								// - checking all the type expectations are
-								// the same
-								// - invoking unique_correpsonding_type
-								// - filling in the output of this in the fp die
-
-							} // end if contexts.size() > 0
-						}
+// 						// if the vector contains a null entry, it means that 
+// 						// we saw no name for this argument.
+// 						if (!*i_arg)
+// 						{
+// 							// we saw no name for it, but we might have an interpretation
+// 
+// 						}
+// 						else // it definitely has a name, so we can search for its uses
+// 						{
+// 							find_usage_contexts(**i_arg,
+// 								i_pattern->second.corresp->sink_expr,
+// 								contexts);
+// 							if (contexts.size() > 0)
+// 							{
+// 								cerr << "Considering type expectations "
+// 									<< "for stub uses of identifier " 
+// 									<< **i_arg << endl;
+// 								for (auto i_ctxt = contexts.begin(); 
+// 									i_ctxt != contexts.end();
+// 									++i_ctxt)
+// 								{
+// 									auto found_die = map_ast_context_to_dwarf_element(
+// 										*i_ctxt,
+// 										i_pattern->second.corresp->sink, true);
+// 
+// 									if (found_die)
+// 									{
+// 										cerr << "FIXME: found a stub function call using ident " 
+// 											<< **i_arg 
+// 											<< " as " << *found_die
+// 											<< ", child of " << *found_die->get_parent()
+// 											<< endl;
+// 										// FIXME: extract its type information
+// 									}
+// 								}
+// 								// when we get here, we may have identified some
+// 								// type expectations, or we may not.
+// 								// FIXME: finish this code by
+// 								// - checking all the type expectations are
+// 								// the same
+// 								// - invoking unique_correpsonding_type
+// 								// - filling in the output of this in the fp die
+// 
+// 							} // end if contexts.size() > 0
+// 						}
 					}
 				} // end for i_pattern
 			} // end for i_callname
@@ -912,7 +1019,7 @@ namespace cake
 					break;
 					case DW_TAG_typedef:
 						wrap_file << compiler.make_typedef(
-							dynamic_pointer_cast<spec::typedef_die>(*i_die),
+							dynamic_pointer_cast<spec::typedef_die>(*i_die)->get_type(),
 							(*i_die)->get_name() 
 							? *(*i_die)->get_name()
 							: compiler.create_ident_for_anonymous_die(*i_die)
@@ -1227,7 +1334,7 @@ namespace cake
 					assert(outer_type_synonymy_chain.size() != 0
 					||    inner_type_synonymy_chain.size() != 0
 					||    (*i_p_corresp)->init_only 
-					||    emitted_default_to_default == false);
+					||    !emitted_default_to_default);
 
 					if (outer_type_synonymy_chain.size() == 0
 					&&   inner_type_synonymy_chain.size() == 0) emitted_default_to_default = true;
@@ -1259,7 +1366,7 @@ namespace cake
 						if ((*i_p_corresp)->init_only) continue;
 
 						// here we want "second_artificial_name"
-						auto first_die = (wrap_code.module_of_die((*i_p_corresp)->source_data_type) == i_pair->first) ?
+						auto first_die = (module_of_die((*i_p_corresp)->source_data_type) == i_pair->first) ?
 							(*i_p_corresp)->source_data_type : (*i_p_corresp)->sink_data_type;
 						
 						auto artificial_name_for_first_die =
@@ -1348,7 +1455,7 @@ namespace cake
 						if ((*i_p_corresp)->init_only) continue;
 					
 						// here we want "second_artificial_name"
-						auto second_die = (wrap_code.module_of_die((*i_p_corresp)->source_data_type) == i_pair->second) ?
+						auto second_die = (module_of_die((*i_p_corresp)->source_data_type) == i_pair->second) ?
 							(*i_p_corresp)->source_data_type : (*i_p_corresp)->sink_data_type;
 						
 						auto artificial_name_for_second_die =
@@ -1839,6 +1946,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 									BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
 									BIND2(correspHead, sinkExpr);
 									BIND3(correspHead, returnEvent, RETURN_EVENT);
+									
 									add_event_corresp(left, sourcePattern, sourceInfixStub,
 										right, sinkExpr, sinkInfixStub, returnEvent);
 								}
@@ -2035,6 +2143,71 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		}
 	}
 	
+	void link_derivation::ensure_all_artificial_data_types(
+		antlr::tree::Tree *t,
+		module_ptr p_module)
+	{
+		// ensure that any artificial data types mentioned 
+		// in this corresp exist in the DWARF info
+		std::vector<antlr::tree::Tree *> interpretations;
+		walk_ast_depthfirst(t, interpretations, 
+			[p_module](antlr::tree::Tree *t)
+			{
+				bool relevant = (GET_TYPE(t) == CAKE_TOKEN(KEYWORD_AS)
+				||      GET_TYPE(t) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
+				||      GET_TYPE(t) == CAKE_TOKEN(KEYWORD_IN_AS)
+				||      GET_TYPE(t) == CAKE_TOKEN(KEYWORD_OUT_AS));
+				if (relevant) 
+				{
+					auto child = GET_CHILD(t, 0);
+					try
+					{
+						p_module->ensure_dwarf_type(child);
+					}
+					catch (dwarf::lib::Not_supported)
+					{
+						// this means we asked to create a typedef with no definition
+						// -- try to get the *existing* DWARF type of this AST
+						// context.
+						auto found = map_ast_context_to_dwarf_element(
+							child,
+							p_module,
+							false
+						);
+						assert(found);
+						auto has_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(found);
+						assert(has_type);
+						shared_ptr<type_die> is_type = has_type->get_type();
+						assert(is_type);
+						
+						// now handle implicit indirection (pointerness)
+						if (is_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type
+							&& GET_TYPE(child) != CAKE_TOKEN(KEYWORD_PTR))
+						{
+							// the DWARF context wants a pointer, and our AST doesn't
+							// say it's a pointer. Infer that it *is* a pointer.
+							// The typedef should alias the pointed-to type.
+							shared_ptr<pointer_type_die> is_pointer_type = dynamic_pointer_cast<pointer_type_die>(is_type);
+							assert(is_pointer_type);
+							shared_ptr<type_die> pointed_to_type = is_pointer_type->get_type();
+							assert(pointed_to_type);
+							is_type = pointed_to_type;
+						}
+						// converse case: the DWARF context doesn't want a pointer,
+						// but our AST says it is a pointer: this is probably bad Cake,
+						// and we catch it by asserting that our corresps never take pointer types.
+						
+						// now create a typedef DIE pointing at that type
+						auto created = p_module->create_typedef(is_type, CCP(GET_TEXT(child)));
+						cerr << "Created typedef of " << *is_type << " named " << CCP(GET_TEXT(child))
+							<< endl;
+						cerr << "Really! " << *created << endl;
+					}
+				}
+				return relevant;
+			});
+	}
+	
 	void link_derivation::add_event_corresp(
 		module_ptr source, 
 		antlr::tree::Tree *source_pattern,
@@ -2050,6 +2223,13 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		assert(GET_TYPE(sink_expr) == CAKE_TOKEN(EVENT_SINK_AS_STUB));
 		auto key = sorted(make_pair(source, sink));
 		assert(all_iface_pairs.find(key) != all_iface_pairs.end());
+
+		ensure_all_artificial_data_types(source_pattern, source);
+		if (source_infix_stub) ensure_all_artificial_data_types(source_infix_stub, source);
+		ensure_all_artificial_data_types(sink_expr, sink);
+		if (sink_infix_stub) ensure_all_artificial_data_types(sink_infix_stub, sink);
+		if (return_leg) ensure_all_artificial_data_types(return_leg, source);
+		
 		ev_corresps.insert(make_pair(key, 
 						(struct ev_corresp){ /*.source = */ source, // source is the *requirer*
 							/*.source_pattern = */ source_pattern,
@@ -2095,6 +2275,9 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		bool init_only
 	)
 	{
+		if (source_infix_stub) ensure_all_artificial_data_types(source_infix_stub, source);
+		if (sink_infix_stub) ensure_all_artificial_data_types(sink_infix_stub, sink);
+
 		auto source_mn = read_definite_member_name(source_data_type_mn);
 		auto source_data_type_opt = dynamic_pointer_cast<dwarf::spec::type_die>(
 			source->get_ds().toplevel()->visible_resolve(
@@ -2105,6 +2288,11 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			sink->get_ds().toplevel()->visible_resolve(
 			sink_mn.begin(), sink_mn.end()));
 		if (!sink_data_type_opt) RAISE(corresp, "could not resolve sink data type");
+		
+		// we should never have corresps between pointer types
+		assert(source_data_type_opt->get_concrete_type()->get_tag() != DW_TAG_pointer_type);
+		assert(sink_data_type_opt->get_concrete_type()->get_tag() != DW_TAG_pointer_type);
+		
 		add_value_corresp(source, 
 			source_data_type_opt, 
 			source_infix_stub,
@@ -2122,8 +2310,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		shared_ptr<dwarf::spec::type_die> sink_data_type,
 		bool source_is_on_left)
 	{
-		auto key = sorted(make_pair(wrap_code.module_of_die(source_data_type), 
-			wrap_code.module_of_die(sink_data_type)));
+		auto key = sorted(make_pair(module_of_die(source_data_type), 
+			module_of_die(sink_data_type)));
 		assert(all_iface_pairs.find(key) != all_iface_pairs.end());
 		assert(source_data_type);
 		assert(sink_data_type);
@@ -2140,10 +2328,10 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		// If we got here, we didn't find one
 		auto source_name_parts = compiler.fq_name_parts_for(source_data_type);
 		auto sink_name_parts = compiler.fq_name_parts_for(sink_data_type);
-		add_value_corresp(wrap_code.module_of_die(source_data_type), 
+		add_value_corresp(module_of_die(source_data_type), 
 			source_data_type,
 			0,
-			wrap_code.module_of_die(sink_data_type),
+			module_of_die(sink_data_type),
 			sink_data_type,
 			0,
 			0,
@@ -2578,6 +2766,11 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					// we should have just generated an event pattern and a function invocation
 					assert(GET_TYPE(tmp_source_pattern) == CAKE_TOKEN(EVENT_PATTERN));
 					assert(GET_TYPE(tmp_sink_pattern) == CAKE_TOKEN(EVENT_SINK_AS_STUB));
+					
+					ensure_all_artificial_data_types(tmp_source_pattern,
+						requiring_iface);
+					ensure_all_artificial_data_types(tmp_sink_pattern,
+						providing_iface);
 
 					add_event_corresp(requiring_iface, // source is the requirer 
 						tmp_source_pattern,
@@ -2587,6 +2780,10 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 						0, // no infix stub
 						0, // no return event
 						true, true);
+					
+					// also add interpretations from this corresp
+					
+					
 				}
 			}
 		}
@@ -2950,7 +3147,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 	{
 		vector<shared_ptr<dwarf::spec::type_die> > found;
 		auto ifaces = sorted(make_pair(corresp_module,
-			wrap_code.module_of_die(type)));
+			module_of_die(type)));
 		auto iters = val_corresps.equal_range(ifaces);
 		for (auto i_corresp = iters.first;
 			i_corresp != iters.second;
