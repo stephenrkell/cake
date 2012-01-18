@@ -84,6 +84,16 @@ namespace cake
 	private:
 		
 		// Cake high-level constructs
+		void
+		infer_tagstrings(
+			antlr::tree::Tree *in_ast,                 // optional
+			shared_ptr<type_die> contextual_dwarf_type, // also optional
+			module_ptr p_module, // not optional
+			optional<string>& direct_tagstring,
+			optional<string>& indirect_tagstring_in,
+			optional<string>& indirect_tagstring_out
+			);
+		
 		environment initial_environment(
 			antlr::tree::Tree *pattern,
 			module_ptr source_module,
@@ -198,13 +208,13 @@ namespace cake
 
 		post_emit_status
 		emit_stub_expression_as_statement_list(
-			const context& ctxt,
+			context& ctxt,
 			antlr::tree::Tree *expr/*,
 			boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type*/);   
 
 		post_emit_status
 		emit_stub_function_call(
-			const context& ctxt,
+			context& ctxt,
 			antlr::tree::Tree *call_expr/*,
 			boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type*/);
 

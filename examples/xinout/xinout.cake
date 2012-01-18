@@ -14,9 +14,9 @@ derive elf_reloc("xinout.o") xinout = link [client, lib]
 		values 
 		{
 			safe_obj    <-->                       lockable_obj;
-			safe_obj     -->({lock(this); that})   fragile_obj;
-			safe_obj    <-- ({unlock(this); this}) fragile_obj;
-			safe_obj    <-- ({unlock(this); this}) unlockme_obj;
+			safe_obj     -->({lock(here); that})   fragile_obj;
+			safe_obj    <-- ({unlock(here); this}) fragile_obj;
+			safe_obj    <-- ({unlock(here); this}) unlockme_obj;
 		}
 	}
 };

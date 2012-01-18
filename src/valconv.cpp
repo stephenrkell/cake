@@ -716,7 +716,7 @@ namespace cake
 				}));
 			extra_env.insert(make_pair("__cake_here",
 				(wrapper_file::bound_var_info) {
-					"&__cake_from" + *unique_source_field_selector, // cxx name
+					"&__cake_nonconst_from" + *unique_source_field_selector, // cxx name
 					"&__cake_nonconst_from" + *unique_source_field_selector, // typeof
 					source_module,
 					false
@@ -881,6 +881,10 @@ namespace cake
 		 * 3. Crossover the environment. This has the effect of applying depended-on correspondences.
 		 * 4. For each target field, emit its post-stub (if any) and extend the environment with the result.
 		 * 5. For each target field, assign its value.
+		 *
+		 * Actually I missed out some steps.
+		 * 1a. Emit the overall source-side stub.
+		 * 5a. Emit the overall sink-side stub.
 		 */
 		
 		/* 0. Build the list of sink-side (target) fields we are going to write. */
@@ -956,6 +960,43 @@ namespace cake
 		// environment complete for now; create a context out of this environment
 		wrapper_file::context ctxt(w, source_module, target_module, basic_env);
 		ctxt.opt_val_corresp = (wrapper_file::context::val_info_s){ this->corresp };
+		
+		/* 1a. Emit the overall source-side stub, if there is one. */
+		if (source_infix_stub && GET_CHILD_COUNT(source_infix_stub) > 0)
+		{
+			environment extra_env = basic_env;
+			// source-side stubs have "this", "here" and "there"
+			extra_env.insert(make_pair("__cake_this",
+				(wrapper_file::bound_var_info) {
+					"__cake_nonconst_from", // cxx name
+					"__cake_nonconst_from", // typeof
+					source_module,
+					false
+				}));
+			extra_env.insert(make_pair("__cake_here",
+				(wrapper_file::bound_var_info) {
+					"&__cake_nonconst_from", // cxx name
+					"&__cake_nonconst_from", // typeof
+					source_module,
+					false
+				}));
+			extra_env.insert(make_pair("__cake_there",
+				(wrapper_file::bound_var_info) {
+					"__cake_p_buf", // cxx name
+					"__cake_p_buf", // typeof
+					source_module,
+					false
+				}));
+			auto saved_env = ctxt.env;
+			ctxt.env = extra_env;
+			auto return_status = w.emit_stub_expression_as_statement_list(
+				ctxt, 
+				GET_CHILD(source_infix_stub, 0)
+			);
+			// restore previous environment
+			ctxt.env = saved_env;
+			// FIXME: do stuff with the return status (merge environment, use success?)
+		}
 
 		/* 2. For each target field, emit its pre-stub (if any) and extend the environment with the result.
 		 * Note that the pre-stub needs to execute in a temporarily extended environment, with
@@ -1007,7 +1048,52 @@ namespace cake
 			/* Didn't I have this single-field-at-a-time approach before?
 			 * Why didn't it work?
 			 */
+		if (sink_infix_stub && GET_CHILD_COUNT(sink_infix_stub) > 0)
+		{
+			// make sure we are in the sink module context now
+			ctxt.modules.current = target_module;
 			
+			environment extra_env = basic_env;
+			// sink-side stubs have "this", "that", "here" and "there". 
+			// NOTE: "this" and "that" mean the same here!? These semantics are
+			// messed up, but they are all I can think of right now that makes sense.
+			// Maybe "that" is never needed, and "this" or "there" are all we should use?
+			extra_env.insert(make_pair("__cake_that",
+				(wrapper_file::bound_var_info) {
+					"(*__cake_p_buf)", // cxx name
+					"(*__cake_p_buf)", // typeof
+					target_module,
+					false
+				}));
+			extra_env.insert(make_pair("__cake_this",
+				(wrapper_file::bound_var_info) {
+					"(*__cake_p_buf)", // cxx name
+					"(*__cake_p_buf)", // typeof
+					target_module,
+					false
+				}));
+			extra_env.insert(make_pair("__cake_here",
+				(wrapper_file::bound_var_info) {
+					"__cake_p_buf", // cxx name
+					"__cake_p_buf", // typeof
+					target_module,
+					false
+				}));
+			extra_env.insert(make_pair("__cake_there",
+				(wrapper_file::bound_var_info) {
+					"(&__cake_nonconst_from)", // cxx name
+					"(&__cake_nonconst_from)", // typeof
+					target_module,
+					false
+				}));
+			auto saved_env = ctxt.env;
+			ctxt.env = extra_env;
+			auto return_status = w.emit_stub_expression_as_statement_list(
+				ctxt, 
+				GET_CHILD(sink_infix_stub, 0)
+			);
+			ctxt.env = saved_env;
+		}
 			
 // 			if (unique_source_field_selector)
 // 			{

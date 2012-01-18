@@ -22,22 +22,26 @@ namespace cake
 {
 	using namespace dwarf;
 	using boost::shared_ptr;
+	using boost::optional;
 	using dwarf::spec::type_die;
 	using std::vector;
+	using std::string;
+	using std::ostringstream;
+	using std::pair;
 	
 	class module_described_by_dwarf;
-   	typedef boost::shared_ptr<module_described_by_dwarf> module_ptr;
+	typedef shared_ptr<module_described_by_dwarf> module_ptr;
 
 	extern const char *guessed_system_library_path;
 	extern const char *guessed_system_library_prefix;
-	std::string new_anon_ident();	
-	std::string new_tmp_filename(std::string& module_constructor_name);
-	extern std::ostringstream exception_msg_stream;
-	std::string unescape_ident(const std::string& ident);
-	std::string unescape_string_lit(std::string& lit);
-	std::pair<std::string, std::string> read_object_constructor(antlr::tree::Tree *t);
-	std::string lookup_solib(std::string const& basename);
-	extern std::string solib_constructor;
+	string new_anon_ident();	
+	string new_tmp_filename(string& module_constructor_name);
+	extern ostringstream exception_msg_stream;
+	string unescape_ident(const string& ident);
+	string unescape_string_lit(string& lit);
+	pair<string, string> read_object_constructor(antlr::tree::Tree *t);
+	string lookup_solib(string const& basename);
+	extern string solib_constructor;
 
 	//typedef std::vector<std::string> definite_member_name;
 	class definite_member_name : public dwarf::encap::pathname
@@ -46,48 +50,48 @@ namespace cake
 	public:
 		// repeat vector constructors
 		explicit definite_member_name(const A& a = A())
-			: std::vector<std::string>(a) {}
-		explicit definite_member_name(size_type n, const std::string& val = std::string(), const A& a = A())
-			: std::vector<std::string>(n, val, a) {}
+			: vector<string>(a) {}
+		explicit definite_member_name(size_type n, const string& val = string(), const A& a = A())
+			: vector<string>(n, val, a) {}
 		template <class In> definite_member_name(In first, In last, const A& a = A())
-			: std::vector<std::string>(first, last, a) {}
+			: vector<string>(first, last, a) {}
 		definite_member_name(const definite_member_name& x)
-			: std::vector<std::string>(x) {}
-		definite_member_name(const std::vector<std::string>& x)
-			: std::vector<std::string>(x) {}
+			: vector<string>(x) {}
+		definite_member_name(const vector<string>& x)
+			: vector<string>(x) {}
         definite_member_name(antlr::tree::Tree *t);
             
 		friend std::ostream& operator<<(std::ostream&, const definite_member_name&);
-		operator std::string () const { std::ostringstream s; s << *this; return s.str(); }
+		operator string () const { std::ostringstream s; s << *this; return s.str(); }
 	};
 	std::ostream& operator<<(std::ostream&, const definite_member_name&);
 	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName);
 	antlr::tree::Tree *make_definite_member_name_expr(const definite_member_name& arg);
-	antlr::tree::Tree *make_ident_expr(const std::string& ident);
+	antlr::tree::Tree *make_ident_expr(const string& ident);
 
 	template<typename AntlrReturnedObject>
 	antlr::tree::Tree *
 	make_ast(
-		const std::string& fragment, 
+		const string& fragment, 
 		AntlrReturnedObject (* cakeCParser::* parserFunction)(cakeCParser_Ctx_struct*)
 	);
 	
-	std::string cake_token_text_from_ident(const std::string& arg);
-	bool is_cake_keyword(const std::string& arg);
+	string cake_token_text_from_ident(const string& arg);
+	bool is_cake_keyword(const string& arg);
 	
-	std::string get_event_pattern_call_site_name(antlr::tree::Tree *t);
+	string get_event_pattern_call_site_name(antlr::tree::Tree *t);
     
     antlr::tree::Tree *make_simple_event_pattern_for_call_site(
-    	const std::string& name);
+    	const string& name);
     
     antlr::tree::Tree *make_simple_sink_expression_for_event_name(
-    	const std::string& event_name);
+    	const string& event_name);
     antlr::tree::Tree *make_simple_corresp_expression(
-    	const std::vector<std::string>& ident,
-		boost::optional<std::vector<std::string>& > rhs_ident = boost::optional<std::vector<std::string>& >());
-    boost::optional<std::string> pattern_is_simple_function_name(antlr::tree::Tree *t);
-    boost::optional<std::string> source_pattern_is_simple_function_name(antlr::tree::Tree *t);
-    boost::optional<std::string> sink_expr_is_simple_function_name(antlr::tree::Tree *t);
+    	const vector<string>& ident,
+		optional<vector<string>& > rhs_ident = optional<vector<string>& >());
+    optional<string> pattern_is_simple_function_name(antlr::tree::Tree *t);
+    optional<string> source_pattern_is_simple_function_name(antlr::tree::Tree *t);
+    optional<string> sink_expr_is_simple_function_name(antlr::tree::Tree *t);
 	
 	vector<shared_ptr<type_die> > 
 	type_synonymy_chain(shared_ptr<type_die> d);
@@ -109,7 +113,7 @@ namespace cake
 	bool treat_subprogram_as_untyped(
 		shared_ptr<spec::subprogram_die> subprogram);
 
-    //boost::optional<definite_member_name> 
+    //optional<definite_member_name> 
     //dwarf_fq_member_name(dwarf::abstract::Die_abstract_base<>& d);
         
 // 	inline const char *jtocstring(java::lang::String *s)	

@@ -1022,9 +1022,23 @@ assert(false && "disabled support for inferring positional argument mappings");
 		m_out << "/* crossover: " << std::endl;
 		for (auto i_el = new_env.begin(); i_el != new_env.end(); ++i_el)
 		{
-			m_out << "\t" << i_el->first << " is now " << i_el->second.cxx_name 
-				<< " (local: " << i_el->second.local_tagstring
-				<< ", remote: " << i_el->second.remote_tagstring
+			auto i_old_el = env.find(i_el->first);
+			assert(i_old_el != env.end());
+			
+			m_out << "\t" << i_el->first << " is now " << i_el->second.cxx_name << " ("
+				<< (i_el->second.local_tagstring ? " local: " + *i_el->second.local_tagstring : "")
+				<< (i_el->second.remote_tagstring ? " remote: " + *i_el->second.remote_tagstring : "")
+				<< (i_el->second.indirect_local_tagstring_in ? " local indirect in: " + *i_el->second.indirect_local_tagstring_in : "")
+				<< (i_el->second.indirect_remote_tagstring_in ? " remote indirect in: " + *i_el->second.indirect_remote_tagstring_in : "")
+				<< (i_el->second.indirect_local_tagstring_out ? " local indirect out: " + *i_el->second.indirect_local_tagstring_out : "")
+				<< (i_el->second.indirect_remote_tagstring_out ? " remote indirect out: " + *i_el->second.indirect_remote_tagstring_out : "")
+				<< ")" << endl << "\t\t" << " having been " << i_old_el->second.cxx_name << " ("
+				<< (i_old_el->second.local_tagstring ? " local: " + *i_old_el->second.local_tagstring : "")
+				<< (i_old_el->second.remote_tagstring ? " remote: " + *i_old_el->second.remote_tagstring : "")
+				<< (i_old_el->second.indirect_local_tagstring_in ? " local indirect in: " + *i_old_el->second.indirect_local_tagstring_in : "")
+				<< (i_old_el->second.indirect_remote_tagstring_in ? " remote indirect in: " + *i_old_el->second.indirect_remote_tagstring_in : "")
+				<< (i_old_el->second.indirect_local_tagstring_out ? " local indirect out: " + *i_old_el->second.indirect_local_tagstring_out : "")
+				<< (i_old_el->second.indirect_remote_tagstring_out ? " remote indirect out: " + *i_old_el->second.indirect_remote_tagstring_out : "")
 				<< ")" << std::endl;
 		}
 		m_out << "*/" << std::endl;
@@ -1046,8 +1060,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 				auto i_binding = env.find(*i_cxxname->second.begin());
 				assert(i_binding != env.end());
 				
-				if (i_binding->second.indirect_local_tagstring_out
-					|| i_binding->second.indirect_remote_tagstring_out)
+				if (i_binding->second.indirect_local_tagstring_in
+					|| i_binding->second.indirect_remote_tagstring_in)
 				{
 					m_out << "// override for binding " << i_binding->first << endl;
 					// NOTE that whether ther actually *is* an effective override
@@ -1104,7 +1118,120 @@ assert(false && "disabled support for inferring positional argument mappings");
 		
 		return new_env;
 	}
+	
+	void
+	wrapper_file::infer_tagstrings(
+		antlr::tree::Tree *in_ast,                 // optional
+		shared_ptr<type_die> contextual_dwarf_type, // also optional
+		module_ptr p_module, // not optional
+		optional<string>& direct_tagstring,
+		optional<string>& indirect_tagstring_in,
+		optional<string>& indirect_tagstring_out
+		)
+	{
+		assert(p_module);
+		
+		cerr << "called infer_tagstrings(" << endl
+			<< (in_ast ? CCP(TO_STRING_TREE(in_ast)) : "(no ast)") << ", ";
+		if (contextual_dwarf_type) cerr << *contextual_dwarf_type;
+		else cerr << "(no DWARF type)";
+		cerr << ")" << endl;
+			
 
+		// output is
+		// a named target (perhaps null)
+		// a direct tagstring (perhaps none)
+		// an indirect tagstring in (perhaps none)
+		// an indirect tagstring out (perhaps none)
+
+		shared_ptr<type_die> interpretation_named_target;
+		shared_ptr<type_die> interpretation_unqualified_target;
+		shared_ptr<type_die> interpretation_concrete_target;
+
+		// 1. check AST
+		if (in_ast)
+		{
+			// extract tagstring
+			interpretation_named_target
+			 = p_module->ensure_dwarf_type(GET_CHILD(in_ast, 0));
+		}
+
+		// 2. check DWARF, and warn if overridden by AST
+		// Is there a typedef in the caller-side arguments? treat it the same if so
+		if (contextual_dwarf_type 
+		&& contextual_dwarf_type->get_concrete_type()
+			 != contextual_dwarf_type->get_unqualified_type())
+		{
+			if (interpretation_named_target)
+			{
+				// emit a warning
+				cerr << "Warning: artificial typename " 
+					<< *interpretation_named_target->get_name()
+					<< " overrides typedef "
+					<< *dynamic_pointer_cast<typedef_die>(
+							contextual_dwarf_type->get_unqualified_type()
+						)
+					<< endl;
+			}
+			else
+			{
+				interpretation_named_target = contextual_dwarf_type;
+			}
+		}
+
+		if (interpretation_named_target)
+		{
+			interpretation_unqualified_target
+			 = interpretation_named_target->get_unqualified_type();
+			interpretation_concrete_target 
+			 = interpretation_named_target->get_concrete_type();
+		}
+
+		// does the interpreted-to type refer to the target of a pointer?
+		// YES if it is not a pointer, but we are. 
+		// Only do this for interps coming from the AST, not from DWARF typedefs.
+		bool interp_is_indirect
+		 = in_ast && 
+			(contextual_dwarf_type->get_concrete_type()->get_tag() 
+			 == DW_TAG_pointer_type)
+			&& (interpretation_concrete_target->get_tag()
+					 != DW_TAG_pointer_type);
+
+		optional<string> tagstring_to_assign = 
+				// we only set the tagstrings if the interpretation
+				// is directing us to a non-concrete type. 
+			// (cf. just an annotation)
+			(interpretation_named_target && 
+			   (interpretation_unqualified_target
+			   != interpretation_concrete_target))
+			? /* is a typedef, or qualified typedef */ interpretation_named_target->get_name()
+			: optional<string>();
+
+		if (tagstring_to_assign)
+		{
+			cerr << "about to assign tagstring: " << *tagstring_to_assign
+				<< ", indirect? " << interp_is_indirect << endl;
+		}
+
+		if (!in_ast || (
+			GET_TYPE(in_ast) == CAKE_TOKEN(KEYWORD_AS)
+		|| GET_TYPE(in_ast) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
+		|| GET_TYPE(in_ast) == CAKE_TOKEN(KEYWORD_IN_AS)))
+		{
+			(interp_is_indirect ? indirect_tagstring_in : direct_tagstring)
+			 = tagstring_to_assign;
+		}
+		if (!in_ast || ( 
+		   GET_TYPE(in_ast) == CAKE_TOKEN(KEYWORD_AS)
+		|| GET_TYPE(in_ast) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
+		|| GET_TYPE(in_ast) == CAKE_TOKEN(KEYWORD_OUT_AS)))
+		{
+			(interp_is_indirect ? indirect_tagstring_out : direct_tagstring)
+			 = tagstring_to_assign;
+		}
+
+	}
+	
 	wrapper_file::environment 
 	wrapper_file::initial_environment(
 		antlr::tree::Tree *pattern,
@@ -1228,11 +1355,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 					boost::optional<std::string> friendly_name;
 					std::ostringstream s; s << wrapper_arg_name_prefix << argnum;
 					std::string basic_name = s.str();
+					
+					antlr::tree::Tree *interpretation_ast = 0;
+					
 					optional<string> local_tagstring;
 					optional<string> indirect_local_tagstring_in;
 					optional<string> indirect_local_tagstring_out;
-					optional<string> indirect_remote_tagstring_in;
-					optional<string> indirect_remote_tagstring_out;
 					switch(GET_TYPE(valuePattern))
 					{
 						case CAKE_TOKEN(DEFINITE_MEMBER_NAME): assert(false);
@@ -1243,123 +1371,41 @@ assert(false && "disabled support for inferring positional argument mappings");
 							definite_member_name mn = read_definite_member_name(definiteMemberName);
 							if (mn.size() != 1) RAISE(definiteMemberName, "may not be compound");
 							friendly_name = mn.at(0);
-							bool refers_to_pointer
-							 = (*i_caller_arg)->get_type() && 
-							   (*i_caller_arg)->get_type()->get_concrete_type()->get_tag() 
-							     == DW_TAG_pointer_type;
-							shared_ptr<type_die> interpretation_target_type;
+
 							if (GET_CHILD_COUNT(valuePattern) > 1)
 							{
 								BIND2(valuePattern, interpretation); assert(interpretation);
-								interpretation_target_type = source_module->ensure_dwarf_type(
-									GET_CHILD(interpretation, 0));
-								bool use_artificial;
-								if (interpretation_target_type->get_unqualified_type()
-									== interpretation_target_type->get_concrete_type())
-								{
-									// this means it's a NOT a typedef
-									use_artificial = false;
-								} else use_artificial = true;
-								switch (GET_TYPE(interpretation))
-								{
-									/* We want to resolve the named type, and be sensitive
-									 * to whether the pattern is referring to a pointer or
-									 * not. */
-									case CAKE_TOKEN(KEYWORD_AS):
-									case CAKE_TOKEN(KEYWORD_INTERPRET_AS):  {
-										assert(interpretation_target_type);
-										// we only set the tagstrings if the interpretation
-										// is directing us to a non-concrete type
-										// (cf. just an annotation)
-
-										// ... even then, if there is no special behaviour
-										// defined for this typedef, we should not generate
-										// any different behaviour (but will still use the
-										// tagstring, and hope it's equivalent to __cake_default).
-										
-										// if this created a pointer type,
-										// and we were not declared as a pointer,
-										// it means the parameter really is a pointer
-										// and we should use the indirect string
-										if (interpretation_target_type->get_concrete_type()->get_tag()
-										     == DW_TAG_pointer_type)
-										{
-											if (!refers_to_pointer) refers_to_pointer = true;
-											auto pointed_to_type = 
-												dynamic_pointer_cast<pointer_type_die>(
-													interpretation_target_type->get_concrete_type()
-													)->get_type();
-											assert(pointed_to_type);
-											auto pointed_to_typename = pointed_to_type->get_name();
-											assert(pointed_to_typename);
-											// we only set the tagstrings if the interpretation
-											// is directing us to a non-concrete type. 
-											if (use_artificial) indirect_local_tagstring_in = 
-												indirect_local_tagstring_out = 
-													*pointed_to_typename;
-										}
-										else if (use_artificial) local_tagstring
-										 = *interpretation_target_type->get_name();
-									} break;
-									case CAKE_TOKEN(KEYWORD_IN_AS):
-										assert(interpretation_target_type->get_concrete_type()->get_tag()
-											== DW_TAG_pointer_type);
-										assert(interpretation_target_type->get_name());
-										if (use_artificial)
-										{ 
-											indirect_local_tagstring_in
-											 = *interpretation_target_type->get_name(); 
-										}
-										break;
-									case CAKE_TOKEN(KEYWORD_OUT_AS):
-										assert(interpretation_target_type->get_concrete_type()->get_tag()
-											== DW_TAG_pointer_type);
-										assert(interpretation_target_type->get_name());
-										if (use_artificial) 
-										{
-											indirect_local_tagstring_out
-											 = *interpretation_target_type->get_name();
-										}
-										break;
-									default: assert(false);
-								}
+								interpretation_ast = interpretation;
 							}
+							break;
 						} break;
 						case CAKE_TOKEN(KEYWORD_CONST):
 						case CAKE_TOKEN(INDEFINITE_MEMBER_NAME): {
 							// we will bind a basic name but not a friendly one
 						} break;
 						default: RAISE(valuePattern, "unexpected token");
-					}
+					} // end switch
 					
-					// check for typedefs
-					if (i_caller_arg != caller_subprogram->formal_parameter_children_end()
-						&& (*i_caller_arg)->get_type()
-						&& (*i_caller_arg)->get_type()->get_concrete_type() != (*i_caller_arg)->get_type())
-					{
-						auto unqual_t = (*i_caller_arg)->get_type()->get_unqualified_type();
-						assert(unqual_t->get_tag() == DW_TAG_typedef);
-						if (local_tagstring)
-						{
-							cerr << "Warning: artificial typename " << local_tagstring
-								<< " overrides typedef " 
-								<< *dynamic_pointer_cast<typedef_die>(unqual_t)->get_name()
-								<< endl;
-						}
-						else
-						{
-							auto tdef = dynamic_pointer_cast<typedef_die>(unqual_t);
-							assert(tdef);
-							auto opt_name = tdef->get_name();
-							if (!opt_name) RAISE(valuePattern, "unnamed typedef");
-							local_tagstring = *opt_name;
-						}
-					}
+					// infer source (local) tagstrings
+					infer_tagstrings(
+						interpretation_ast,
+						i_caller_arg != caller_subprogram->formal_parameter_children_end()
+							?  (*i_caller_arg)->get_type()
+							: shared_ptr<type_die>(),
+						source_module,
+						local_tagstring,
+						indirect_local_tagstring_in,
+						indirect_local_tagstring_out
+					);
+
 					
-					optional<string> remote_tagstring;
-					/** To get the remote artificial string, we scan for uses of 
+					/* Now we have assigned local tagstrings, but not remote tagstrings.
+					 * To get the remote tagstring, we scan for uses of 
 					 *  the bound name (Cake name) in the right-hand side. */
 					vector<antlr::tree::Tree *> out;
+					optional<string> remote_tagstring;
+					optional<string> indirect_remote_tagstring_in;
+					optional<string> indirect_remote_tagstring_out;
 					for (auto i_expr = exprs.begin(); i_expr != exprs.end(); ++i_expr)
 					{
 						m_d.find_usage_contexts(basic_name,
@@ -1370,57 +1416,67 @@ assert(false && "disabled support for inferring positional argument mappings");
 					cerr << "found " << out.size() << " usage contexts of Cake names {"
 						<< basic_name << (friendly_name ? (", " + *friendly_name) : "")
 						<< "}" << endl;
-					
-					// now reduce them -- by unanimity?
+			
+					// now reduce them to a single one --
+					// by unanimity for now (FIXME: change to union a.k.a. "once is enough"?)
 					shared_ptr<type_die> found_type;
+					optional<unsigned> seen_interp_flavour;
+					antlr::tree::Tree *seen_interp_type_ast = 0;
+					antlr::tree::Tree *representative_ast = 0;
 					for (auto i_ctxt = out.begin(); i_ctxt != out.end(); ++i_ctxt)
 					{
 						cerr << "context is " << CCP(GET_TEXT(*i_ctxt))
-							<< ", full tree: " << CCP(TO_STRING_TREE(*i_ctxt)) << endl;
+							<< ", full tree: " << CCP(TO_STRING_TREE(*i_ctxt)) 
+							<< ", with parent: " <<  CCP(TO_STRING_TREE(GET_PARENT(*i_ctxt))) 
+							<< endl;
 						assert(CCP(GET_TEXT(*i_ctxt)) == basic_name
 						||     (friendly_name && CCP(GET_TEXT(*i_ctxt)) == *friendly_name));
-						auto found_die = map_ast_context_to_dwarf_element(
-							*i_ctxt,
-							remote_module, // dwarf context is the remote module
-							false
-							);
-						cerr << "Finished searching for DWARF element, status: "
-							<< (found_die ? "found it" : "did not find it") << endl;
-						// if we didn't find a DIE, that means... what?
-						assert(found_die); 
-						shared_ptr<formal_parameter_die> found_fp
-						 = dynamic_pointer_cast<formal_parameter_die>(found_die);
-						assert(found_fp);
-
-						if (!found_type)
+						
+						/* Just like before, we care about both the DWARF context
+						 * *and* any interpretations ("as") in the AST. And we look for
+						 * the AST ones first. */
+						if (!seen_interp_flavour) seen_interp_flavour = GET_TYPE(GET_PARENT(*i_ctxt));
+						else if (*seen_interp_flavour != GET_TYPE(GET_PARENT(*i_ctxt)))
+						{ RAISE(*i_ctxt, "interpretation does not agree with previous uses of ident"); }
+							
+						if (GET_TYPE(GET_PARENT(*i_ctxt)) == CAKE_TOKEN(KEYWORD_AS)
+						||  GET_TYPE(GET_PARENT(*i_ctxt)) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
+						||  GET_TYPE(GET_PARENT(*i_ctxt)) == CAKE_TOKEN(KEYWORD_IN_AS)
+						||  GET_TYPE(GET_PARENT(*i_ctxt)) == CAKE_TOKEN(KEYWORD_OUT_AS))
 						{
-							found_type = found_fp->get_type();
-						} else if (found_type != found_fp->get_type()) RAISE(
-						*i_ctxt, "non-unanimous types for usage contexts");
-
-						cerr << "found type at offset 0x" << std::hex << found_type->get_offset()
-							<< std::dec << ", name: " 
-							<< (found_type->get_name() ? *found_type->get_name() : "(no name)")
-							<< endl;
-					}
-					if (!found_type)
-					{
-						// this might happen because we didn't gather any contexts. 
-						// It's okay. We just don't set the tagstring.
-					}
-					else
-					{
-						shared_ptr<type_die> unq_t = found_type->get_unqualified_type();
-						if (unq_t != found_type->get_concrete_type())
-						{
-							auto tdef = dynamic_pointer_cast<spec::typedef_die>(unq_t);
-							assert(tdef);
-							auto opt_name = tdef->get_name();
-							assert(opt_name);
-							remote_tagstring = *opt_name;
+							antlr::tree::Tree *interp_type_ast = GET_CHILD(GET_PARENT(*i_ctxt), 1);
+							if (!seen_interp_type_ast)
+							{
+								seen_interp_type_ast = interp_type_ast;
+								representative_ast = GET_PARENT(*i_ctxt);
+							}
+							else
+							{
+								assert(representative_ast);
+								if (string(CCP(GET_TEXT(seen_interp_type_ast)))
+							       != string(CCP(GET_TEXT(interp_type_ast))))
+								{
+									RAISE(*i_ctxt, 
+										"interpretation does not agree with previous uses of ident");
+								}
+							}
 						}
 					}
-					
+					// now we have a single representative AST (or null)
+					shared_ptr<spec::basic_die> found;
+					if (representative_ast) found = map_ast_context_to_dwarf_element(
+						GET_CHILD(representative_ast, 0), remote_module, false);
+					shared_ptr<formal_parameter_die> found_fp
+					 = dynamic_pointer_cast<formal_parameter_die>(found);
+					infer_tagstrings(
+						representative_ast,
+						found_fp ? found_fp->get_type() : shared_ptr<type_die>(),
+						remote_module,
+						remote_tagstring,
+						indirect_remote_tagstring_in,
+						indirect_remote_tagstring_out
+					);
+
 					out_env->insert(std::make_pair(basic_name, 
 						(bound_var_info) { basic_name, // use the same name for both
 						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
@@ -1930,7 +1986,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 	wrapper_file::post_emit_status
 	wrapper_file::emit_stub_expression_as_statement_list(
-			const context& ctxt,
+			context& ctxt,
 			antlr::tree::Tree *expr)
 	{
 		std::string ident;
@@ -2114,7 +2170,20 @@ assert(false && "disabled support for inferring positional argument mappings");
 			case CAKE_TOKEN(KEYWORD_FN):
 			
 			sequencing_ops: //__attribute__((unused))
-			case CAKE_TOKEN(SEMICOLON):
+			case CAKE_TOKEN(SEMICOLON): {
+				auto result1 = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 0)
+				);
+				// we need to merge any added bindings
+				ctxt.env = merge_environment(ctxt.env, result1.new_bindings);
+				// we discard the success, because we're semicolon
+				auto result2 = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 1)
+				);
+				return result2;
+			} break;
 			case CAKE_TOKEN(ANDALSO_THEN):
 			case CAKE_TOKEN(ORELSE_THEN):
 				// these are the only place where we add to the environment, since
@@ -2137,8 +2206,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 				return (post_emit_status){ident, "true", environment()};
 			}
 			default:
+				cerr << "Don't know how to emit expresion: " << CCP(TO_STRING_TREE(expr)) << endl;
 				assert(false);
 		}
+		assert(false);
 	}
 	
 	std::vector<
@@ -2175,7 +2246,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 	wrapper_file::post_emit_status
 	wrapper_file::emit_stub_function_call(
-			const context& ctxt,
+			context& ctxt,
 			antlr::tree::Tree *call_expr/*,
 			shared_ptr<type_die> expected_cxx_type*/) 
 	{
@@ -2194,10 +2265,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 		std::string function_name = CCP(GET_TEXT(functionNameTree));
 		std::vector<std::string> mn(1, function_name);
-		auto callee = ctxt.modules.sink->get_ds().toplevel()->visible_resolve(
+		auto callee = ctxt.modules.current->get_ds().toplevel()->visible_resolve(
 					mn.begin(), mn.end());
 		if (!callee || callee->get_tag() != DW_TAG_subprogram)
 		{
+			// HACK
+			// cerr << ctxt.modules.current->get_ds() << endl;
 			RAISE(functionNameTree, "does not name a visible function");
 		}
 
