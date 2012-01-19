@@ -93,7 +93,18 @@ namespace cake
 			optional<string>& indirect_tagstring_in,
 			optional<string>& indirect_tagstring_out
 			);
+			
+		std::map<std::string, std::set<std::string > > 
+		group_bindings_by_cxxname(const environment& env);
 		
+		void
+		emit_sync_and_overrides(
+			module_ptr old_module,
+			module_ptr new_module,
+			const environment& old_env,
+			const environment& new_env,
+			bool direction_is_out);
+
 		environment initial_environment(
 			antlr::tree::Tree *pattern,
 			module_ptr source_module,
@@ -108,7 +119,7 @@ namespace cake
 			const environment& env,
 			module_ptr new_module_context,
 			const std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& constraints,
-			bool outward,
+			bool direction_is_out,
 			bool do_not_sync = false
 			);
 
@@ -123,6 +134,7 @@ namespace cake
 		value_conversion_params_t resolve_value_conversion_params(
 			link_derivation::iface_pair ifaces_context,
 			const binding& source_binding,
+			bool direction_is_out,
 			bool is_indirect,
 			shared_ptr<spec::type_die> from_type, // most precise
 			shared_ptr<spec::type_die> to_type, 
@@ -135,6 +147,7 @@ namespace cake
 			link_derivation::iface_pair ifaces_context,
 			//int rule_tag,
 			const binding& source_binding,
+			bool direction_is_out,
 			bool is_indirect,
 			shared_ptr<spec::type_die> from_type, // most precise
 			shared_ptr<spec::type_die> to_type, 
@@ -147,6 +160,7 @@ namespace cake
 		string make_value_conversion_funcname(
 			link_derivation::iface_pair ifaces_context,
 			const binding& source_binding,
+			bool direction_is_out,
 			bool is_indirect,
 			shared_ptr<spec::type_die> from_type, // most precise
 			shared_ptr<spec::type_die> to_type, 

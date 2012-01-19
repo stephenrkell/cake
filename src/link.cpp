@@ -43,6 +43,15 @@ namespace cake
 		assert(p_d);
 		return module_for_dieset(p_d->get_ds());
 	}
+	string 
+	link_derivation::component_pair_typename(iface_pair ifaces)
+	{
+		return "component_pair<" 
+			+ namespace_name() + "::" + r.module_inverse_tbl[ifaces.first]
+			+ "::marker, "
+			+ namespace_name() + "::" + r.module_inverse_tbl[ifaces.second]
+			+ "::marker>";
+	}
 	
 	struct satisfies_dep
 	{

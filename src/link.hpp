@@ -58,6 +58,8 @@ namespace cake {
 		// ^-- this will give us all subprograms, even static / non-visible ones...
 		// ... so push the visibility test into these predicates too --v
 		
+		string component_pair_typename(iface_pair ifaces);
+		
 		struct is_visible : public unary_function<shared_ptr<spec::subprogram_die>, bool>
 		{
 			bool operator()(shared_ptr<spec::subprogram_die> p_subp) const

@@ -647,13 +647,16 @@ namespace cake
 			<< "if (__cake_p_to) __cake_p_buf = __cake_p_to; else __cake_p_buf = &__cake_tmp;" << endl;
 		/* HACK: create a non-const "from" reference, because we want to index
 		 * our templates by CV-qualifier-free typenames. */
-		m_out << "auto __cake_nonconst_from = "
-			"const_cast< "
+		string dest_type_string	=
 				"boost::remove_const<"
 					"boost::remove_reference< "
 						"__typeof(__cake_from)"
 					" >::type "
-				" >::type &"
+				" >::type &";
+
+		m_out << dest_type_string << " __cake_nonconst_from = "
+			"const_cast< "
+				<< dest_type_string <<
 			" >(__cake_from);" << endl;
 	
 	}
@@ -804,7 +807,7 @@ namespace cake
 		auto crossed_env = w.crossover_environment_and_sync(
 			source_module, basic_env, target_module, 
 			/* no constraints */ 
-			std::multimap< string, shared_ptr<type_die> >(), true, true);
+			std::multimap< string, shared_ptr<type_die> >(), false, true);
 
 		// always start with crossed-over environment
 		ctxt.env = crossed_env;
@@ -975,6 +978,8 @@ namespace cake
 				}));
 			extra_env.insert(make_pair("__cake_here",
 				(wrapper_file::bound_var_info) {
+					/* GAH. What is the address of a local reference? 
+					 * I think it should be the address of the referenced object. */
 					"&__cake_nonconst_from", // cxx name
 					"&__cake_nonconst_from", // typeof
 					source_module,
