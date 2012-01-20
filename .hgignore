@@ -71,3 +71,4 @@ cake-generated.mk$
 ^src/parser/test_parser$
 .*/cake\.log$
 .*/make\.log$
+^examples/p2k.*

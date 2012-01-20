@@ -14,6 +14,7 @@
 //#include "treewalk_helpers.hpp"
 #include "parser.hpp"
 #include "module.hpp"
+#include <dwarfpp/adt.hpp>
 
 using boost::shared_ptr;
 using boost::optional;
@@ -25,6 +26,7 @@ using dwarf::spec::type_die;
 using dwarf::spec::base_type_die;
 using dwarf::spec::pointer_type_die;
 using dwarf::spec::typedef_die;
+using dwarf::spec::file_toplevel_die;
 using namespace dwarf;
 
 namespace cake
@@ -48,8 +50,20 @@ namespace cake
 			/ sizeof (module::constructor_map_entry)
 		]
 	);
-		
-	void described_module::process_exists_claims(antlr::tree::Tree *existsBody)
+    
+	module_described_by_dwarf::eval_event_handler_t 
+	module_described_by_dwarf::handler_for_claim_strength(antlr::tree::Tree *strength)
+	{
+		return
+			GET_TYPE(strength) == CAKE_TOKEN(KEYWORD_CHECK) 
+			? &module_described_by_dwarf::check_handler
+			: GET_TYPE(strength) == CAKE_TOKEN(KEYWORD_DECLARE) 
+			? &module_described_by_dwarf::declare_handler
+			: GET_TYPE(strength) == CAKE_TOKEN(KEYWORD_OVERRIDE) 
+			? &module_described_by_dwarf::override_handler : 0;
+	}
+	
+	void module_described_by_dwarf::process_exists_claims(antlr::tree::Tree *existsBody)
 	{
 		FOR_ALL_CHILDREN(existsBody)
 		{
@@ -59,7 +73,7 @@ namespace cake
 		}
 	}
 
-	void described_module::process_supplementary_claim(antlr::tree::Tree *claimGroup)
+	void module_described_by_dwarf::process_supplementary_claim(antlr::tree::Tree *claimGroup)
 	{
 		process_claimgroup(claimGroup);
 	}
@@ -68,6 +82,27 @@ namespace cake
 	{
 		INIT;
 		bool success = false;
+		/* We have two ways of resolving names:
+		 * using visible_resolve on a file_toplevel_die
+		 * or
+		 * using resolve on any other kind of DIE. 
+		 * How to represent this function? Lambdas are no good
+		 * because we can't predict their type, so we'd have to
+		 * make all these functions templates. Instead, we use a trick
+		 * much like anonymous inner classes in Java. */
+		struct toplevel_resolver : public name_resolver_t
+		{
+			shared_ptr<spec::file_toplevel_die> p_toplevel;
+			toplevel_resolver(shared_ptr<spec::file_toplevel_die> arg)
+			 : p_toplevel(arg) {}
+			
+			shared_ptr<basic_die> 
+			resolve(const definite_member_name& mn)
+			{
+				return p_toplevel->visible_resolve(mn.begin(), mn.end());
+			}
+		} resolver(get_ds().toplevel());
+		 
 		switch(GET_TYPE(claimGroup))
 		{
 			case CAKE_TOKEN(KEYWORD_CHECK):
@@ -76,7 +111,11 @@ namespace cake
 				debug_out << "Presented with a claim list of strength " << CCP(GET_TEXT(claimGroup))
 					<< std::endl;
 				success = eval_claim_depthfirst(
-					claimGroup, handler_for_claim_strength(claimGroup), (Dwarf_Off) 0);
+					claimGroup, 
+					dynamic_pointer_cast<spec::basic_die>(get_ds().toplevel()), 
+					&resolver,
+					handler_for_claim_strength(claimGroup)
+				);
 				if (!success) RAISE(claimGroup, "referenced file does not satisfy claims");
 			break;
 			default: RAISE_INTERNAL(claimGroup, "bad claim strength (expected `check', `declare' or `override')");
@@ -129,54 +168,143 @@ namespace cake
         add_imported_function_descriptions();
 	}
     
-	bool module_described_by_dwarf::do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier)
+	bool module_described_by_dwarf::do_nothing_handler(
+		antlr::tree::Tree *falsifiable, 
+		shared_ptr<basic_die> falsifier,
+		antlr::tree::Tree *missing,
+		module_described_by_dwarf::name_resolver_ptr p_resolver)
 	{
 		debug_out << "DO_NOTHING found falsifiable claim " //<< CCP(falsifiable->getText())
 			<< CCP(TO_STRING_TREE(falsifiable))
-			<< ", die offset 0x" << std::hex << falsifier << std::dec << ", aborting" << std::endl;		
+			<< ", " << *falsifier << ", aborting" << std::endl;		
 		return false;	
 	}
 	
-	bool module_described_by_dwarf::check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier)
+	bool module_described_by_dwarf::check_handler(
+		antlr::tree::Tree *falsifiable, 
+		shared_ptr<basic_die> falsifier,
+		antlr::tree::Tree *missing,
+		module_described_by_dwarf::name_resolver_ptr p_resolver)
 	{
 		debug_out << "CHECK found falsifiable claim " //<< CCP(falsifiable->getText())
 			<< CCP(TO_STRING_TREE(falsifiable))
-			<< ", die offset 0x" << std::hex << falsifier << std::dec << ", aborting" << std::endl;
+			<< ", " << *falsifier << ", aborting" << std::endl;
 		
-		return false;		
+		return false;
 	}
 	
-	bool module_described_by_dwarf::internal_check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier)
+	bool module_described_by_dwarf::internal_check_handler(
+		antlr::tree::Tree *falsifiable, 
+		shared_ptr<basic_die> falsifier,
+		antlr::tree::Tree *missing,
+		module_described_by_dwarf::name_resolver_ptr p_resolver)
 	{
 		debug_out << "INTERNAL CHECK found falsifiable claim " //<< CCP(falsifiable->getText())
 			<< CCP(TO_STRING_TREE(falsifiable))
-			<< ", die offset 0x" << std::hex << falsifier << std::dec << ", aborting" << std::endl;
+			<< "," << *falsifier << ", aborting" << std::endl;
 		
 		return false;		
 	}	
 
-	bool module_described_by_dwarf::declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier)
+	bool module_described_by_dwarf::declare_handler(
+		antlr::tree::Tree *falsifiable, 
+		shared_ptr<basic_die> falsifier,
+		antlr::tree::Tree *missing,
+		module_described_by_dwarf::name_resolver_ptr p_resolver)
 	{
 		debug_out << "DECLARE found falsifiable claim at token " //<< CCP(falsifiable->getText())
 			<< CCP(TO_STRING_TREE(falsifiable))
-			<< ", die offset " << falsifier << " (tag: " << get_spec().tag_lookup(dies[falsifier]->get_tag())
-			<< ", name: " << (dies[falsifier]->get_name() ? 
-				*dies[falsifier]->get_name(): "no name") << ")"
+			<< ", " << *falsifier
 			<< ", proceeding to add module info" << std::endl;
 
+		assert(falsifier);
+		assert(falsifiable);
 		bool retval = false;
+
+		// we use the same double-dispatch structure as in eval
+		#define TAG_AND_TOKEN(tag, token) ((((long long)(tag)) << ((sizeof (int))<<3)) | (token))
+		switch(TAG_AND_TOKEN(falsifier->get_tag(), GET_TYPE(falsifiable)))
+		{
+			case TAG_AND_TOKEN(DW_TAG_subprogram, MULTIVALUE):
+			{
+				// This means that some element in the MULTIVALUE
+				// does not have a corresponding fp satisfying it.
+				assert(missing);
+				// we really should be a subprogram
+				shared_ptr<encap::subprogram_die> subprogram
+				 = dynamic_pointer_cast<encap::subprogram_die>(falsifier);
+				assert(subprogram);
+				// in what position should be missing arg be?
+				unsigned pos = 0;
+				while (GET_CHILD(falsifiable, pos) != missing) 
+				{
+					++pos;
+					assert(pos < GET_CHILD_COUNT(falsifiable));
+				}
+				
+				// assert that this is one more than the current # args 
+				// (otherwise we should have been called for the earlier one first)
+				assert(pos == srk31::count(
+					subprogram->formal_parameter_children_begin(),
+					subprogram->formal_parameter_children_end()));
+				
+				// create the formal parameter
+				auto created =
+					dwarf::encap::factory::for_spec(
+						dwarf::spec::DEFAULT_DWARF_SPEC
+					).create_die(DW_TAG_formal_parameter,
+						subprogram,
+						opt<const string&>());
+				
+				// now continue the evaluation, on the parameter 
+				return eval_claim_depthfirst(
+					missing,
+					dynamic_pointer_cast<spec::basic_die>(created),
+					p_resolver,
+					&module_described_by_dwarf::declare_handler);
+			}
+			case TAG_AND_TOKEN(DW_TAG_formal_parameter, KEYWORD_OUT):
+			{
+				auto fp = dynamic_pointer_cast<encap::formal_parameter_die>(falsifier);
+				assert(fp);
+				fp->set_is_optional(true);
+				fp->set_variable_parameter(true);
+				fp->set_const_value(true);
+				// now continue the evaluation, on the parameter 
+				return eval_claim_depthfirst(
+					falsifiable,
+					falsifier,
+					p_resolver,
+					&module_described_by_dwarf::declare_handler);
+			}
+			case TAG_AND_TOKEN(DW_TAG_formal_parameter, IDENT): // HACK
+			{
+				auto fp = dynamic_pointer_cast<encap::formal_parameter_die>(falsifier);
+				assert(fp);
+				fp->set_name(string(CCP(GET_TEXT(falsifiable))));
+				return true;
+			}
+			default:
+				break;
+			
+		}
         
         return retval;
+	successful_exit:
+	// FIXME: print added DIEs
         
 	}
 	
-	bool module_described_by_dwarf::override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier)
+	bool module_described_by_dwarf::override_handler(
+		antlr::tree::Tree *falsifiable, 
+		shared_ptr<basic_die> falsifier,
+		antlr::tree::Tree *missing,
+		module_described_by_dwarf::name_resolver_ptr p_resolver
+	)
 	{
 		debug_out << "OVERRIDE found falsifying module info, at token " //<< CCP(falsifiable->getText())
 			<< CCP(TO_STRING_TREE(falsifiable))
-			<< ", die offset " << falsifier << " (tag: " << get_spec().tag_lookup(dies[falsifier]->get_tag())
-			<< ", name: " << (dies[falsifier]->get_name() ? 
-				*dies[falsifier]->get_name() : "no name") << ")"
+			<< ", " << *falsifier 
 			<< ", proceeding to modify module info" << std::endl;
 			
 		bool retval = false;	
@@ -184,9 +312,16 @@ namespace cake
 		return retval;
 	}
 
-	bool module_described_by_dwarf::eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
-		Dwarf_Off current_die)
+	bool module_described_by_dwarf::eval_claim_depthfirst(
+		antlr::tree::Tree *claim, 
+		shared_ptr<spec::basic_die> p_d, 
+		name_resolver_ptr p_resolver,
+		eval_event_handler_t handler)
 	{
+		/* NOTE: we *never* return false directly in this function.
+		 * We ALWAYS return what the handler() gives us.
+		 * It is okay to return true. */
+	
 		// For cases where we recursively AND subclaims together, which handler should we use?
 		// This variable gets modified by the CHECK, DECLARE and OVERRIDE case-handlers, and
 		// otherwise is left alone.
@@ -194,10 +329,30 @@ namespace cake
 		bool retval;
 		static std::map<antlr::tree::Tree *, std::vector<std::string> > member_state;
 		debug_out.inc_level();
-        // HACK: don't print anything if we're "do nothing" (avoid confusing things)
-		if (handler != &cake::module_described_by_dwarf::do_nothing_handler) debug_out 
-        	<< "Evaluating claim " << CCP(TO_STRING_TREE(claim)) 
-			<< " on " << *(dies[current_die]) << std::endl;
+		
+		// HACK: a null pointer satisfies the "void" value description
+		// ... or any unnamed member reference
+		// HACK: don't print anything if we're "do nothing" (avoid confusing things)
+		if (handler != &cake::module_described_by_dwarf::do_nothing_handler)
+		{
+			debug_out << "Evaluating claim " << CCP(TO_STRING_TREE(claim)) 
+				<< " on ";
+			if (p_d) { debug_out << *p_d; }
+			else     { debug_out << "(null DIE)"; }
+			debug_out << std::endl;
+		}
+		// HACK: a null pointer satisfies the "void" value description
+		// ... or any unnamed member reference
+		if (!p_d && (GET_TYPE(claim) == CAKE_TOKEN(KEYWORD_VOID)
+		          || GET_TYPE(claim) == CAKE_TOKEN(INDEFINITE_MEMBER_NAME)
+				  || GET_TYPE(claim) == CAKE_TOKEN(ANY_VALUE)))
+		{ debug_out << ", trivially true."; return true; }
+		else if (!p_d)
+		{
+			debug_out << "Warning: eval_claim_depthfirst received an unexpected null DIE." << endl;
+			return (this->*handler)(claim, p_d, 0, p_resolver); // this just returns false, because of null p_d
+		}
+		assert(p_d);
 		INIT;
 		switch(GET_TYPE(claim))
 		{
@@ -211,23 +366,175 @@ namespace cake
 				 * current_die could be anything, and is simply passed on. */
 				
 				// HACK: disallow if we're re-using this routine
-				if (handler == &cake::described_module::check_handler) assert(false);
+				if (handler == &module_described_by_dwarf::check_handler) assert(false);
 				 
 				ALIAS2(claim, strength);
 				debug_out << "Changing handler to " << CCP(GET_TEXT(strength)) << std::endl;
 				recursive_event_handler = handler_for_claim_strength(strength);
 				} goto recursively_AND_subclaims;
-			default: 
+			/* We have one case for each dwarfidl head node. */ 
+			#define CASE(token) case CAKE_TOKEN(token): { \
+			     \
+			}
+			default: {
+				/* Let's enumerate the pairings of tag and token that might work. */
+				switch(TAG_AND_TOKEN(p_d->get_tag(), GET_TYPE(claim)))
+				{
+					case TAG_AND_TOKEN(DW_TAG_subprogram, FUNCTION_ARROW):
+						return eval_claim_for_subprogram_and_FUNCTION_ARROW(
+							claim,
+							dynamic_pointer_cast<spec::subprogram_die>(p_d),
+							p_resolver,
+							handler
+						);
+					// FIXME: other with named children can go here
+					case TAG_AND_TOKEN(DW_TAG_compile_unit, MEMBERSHIP_CLAIM):
+						return eval_claim_for_with_named_children_and_MEMBERSHIP_CLAIM(
+							claim,
+							dynamic_pointer_cast<spec::with_named_children_die>(p_d),
+							p_resolver,
+							handler
+						);
+					case TAG_AND_TOKEN(DW_TAG_subprogram, ANY_VALUE): 
+					case TAG_AND_TOKEN(DW_TAG_variable, ANY_VALUE):
+					case TAG_AND_TOKEN(DW_TAG_formal_parameter, ANY_VALUE):
+					case TAG_AND_TOKEN(DW_TAG_base_type, ANY_VALUE):
+						return true;
+					// FIXME: others which satisfy value descriptions go here
+					case TAG_AND_TOKEN(DW_TAG_subprogram, VALUE_DESCRIPTION): 
+					case TAG_AND_TOKEN(DW_TAG_variable, VALUE_DESCRIPTION):
+					case TAG_AND_TOKEN(DW_TAG_formal_parameter, VALUE_DESCRIPTION): {
+						// we simply unpack the description and continue
+						INIT;
+						BIND2(claim, valueDescription);
+						return  eval_claim_depthfirst(
+							valueDescription,
+							dynamic_pointer_cast<spec::with_named_children_die>(p_d),
+							p_resolver,
+							handler);
+					}
+					case TAG_AND_TOKEN(DW_TAG_formal_parameter, IDENT): // HACK
+						return p_d->get_name() && *p_d->get_name() == string(CCP(GET_TEXT(claim)));
+					case TAG_AND_TOKEN(DW_TAG_formal_parameter, KEYWORD_OUT):
+					{
+						// is this parameter declared as "out"?
+						auto fp = dynamic_pointer_cast<encap::formal_parameter_die>(p_d);
+						assert(fp);
+						if (fp->get_is_optional() && *fp->get_is_optional()
+						 && fp->get_variable_parameter() && *fp->get_variable_parameter()
+						 && fp->get_const_value() && *fp->get_const_value()) 
+						{
+							// okay -- we have to recurse down the chain
+							INIT;
+							BIND2(claim, nextDescriptor);
+							fp->get_type();
+							return eval_claim_depthfirst(
+								nextDescriptor,
+								p_d,
+								p_resolver,
+								handler);
+						}
+						else return (this->*handler)(claim, p_d, 0, p_resolver);
+					}
+					
+					case TAG_AND_TOKEN(DW_TAG_subprogram, MULTIVALUE): {
+						INIT;
+						auto subprogram = dynamic_pointer_cast<spec::subprogram_die>(p_d);
+						assert(subprogram);
+						bool ran_out_of_fps = false;
+						auto i_fp = subprogram->formal_parameter_children_begin();
+						FOR_ALL_CHILDREN(claim)
+						{
+							if (i_fp == subprogram->formal_parameter_children_end())
+							{ 
+								ran_out_of_fps = true;
+							}
+							if (ran_out_of_fps)
+							{
+								return (this->*handler)(claim, p_d, n, p_resolver);
+							}
+							
+							// else
+							auto p_fp = ran_out_of_fps ? shared_ptr<spec::basic_die>() : *i_fp;
+							if (!eval_claim_depthfirst(
+								n,
+								p_fp,
+								p_resolver,
+								handler)) return (this->*handler)(n, p_fp, 0, p_resolver);
+							
+							if (!ran_out_of_fps) ++i_fp;
+						}
+						return true;
+					}
+					case TAG_AND_TOKEN(0, MEMBERSHIP_CLAIM): {
+						INIT;
+						BIND2(claim, name);
+						if (GET_TYPE(name) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
+						{
+
+							// if it succeeds, we have to substitute the resolver...
+							struct cu_resolver : public name_resolver_t
+							{
+								shared_ptr<spec::compile_unit_die> p_cu;
+								cu_resolver(shared_ptr<spec::compile_unit_die> arg)
+								 : p_cu(arg) {}
+
+								shared_ptr<basic_die> 
+								resolve(const definite_member_name& mn)
+								{
+									return p_cu->resolve(mn.begin(), mn.end());
+								}
+							} cu_resolver(dynamic_pointer_cast<spec::compile_unit_die>(p_d));
+
+							auto dmn = read_definite_member_name(name);
+							if (dmn.size() > 0 && dynamic_pointer_cast<spec::with_named_children_die>(p_d) 
+								&& dynamic_pointer_cast<spec::with_named_children_die>(p_d)->named_child(*dmn.begin()) 
+								&&
+								(assert(false), eval_claim_depthfirst( 
+									claim, // FIXME: this is WRONG! Make a new claim that lacks the first name component
+									p_d,
+									&cu_resolver,
+									handler
+								))) return true;
+						}
+						goto try_all_cus;
+					}
+					default:
+					if (p_d->get_tag() == 0)
+					{
+					try_all_cus:
+						// the toplevel case is special
+						assert(p_d->get_offset() == 0UL);
+						auto p_toplevel = dynamic_pointer_cast<spec::file_toplevel_die>(p_d);
+						assert(p_toplevel);
+							
+						// we iteratively OR the claims across all CUs
+						for (auto i_cu = p_toplevel->compile_unit_children_begin();
+							i_cu != p_toplevel->compile_unit_children_end(); ++i_cu)
+						{
+							if (!eval_claim_depthfirst(claim, *i_cu, p_resolver, handler)) continue;
+							else return true;
+						}
+						return (this->*handler)(claim, p_d, 0, p_resolver);
+						assert(false);
+					}
+					abort: RAISE_INTERNAL(claim, "not supported");
+				}
 				//debug_out << "Unsupported claim head node: " << CCP(claim->getText()) << std::endl;
 				RAISE_INTERNAL(claim, "unsupported claim head node");
-				assert(false); break; // never hit
+				assert(false); 
+			} break; // never hit
 			recursively_AND_subclaims:
 				retval = true;
 				FOR_ALL_CHILDREN(claim)
 				{
 					INIT;
 					ALIAS3(n, subclaim, CAKE_TOKEN(MEMBERSHIP_CLAIM));
-					retval &= eval_claim_depthfirst(subclaim, recursive_event_handler, current_die);
+					retval &= eval_claim_depthfirst(
+						subclaim, 
+						p_d,
+						p_resolver,
+						recursive_event_handler);
 					/* Note: if a subclaim is found to be false, the handler will be called *before*
 					 * we get a false result. So potentially there is another bite at the cherry here --
 					 * we might locally fail to override some DWARF data, but then get the chance
@@ -254,7 +561,7 @@ namespace cake
 		{
 			if (handler != &cake::module_described_by_dwarf::do_nothing_handler) debug_out 
             	<< "Claim failed, so invoking handler." << std::endl;
-			retval |= (this->*handler)(claim, current_die);
+			retval |= (this->*handler)(claim, p_d, 0, p_resolver);
 		}
 	
 	out:
@@ -293,7 +600,7 @@ namespace cake
 					{
 						if ((*i_dfs)->get_tag() == DW_TAG_base_type)
 						{
-							auto as_base_type = dynamic_pointer_cast<base_type_die>(*i_dfs);
+							auto as_base_type = dynamic_pointer_cast<spec::base_type_die>(*i_dfs);
 							if (as_base_type)
 							{
 								bool encoding_matched = false;
@@ -326,7 +633,7 @@ namespace cake
 			case CAKE_TOKEN(IDENT): {
 				// we resolve the ident and check it resolves to a type
 				definite_member_name dmn; dmn.push_back(CCP(GET_TEXT(t)));
-				auto found = this->all_compile_units()->visible_resolve(
+				auto found = this->get_ds().toplevel()->visible_resolve(
 					dmn.begin(),
 					dmn.end()
 				);
@@ -357,8 +664,8 @@ namespace cake
 					{
 						if ((*i_dfs)->get_tag() == DW_TAG_pointer_type)
 						{
-							shared_ptr<pointer_type_die> as_pointer_type
-							 = dynamic_pointer_cast<pointer_type_die>(*i_dfs);
+							shared_ptr<spec::pointer_type_die> as_pointer_type
+							 = dynamic_pointer_cast<spec::pointer_type_die>(*i_dfs);
 							assert(as_pointer_type);
 							if (( is_void_ptr && !as_pointer_type->get_type())
 							||  (!is_void_ptr &&  (as_pointer_type->get_type() &&
@@ -367,7 +674,7 @@ namespace cake
 								)
 							)
 							{
-								return dynamic_pointer_cast<type_die>(as_pointer_type);
+								return dynamic_pointer_cast<spec::type_die>(as_pointer_type);
 							}
 						}
 					}
@@ -375,7 +682,7 @@ namespace cake
 				// if we got here, either 
 				// -- we didn't find the pointed-to type (for non-void), so definitely no pointer type; or
 				// -- we found the pointed-to but not the pointer
-				return shared_ptr<type_die>();
+				return shared_ptr<spec::type_die>();
 			}
 			case CAKE_TOKEN(ARRAY): assert(false);
 			case CAKE_TOKEN(KEYWORD_VOID): assert(false); // for now
@@ -451,5 +758,60 @@ namespace cake
 			default: assert(false);
 		}
 	}
-
+	
+	bool 
+	module_described_by_dwarf::eval_claim_for_subprogram_and_FUNCTION_ARROW(
+		antlr::tree::Tree *claim, 
+		shared_ptr<spec::subprogram_die> p_d, 
+		name_resolver_ptr p_resolver,
+		eval_event_handler_t handler
+	)
+	{
+		INIT;
+		BIND2(claim, args);
+		BIND2(claim, returnValue);
+		return eval_claim_depthfirst(
+			args,
+			p_d,
+			p_resolver,
+			handler)
+			&& eval_claim_depthfirst(
+				returnValue,
+				p_d->get_type(),
+				p_resolver,
+				handler);
+	}
+	bool module_described_by_dwarf::eval_claim_for_with_named_children_and_MEMBERSHIP_CLAIM(
+		antlr::tree::Tree *claim, 
+		shared_ptr<spec::with_named_children_die> p_d, 
+		name_resolver_ptr p_resolver,
+		eval_event_handler_t handler)
+	{
+		INIT;
+		BIND2(claim, name);
+		BIND2(claim, subclaim);
+		switch(GET_TYPE(name))
+		{
+			case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
+				auto mn = read_definite_member_name(name);
+				auto found = p_d->resolve(mn.begin(), mn.end());
+				return found && eval_claim_depthfirst(subclaim, found, p_resolver, handler);
+			}
+			case CAKE_TOKEN(INDEFINITE_MEMBER_NAME):
+			case CAKE_TOKEN(ANY_VALUE): {
+				for (auto i_child = p_d->children_begin(); 
+					i_child != p_d->children_end();
+					++i_child)
+				{
+					if (eval_claim_depthfirst(subclaim, *i_child, p_resolver, handler))
+					{
+						return true;
+					}
+				}
+				return false;
+			}
+			default: RAISE_INTERNAL(name, "not a valid name");
+		}
+	}
 }
+#undef TAG_AND_TOKEN

@@ -2665,7 +2665,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 //		shared_ptr<encap::file_toplevel_die> providing_info
 //			= providing_iface->all_compile_units();
 		
-		auto r_toplevel = requiring_iface->all_compile_units();
+		auto r_toplevel = requiring_iface->get_ds().toplevel();
 		auto r_cus = make_pair(r_toplevel->compile_unit_children_begin(),
 			r_toplevel->compile_unit_children_end());
 		auto r_subprograms = make_shared<
@@ -2686,7 +2686,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				r_subprograms->end(/*r_subprograms*/)
 				);
 
-		auto p_toplevel = providing_iface->all_compile_units();
+		auto p_toplevel = providing_iface->get_ds().toplevel();
 		auto p_cus = make_pair(p_toplevel->compile_unit_children_begin(),
 			p_toplevel->compile_unit_children_end());
 		auto p_subprograms = make_shared<

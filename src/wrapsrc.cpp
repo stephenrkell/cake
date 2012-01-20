@@ -370,7 +370,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 		// get the subprogram description of the wrapped function in an arbitrary source module
 		auto subp = 
-			corresps.at(0)->second.source->all_compile_units() 
+			corresps.at(0)->second.source->get_ds().toplevel()
 				->visible_named_child(wrapped_symname);
 		if (!subp) 
 		{

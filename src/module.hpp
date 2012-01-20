@@ -20,65 +20,47 @@ namespace antlr { namespace tree { typedef ANTLR3_BASE_TREE Tree; } }
 namespace cake
 {
 	using namespace dwarf::lib;
+	using namespace antlr::tree;
 	using dwarf::spec::type_die;
+	using dwarf::spec::basic_die;
 	using boost::shared_ptr;
 	
 	class definite_member_name;
-    class derivation;
+	class derivation;
 	class link_derivation;
 	class module
 	{
 		friend class link_derivation;
-    protected:
+	protected:
 		std::string filename;
 	
 		typedef std::pair<const std::string, const std::string> constructor_map_entry;
 		static constructor_map_entry known_constructor_extensions[];
-        
-        // map used to generate filenames of correct extensions for derived modules	
+	
+		// map used to generate filenames of correct extensions for derived modules	
 		static std::map<std::string, std::string> known_constructors;
-        
-    public:
-    	module(const std::string& filename) : filename(filename) {}
+	
+	public:
+		module(const std::string& filename) : filename(filename) {}
 		std::string& get_filename() { return filename; }
 		static std::string extension_for_constructor(std::string& module_constructor_name)
 		{ return known_constructors[module_constructor_name]; }		
-    };    
-    
+	};
+	
 	class described_module : public module
-    {
+	{
 	protected: 
-    	// debugging output infrastructure
+		// debugging output infrastructure
 		srk31::indenting_ostream& debug_out;
 								
 	public: 
-    	// FIXME: make some of the below private
-        // FIXME: DWARF-agnostify the interface
-		typedef bool (cake::described_module::* eval_event_handler_t)(antlr::tree::Tree *, Dwarf_Off);
-        
-		virtual bool do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
-		virtual bool check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
-		virtual bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
-		virtual bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
-		virtual	bool internal_check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) = 0;
-		virtual eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength)
-        {
-		return
-			GET_TYPE(strength) == CAKE_TOKEN(KEYWORD_CHECK) 	? &cake::described_module::check_handler
-		: 	GET_TYPE(strength) == CAKE_TOKEN(KEYWORD_DECLARE) 	? &cake::described_module::declare_handler
-		: 	GET_TYPE(strength) == CAKE_TOKEN(KEYWORD_OVERRIDE) ? &cake::described_module::override_handler : 0;
-        }
-		virtual bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
-			unsigned long long current_position) = 0;
-		void process_exists_claims(antlr::tree::Tree *existsBody);
-		void process_supplementary_claim(antlr::tree::Tree *claimGroup);
-		virtual void process_claimgroup(antlr::tree::Tree *claimGroup) = 0;
+		// NOTE: this class existed to support description other than DWARF...
+		// ... which has now been abandoned. So it is now redundant.
 				
 		described_module(const std::string& filename) 
-         : 	module(filename), debug_out(srk31::indenting_cerr) {}
-        
+		 : 	module(filename), debug_out(srk31::indenting_cerr) {}
 	};
-    
+	
 	
 	/* This is a simple class which opens a std::ifstream. We use it so that
 	 * we can apply the RAII style to base classes whose constructor 
@@ -93,55 +75,94 @@ namespace cake
 	};
 
 	class module_described_by_dwarf 
-    : public described_module,  
-      public boost::enable_shared_from_this<module_described_by_dwarf>
+	:	public described_module,  
+		public boost::enable_shared_from_this<module_described_by_dwarf>
 	{
-    protected:
-		//static const Dwarf_Off private_offsets_begin; 
+	protected:
 		dwarf::encap::dieset& dies;
 		Dwarf_Off m_greatest_preexisting_offset;
 		Dwarf_Off private_offsets_next;
 		Dwarf_Off next_private_offset() { return private_offsets_next++; }
-        virtual const dwarf::spec::abstract_def& get_spec() = 0;
+		virtual const dwarf::spec::abstract_def& get_spec() = 0;
 	public: 
-        boost::shared_ptr<module_described_by_dwarf> shared_this() { return this->shared_from_this(); }
-    	boost::shared_ptr<dwarf::encap::file_toplevel_die> all_compile_units() 
-        { return dies.all_compile_units(); }
-		bool do_nothing_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
-		bool check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
-		bool declare_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
-		bool override_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
-		bool internal_check_handler(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier);
+		//typedef shared_ptr<basic_die> (*name_resolver)(
+		//	const definite_member_name& mn
+		//);
+		struct name_resolver_t
+		{
+			virtual shared_ptr<spec::basic_die> 
+			resolve(const definite_member_name& mn) = 0;
+		};
+		typedef name_resolver_t *name_resolver_ptr;
+		
+		typedef bool (module_described_by_dwarf::* eval_event_handler_t)(
+			Tree *, 
+			shared_ptr<basic_die>,
+			Tree *,
+			name_resolver_ptr);
+		virtual bool do_nothing_handler(Tree *falsifiable, 
+			shared_ptr<basic_die> falsifier, Tree *missing, name_resolver_ptr p_resolver);
+		virtual bool check_handler(Tree *falsifiable,
+			shared_ptr<basic_die> falsifier, Tree *missing, name_resolver_ptr p_resolver);
+		virtual bool declare_handler(Tree *falsifiable,
+			shared_ptr<basic_die> falsifier, Tree *missing, name_resolver_ptr p_resolver);
+		virtual bool override_handler(Tree *falsifiable, 
+			shared_ptr<basic_die> falsifier, Tree *missing, name_resolver_ptr p_resolver);
+		virtual bool internal_check_handler(Tree *falsifiable, 
+			shared_ptr<basic_die> falsifier, Tree *missing, name_resolver_ptr p_resolver);
+		virtual eval_event_handler_t handler_for_claim_strength(antlr::tree::Tree *strength);
 
-		Dwarf_Off ensure_non_toplevel_falsifier(antlr::tree::Tree *falsifiable, Dwarf_Off falsifier) const;
+		shared_ptr<basic_die>
+		ensure_non_toplevel_falsifier(
+			Tree *falsifiable, 
+			shared_ptr<basic_die> falsifier
+		) const;
 
-		void process_claimgroup(antlr::tree::Tree *claimGroup);
+		void process_claimgroup(Tree *claimGroup);
+		void process_exists_claims(antlr::tree::Tree *existsBody);
+		void process_supplementary_claim(antlr::tree::Tree *claimGroup);
 
-		bool eval_claim_depthfirst(antlr::tree::Tree *claim, eval_event_handler_t handler,
-			Dwarf_Off current_die);
-        
-        virtual dwarf::spec::abstract_dieset& get_ds() = 0;
-		Dwarf_Off greatest_preexisting_offset() const { return m_greatest_preexisting_offset; }
-        
-        module_described_by_dwarf(const std::string& filename, dwarf::encap::dieset& ds) 
-         : 	described_module(filename), dies(ds),
-		    m_greatest_preexisting_offset(
+
+		bool eval_claim_depthfirst(
+			antlr::tree::Tree *claim, 
+			shared_ptr<spec::basic_die> p_d, 
+			name_resolver_ptr p_resolver,
+			eval_event_handler_t handler);
+		// specialised claim handlers
+		bool eval_claim_for_subprogram_and_FUNCTION_ARROW(
+			antlr::tree::Tree *claim, 
+			shared_ptr<spec::subprogram_die> p_d, 
+			name_resolver_ptr p_resolver,
+			eval_event_handler_t handler);
+		bool eval_claim_for_with_named_children_and_MEMBERSHIP_CLAIM(
+			antlr::tree::Tree *claim, 
+			shared_ptr<spec::with_named_children_die> p_d, 
+			name_resolver_ptr p_resolver,
+			eval_event_handler_t handler);
+		
+		virtual dwarf::spec::abstract_dieset& get_ds() = 0;
+		
+		Dwarf_Off greatest_preexisting_offset() const 
+		{ return m_greatest_preexisting_offset; }
+
+		module_described_by_dwarf(const std::string& filename, dwarf::encap::dieset& ds) 
+		 : 	described_module(filename), dies(ds),
+			m_greatest_preexisting_offset(
 				(dies.map_end() == dies.map_begin()) ? 0UL : (--dies.map_end())->first),
-         	private_offsets_next(m_greatest_preexisting_offset + 1) {}
+			private_offsets_next(m_greatest_preexisting_offset + 1) {}
 			
 		shared_ptr<type_die> existing_dwarf_type(antlr::tree::Tree *t);
 		shared_ptr<type_die> create_dwarf_type(antlr::tree::Tree *t);
 		shared_ptr<type_die> ensure_dwarf_type(antlr::tree::Tree *t);
 		shared_ptr<type_die> create_typedef(shared_ptr<type_die> p_d, const string& name);
-		
 	};
 
 	class elf_module : 	private ifstream_holder, 
-                        private dwarf::encap::file,
-    					public module_described_by_dwarf
+						private dwarf::encap::file,
+						public module_described_by_dwarf
 	{
 		boost::shared_ptr<std::ifstream> input_stream;
-        					
+							
 	protected:
 		static const dwarf::encap::die_off_list empty_child_list;
 		static const dwarf::encap::die::attribute_map empty_attribute_map;
@@ -149,16 +170,16 @@ namespace cake
 		static const dwarf::encap::die::attribute_map::value_type default_subprogram_attr_entries[];
 		static const dwarf::encap::die::attribute_map default_subprogram_attributes;
 
-        const dwarf::spec::abstract_def& get_spec() 
-        { return static_cast<dwarf::encap::file*>(this)->get_spec(); }
+		const dwarf::spec::abstract_def& get_spec() 
+		{ return static_cast<dwarf::encap::file*>(this)->get_spec(); }
 	
 	public:
 		elf_module(std::string local_filename, std::string makefile_filename);
-        //const dwarf::spec::abstract_def& get_spec() 
-        //{ return static_cast<module_described_by_dwarf*>(this)->get_spec(); }
-        
-        dwarf::spec::abstract_dieset& get_ds() 
-        { return static_cast<dwarf::encap::file*>(this)->get_ds(); }
+		//const dwarf::spec::abstract_def& get_spec() 
+		//{ return static_cast<module_described_by_dwarf*>(this)->get_spec(); }
+		
+		dwarf::spec::abstract_dieset& get_ds() 
+		{ return static_cast<dwarf::encap::file*>(this)->get_ds(); }
 	
 		//void print_abi_info();
 	};
@@ -168,8 +189,7 @@ namespace cake
 	
 	public:
 		elf_reloc_module(std::string local_filename, std::string makefile_filename) 
-        : elf_module(local_filename, makefile_filename) {}
-		 
+		: elf_module(local_filename, makefile_filename) {}
 	};
 	
 	class elf_external_sharedlib_module : public elf_module
