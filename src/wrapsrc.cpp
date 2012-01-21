@@ -81,7 +81,7 @@ namespace cake
         BIND2(event_pattern, memberNameExpr); // name of call being matched -- can ignore this here
         BIND3(event_pattern, eventCountPredicate, EVENT_COUNT_PREDICATE);
         BIND3(event_pattern, eventParameterNamesAnnotation, KEYWORD_NAMES);
-		int argnum = 0;
+		int argnum = -1;
         int pattern_args;
         switch(GET_CHILD_COUNT(event_pattern))
         {
@@ -163,6 +163,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				assert(pattern_args >= 1);
 				FOR_REMAINING_CHILDREN(event_pattern)
 				{
+					++argnum;
 					if (!ignore_dwarf_args && i_arg == args_end)
 					{
 						std::ostringstream msg;
@@ -214,7 +215,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 						//if (i_arg != args_end) std::cerr << **i_arg; else std::cerr << "(sentinel)";
 						//std::cerr << std::endl;
 					}
-                	argnum++; // advance our arg count
 					if (ignore_dwarf_args && unique_called_subprogram)
 					{
 						++i_fp;
@@ -321,30 +321,30 @@ assert(false && "disabled support for inferring positional argument mappings");
 //                 	if (i_arg != args_end) m_out << ", ";
 // 				}
 // 			break;
-        } // end switch GET_CHILD_COUNT
+		} // end switch GET_CHILD_COUNT
 			
 		// if we have spare arguments at the end, something's wrong
-        if (!ignore_dwarf_args && i_arg != args_end)
-        {
-            std::ostringstream msg;
-            msg << "argument pattern has too few arguments for subprogram: "
-                << *subprogram
+		if (!ignore_dwarf_args && i_arg != args_end)
+		{
+			std::ostringstream msg;
+			msg << "event pattern "
+				<< CCP(TO_STRING_TREE(event_pattern))
+				<< " has too few arguments for subprogram: "
+				<< *subprogram
 				<< ": processed " << (argnum + 1) << " arguments, and ";
-			int count = 0;
-			for (auto i_arg_ctr = subprogram->formal_parameter_children_begin();
-				i_arg_ctr != subprogram->formal_parameter_children_end();
-				++i_arg_ctr) { count++; }
+			unsigned count = srk31::count(subprogram->formal_parameter_children_begin(),
+				subprogram->formal_parameter_children_end());
 			msg << "subprogram has " << count << " arguments (first uncovered: "
 				<< **i_arg << ").";
-            RAISE(event_pattern, msg.str());
-        }
+			RAISE(event_pattern, msg.str());
+		}
 
-        //} // end switch
-                        
-        m_out << ')';
+		//} // end switch
+		
+		m_out << ')';
 
-        m_out.flush();
-    }
+		m_out.flush();
+	}
 
 	/* This is the main wrapper generation function. */
 	void wrapper_file::emit_wrapper(
@@ -2351,13 +2351,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 		auto success_ident = new_ident("success");
 		m_out << "bool " << success_ident << " = true; " << std::endl;
 		std::string value_ident = new_ident("value");
-		if (treat_subprogram_as_untyped(callee_subprogram)
-			&& !subprogram_returns_void(callee_subprogram))
+		if (/*treat_subprogram_as_untyped(callee_subprogram)
+			&& !*/subprogram_returns_void(callee_subprogram))
 		{
 			m_out << /* "::cake::unspecified_wordsize_type" */ "int" // HACK: this is what our fake DWARF will say
 			 << ' ' << value_ident << "; // unused" << std::endl;
 		}
-		else if (!subprogram_returns_void(callee_subprogram))
+		else //if (!subprogram_returns_void(callee_subprogram))
 		{
 			m_out << get_type_name(callee_subprogram->get_type())
 			 << ' ' << value_ident << ";" << std::endl;

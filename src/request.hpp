@@ -44,11 +44,14 @@ namespace cake
     //module_ptr make_module_ptr(described_module *arg) { return module_ptr(arg); }
     class derivation;
     class wrapper_file; // in wrapper.hpp
+	class link_derivation; 
+	class instantiate_derivation;
 	class request
 	{
 		friend class derivation;
 		friend class link_derivation;
 		friend class rewrite_derivation;
+		friend class instantiate_derivation;
 		friend class make_exec_derivation;
         friend class wrapper_file;
 		
@@ -154,6 +157,9 @@ namespace cake
 		antlr::tree::Tree *t;
         module_ptr output_module; // defaults to null
         std::vector<module_ptr> input_modules; // defaults to empty
+	
+	protected:
+		virtual void write_object_dependency_makerules(std::ostream& out);
 		
 	public:
 		derivation(request& r, antlr::tree::Tree *t)

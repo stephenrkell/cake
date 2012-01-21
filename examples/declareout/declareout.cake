@@ -10,14 +10,21 @@ exists elf_reloc("client.o") client
 {
 	declare 
 	{
-		fillme: (_, out p_buf) => _;
+		fillme: (_, out p_buf) => void;
 	}
 }
 exists elf_reloc("lib.o") lib
 {
 	declare 
 	{
-		fillme: (_, out p_buf) => _;
+		fillme: (_, out _) => void;
 	}
 }
-derive elf_reloc("declareout.o") declareout = link [client, lib] {};
+derive elf_reloc("declareout.o") declareout = link [client, lib] 
+{
+	client <--> lib
+	{
+		// still avoiding implicit corresps for now...
+		fillme(a, b) --> fillme(a, b);
+	}
+};

@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 struct buf
 {
 	int val;

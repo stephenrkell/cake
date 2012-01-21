@@ -93,5 +93,15 @@ namespace cake
 	}
 	
 	void request::sort_derivations() {}
-
+		
+	void derivation::write_object_dependency_makerules(std::ostream& out)
+	{
+		out << output_module->get_filename() << ":: ";
+		for (vector<module_ptr>::iterator i = input_modules.begin();
+			i != input_modules.end(); i++)
+		{
+			out << (*i)->get_filename() << ' ';
+		}
+	
+	}
 }

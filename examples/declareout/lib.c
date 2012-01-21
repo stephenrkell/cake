@@ -6,9 +6,9 @@ struct buf
 	int val;
 };
 
-void fillme(int foo, struct buf *bar)
+void fillme(int foo, struct buf *p_buf)
 {
-	printf("fillme(%d, %p) called\n", foo, bar);
-	bar->val = 1000;
+	printf("fillme(%d, %p) called\n", foo, p_buf);
+	p_buf->val = 1000;
 	return;
 }

@@ -54,27 +54,28 @@ namespace cake
     	return new derived_module(d, id, filename);
     }
     
-    derivation *request::create_derivation(const std::string& module_name, 
-    	const std::string& output_filename, 
-    	antlr::tree::Tree *t)
-    {
-    	switch(GET_TYPE(t))
-        {
-        	case CAKE_TOKEN(IDENT): // unary predicates
-            	//if (std::string(GET_TEXT(t)) == "instantiate")
-                //{
-                //	
-                //} 
-                //else if (std::string(GET_TEXT(t)) == "make_exec")
-                //{
-                //
-                //} break;
-                assert(false); return 0;
-        	case CAKE_TOKEN(KEYWORD_LINK): 
-            {
+	derivation *request::create_derivation(const std::string& module_name, 
+		const std::string& output_filename, 
+		antlr::tree::Tree *t)
+	{
+		switch(GET_TYPE(t))
+		{
+			case CAKE_TOKEN(IDENT): // unary predicates
+				if (std::string(GET_TEXT(t)) == "instantiate")
+				{
+					return new instantiate_derivation(*this, t, module_name, output_filename);
+				} 
+				//else if (std::string(GET_TEXT(t)) == "make_exec")
+				//{
+				//
+				//} break;
+				//if 
+				assert(false); return 0;
+			case CAKE_TOKEN(KEYWORD_LINK): 
+			{
 				return new link_derivation(*this, t, module_name, output_filename);
-            }
-            default: return 0;
+			}
+			default: return 0;
 		}
-	}    
+	}
 }
