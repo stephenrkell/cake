@@ -2,10 +2,12 @@
 #include <vector>
 #include <map>
 #include <boost/shared_ptr.hpp>
+#include <boost/make_shared.hpp>
 #include <cassert>
 #include "parser.hpp"
 #include "request.hpp"
 #include "link.hpp"
+#include "instantiate.hpp"
 
 namespace cake
 {
@@ -38,22 +40,24 @@ namespace cake
         << CCP(TO_STRING_TREE(derivedObjectExpression)) << std::endl;
 
 		/* Add a derivation to the derivation table. */
-        std::string unescaped_filename = unescape_string_lit(ocStrings.second);
+		std::string unescaped_filename = unescape_string_lit(ocStrings.second);
 
 		// creating the derivation will create the output module
-        derivation *pd = create_derivation(std::string(CCP(GET_TEXT(id))), 
-        	unescaped_filename, derivedObjectExpression);
-        derivation_tbl.push_back(
-        	boost::shared_ptr<derivation>(pd)
-            ); 
-    }
-    
-    derived_module *request::create_derived_module(derivation& d, 
-    	const std::string& id, const std::string& filename)
-    {
-    	return new derived_module(d, id, filename);
-    }
-    
+		derivation *pd = create_derivation(std::string(CCP(GET_TEXT(id))), 
+			unescaped_filename, derivedObjectExpression);
+		derivation_tbl.push_back(
+			boost::shared_ptr<derivation>(pd)
+		); 
+	}
+
+	shared_ptr<derived_module> request::create_derived_module(derivation& d, 
+		const std::string& id, const std::string& filename)
+	{
+		auto made = boost::make_shared<derived_module>(d, id, filename);
+		assert(made->module_described_by_dwarf::shared_from_this());
+		return made;
+	}
+
 	derivation *request::create_derivation(const std::string& module_name, 
 		const std::string& output_filename, 
 		antlr::tree::Tree *t)
@@ -61,7 +65,7 @@ namespace cake
 		switch(GET_TYPE(t))
 		{
 			case CAKE_TOKEN(IDENT): // unary predicates
-				if (std::string(GET_TEXT(t)) == "instantiate")
+				if (std::string(CCP(GET_TEXT(t))) == "instantiate")
 				{
 					return new instantiate_derivation(*this, t, module_name, output_filename);
 				} 

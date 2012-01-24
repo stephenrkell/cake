@@ -35,7 +35,7 @@ namespace cake {
 	class link_derivation : public derivation
 	{
 		friend class wrapper_file;
-		cake_cxx_target compiler;
+		cake_cxx_target& compiler;
 	public:
 		typedef pair<module_ptr,module_ptr> iface_pair;
 		string name_of_module(module_ptr m) { return this->r.module_inverse_tbl[m]; }
@@ -232,7 +232,9 @@ namespace cake {
 
 		typedef unsigned long module_tag_t;
 		
-    private:
+	private:
+		antlr::tree::Tree *refinement_ast;
+		
     	// correspondences
     	ev_corresp_map_t ev_corresps;
         val_corresp_map_t val_corresps;

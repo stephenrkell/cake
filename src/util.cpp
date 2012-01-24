@@ -71,7 +71,7 @@ namespace cake
 		return o.str();
 	}
 
-	std::string unescape_string_lit(std::string& lit)
+	std::string unescape_string_lit(const std::string& lit)
 	{
 		if (lit.length() < 2 || *lit.begin() != '"' || *(lit.end() - 1) != '"')
 		{
@@ -81,12 +81,12 @@ namespace cake
 
 		std::ostringstream o;
 		enum state { BEGIN, ESCAPE, OCTAL, HEX } state = BEGIN;
-		std::string::iterator octal_begin;
-		std::string::iterator octal_end;
-		std::string::iterator hex_begin;
-		std::string::iterator hex_end;
+		std::string::const_iterator octal_begin;
+		std::string::const_iterator octal_end;
+		std::string::const_iterator hex_begin;
+		std::string::const_iterator hex_end;
 
-		for (std::string::iterator i = lit.begin() + 1; i < lit.end() - 1; i++)
+		for (std::string::const_iterator i = lit.begin() + 1; i < lit.end() - 1; i++)
 		{
 			// HACK: end-of-string also terminates oct/hex escape sequences
 			if (state == HEX && i + 1 == lit.end()) { hex_end = i + 1; goto end_hex; }

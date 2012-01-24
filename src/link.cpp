@@ -91,6 +91,7 @@ namespace cake
 		const string& id,
 		const string& output_module_filename) 
 	:	derivation(r, t), 
+		compiler(r.compiler),
 		output_namespace("link_" + id + "_"), 
 		wrap_file_makefile_name(
 			boost::filesystem::path(id + "_wrap.cpp").string()),
@@ -110,6 +111,7 @@ namespace cake
 		INIT;
 		BIND3(t, identList, IDENT_LIST);
 		BIND3(t, linkRefinement, PAIRWISE_BLOCK_LIST);
+		this->refinement_ast = linkRefinement;
 		
 		{
 			INIT;
@@ -124,7 +126,13 @@ namespace cake
 			}
 			cerr << endl;
 		}
+	}
+	
+	link_derivation::~link_derivation() 
+	{ wrap_file.flush(); wrap_file.close(); delete p_wrap_code; }
 
+	void link_derivation::extract_definition()
+	{
 		// enumerate all interface pairs
 		for (vector<module_ptr>::iterator i_mod = input_modules.begin();
 				i_mod != input_modules.end();
@@ -148,10 +156,10 @@ namespace cake
 		{
 			INIT;
 			cerr << "Link expression at " << t << " has pairwise blocks as follows: ";
-			FOR_ALL_CHILDREN(linkRefinement)
+			FOR_ALL_CHILDREN(refinement_ast)
 			{
 				INIT;
-				assert(GET_TYPE(linkRefinement) == CAKE_TOKEN(PAIRWISE_BLOCK_LIST));
+				assert(GET_TYPE(refinement_ast) == CAKE_TOKEN(PAIRWISE_BLOCK_LIST));
 				ALIAS3(n, arrow, BI_DOUBLE_ARROW);
 				// now walk each pairwise block and add the correspondences
 				{
@@ -286,14 +294,7 @@ namespace cake
 		
 		// generate wrappers
 		compute_wrappers();
-	}
-	
-	link_derivation::~link_derivation() 
-	{ wrap_file.flush(); wrap_file.close(); delete p_wrap_code; }
-
-	void link_derivation::extract_definition()
-	{
-	
+		
 	}
 	
 	void link_derivation::compute_init_rules()

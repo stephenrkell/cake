@@ -67,6 +67,7 @@ namespace cake
 		for (derivation_tbl_t::iterator pd = derivation_tbl.begin(); 
 			pd != derivation_tbl.end(); pd++)
 		{
+			(*pd)->extract_definition();
 			(*pd)->write_makerules(*p_out);
 		}
 	}
@@ -87,7 +88,7 @@ namespace cake
 		INIT;
 		FOR_ALL_CHILDREN(this->ast)
 		{
-			SELECT_ONLY(CAKE_TOKEN(KEYWORD_DERIVE));			
+			SELECT_ONLY(CAKE_TOKEN(KEYWORD_DERIVE));
 			add_derivation(n);
 		}
 	}
@@ -102,6 +103,5 @@ namespace cake
 		{
 			out << (*i)->get_filename() << ' ';
 		}
-	
 	}
 }

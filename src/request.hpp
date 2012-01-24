@@ -28,6 +28,7 @@
 #include <boost/shared_ptr.hpp>
 #include <fstream>
 #include <functional>
+#include "cake/cxx_target.hpp"
 
 #include <selective_iterator.hpp>
 
@@ -53,15 +54,14 @@ namespace cake
 		friend class rewrite_derivation;
 		friend class instantiate_derivation;
 		friend class make_exec_derivation;
-        friend class wrapper_file;
-		
+		friend class wrapper_file;
 
 		/* Source file */
 		//jstring in_filename;
 		//java::io::File *in_fileobj;
 		//java::io::FileInputStream *in_file;
-        const char *in_filename;
-        pANTLR3_INPUT_STREAM/*std::ifstream*/ /*ANTLR3_FDSC*/ in_fileobj;
+		const char *in_filename;
+		pANTLR3_INPUT_STREAM/*std::ifstream*/ /*ANTLR3_FDSC*/ in_fileobj;
 		
 		const char *out_filename;
 		std::ofstream maybe_out_stream;
@@ -69,13 +69,13 @@ namespace cake
 
 		/* Parsing apparatus */		
 		//antlr::ANTLRInputStream *stream;
-        //antlr::ANTLRInputStream *stream;
+		//antlr::ANTLRInputStream *stream;
 		//cakeJavaLexer *lexer;
-        cakeCLexer *lexer;
+		cakeCLexer *lexer;
 		//antlr::CommonTokenStream *tokenStream;
-        antlr::CommonTokenStream *tokenStream;
+		antlr::CommonTokenStream *tokenStream;
 		//cakeJavaParser *parser;
-        cakeCParser *parser;
+		cakeCParser *parser;
 		
 		/* AST */
 		antlr::tree::Tree *ast;
@@ -83,13 +83,16 @@ namespace cake
 		/* AST traversal */		
 		void depthFirst(antlr::tree::Tree *t);
 		void toplevel();
-				
+		
 		/* data structure instances */
         typedef std::map<std::string, module_ptr> module_tbl_t;
         typedef std::map<module_ptr, std::string> module_inverse_tbl_t;
    		module_tbl_t module_tbl;
         module_inverse_tbl_t module_inverse_tbl;
         typedef module_tbl_t::value_type module_tbl_entry_t;
+		
+		/* cxx generation */
+		cake_cxx_target compiler;
 
 	public:
     	typedef module_inverse_tbl_t::value_type module_name_pair;
@@ -134,8 +137,8 @@ namespace cake
 		void extract_derivations();
         void add_derivation(antlr::tree::Tree *n);
 	    derivation *create_derivation(const std::string&, const std::string&, antlr::tree::Tree *t);	
-	    derived_module *create_derived_module(derivation& d, 
-        	const std::string& id, const std::string& filename);      	
+		shared_ptr<derived_module> create_derived_module(derivation& d, 
+			const std::string& id, const std::string& filename);
 		// derivations may have to happen in some order -- that doesn't mean
 		// we have to process them in that order, although it might if we
 		// end up supporting a derivation algebra (see below) since we might

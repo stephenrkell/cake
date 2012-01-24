@@ -38,7 +38,7 @@ namespace cake
 	string new_tmp_filename(string& module_constructor_name);
 	extern ostringstream exception_msg_stream;
 	string unescape_ident(const string& ident);
-	string unescape_string_lit(string& lit);
+	string unescape_string_lit(const string& lit);
 	pair<string, string> read_object_constructor(antlr::tree::Tree *t);
 	string lookup_solib(string const& basename);
 	extern string solib_constructor;
