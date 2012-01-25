@@ -6,7 +6,7 @@
 exists elf_reloc("client.o") client;
 exists elf_reloc("lib.o") lib;
 derive elf_reloc("client_plugged.o") client_plugged
- = instantiate(client, ops, my_ops, "plugged");
+ = instantiate(client, ops, my_ops, "plugged_");
 /* instantiate args: (component, structure type, obj name, symbol prefix) */
 derive elf_reloc("instanti.o") instanti = link [client_plugged, lib] 
 {

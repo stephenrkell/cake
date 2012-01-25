@@ -150,7 +150,16 @@ namespace cake
 			m_greatest_preexisting_offset(
 				(dies.map_end() == dies.map_begin()) ? 0UL : (--dies.map_end())->first),
 			private_offsets_next(m_greatest_preexisting_offset + 1) {}
-			
+		
+	protected:
+		void updated_dwarf()
+		{
+			m_greatest_preexisting_offset = 
+				(dies.map_end() == dies.map_begin()) ? 0UL : (--dies.map_end())->first;
+			private_offsets_next = m_greatest_preexisting_offset + 1;
+		}
+		
+	public:
 		shared_ptr<type_die> existing_dwarf_type(antlr::tree::Tree *t);
 		shared_ptr<type_die> create_dwarf_type(antlr::tree::Tree *t);
 		shared_ptr<type_die> ensure_dwarf_type(antlr::tree::Tree *t);
@@ -216,6 +225,10 @@ namespace cake
 			m_id(id)
 		{}
 		dwarf::spec::abstract_dieset& get_ds() { return dies; }
+		void updated_dwarf()
+		{
+			this->module_described_by_dwarf::updated_dwarf();
+		}
 	};
 }
 

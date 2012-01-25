@@ -65,9 +65,10 @@ namespace cake
 		
 		// output makerules *and* source code for each derive
 		for (derivation_tbl_t::iterator pd = derivation_tbl.begin(); 
-			pd != derivation_tbl.end(); pd++)
+			pd != derivation_tbl.end(); ++pd)
 		{
 			(*pd)->extract_definition();
+			assert(*p_out);
 			(*pd)->write_makerules(*p_out);
 		}
 	}

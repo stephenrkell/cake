@@ -135,8 +135,8 @@ namespace cake
 		void extract_supplementary();
         
 		void extract_derivations();
-        void add_derivation(antlr::tree::Tree *n);
-	    derivation *create_derivation(const std::string&, const std::string&, antlr::tree::Tree *t);	
+		void add_derivation(antlr::tree::Tree *n);
+		shared_ptr<derivation> create_derivation(const std::string&, const std::string&, antlr::tree::Tree *t);	
 		shared_ptr<derived_module> create_derived_module(derivation& d, 
 			const std::string& id, const std::string& filename);
 		// derivations may have to happen in some order -- that doesn't mean

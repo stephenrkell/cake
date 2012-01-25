@@ -258,7 +258,7 @@ namespace cake
 						dwarf::spec::DEFAULT_DWARF_SPEC
 					).create_die(DW_TAG_formal_parameter,
 						subprogram,
-						opt<const string&>());
+						opt<string>());
 						
 				cerr << "Added formal parameter at 0x" << std::hex
 					<< created->get_offset() << std::dec << endl;
@@ -787,7 +787,7 @@ namespace cake
 				dwarf::spec::DEFAULT_DWARF_SPEC
 			).create_die(DW_TAG_typedef,
 				encap_cu,
-				opt<const string&>(*(new string(name))) // FIXME: necessary to force a copy here?
+				opt<string>(name) 
 			);
 		dynamic_pointer_cast<encap::typedef_die>(created)->set_type(p_d);
 		return dynamic_pointer_cast<spec::type_die>(created);
@@ -820,7 +820,7 @@ namespace cake
 						dwarf::spec::DEFAULT_DWARF_SPEC
 					).create_die(DW_TAG_pointer_type,
 						first_encap_cu,
-						opt<const string&>() // no name
+						opt<string>() // no name
 					);
 				auto created_as_pointer_type = dynamic_pointer_cast<encap::pointer_type_die>(created);
 				created_as_pointer_type->set_type(pointed_to);

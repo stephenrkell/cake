@@ -710,8 +710,8 @@ namespace cake
 							).create_die(DW_TAG_formal_parameter,
 								encap_subprogram,
 								*i_name ? 
-								opt<const string&>(**i_name)
-								: opt<const string&>());
+								opt<string>(**i_name)
+								: opt<string>());
 						cerr << "created fp of subprogram "
 							<< *subprogram->get_name()
 							<< " with name " <<  (*i_name ? **i_name : "(no name)")
@@ -1022,14 +1022,22 @@ namespace cake
 						}
 					}
 					break;
-					case DW_TAG_typedef:
-						wrap_file << compiler.make_typedef(
-							dynamic_pointer_cast<spec::typedef_die>(*i_die)->get_type(),
-							(*i_die)->get_name() 
+					case DW_TAG_typedef: {
+						auto name_to_use = (*i_die)->get_name() 
 							? *(*i_die)->get_name()
-							: compiler.create_ident_for_anonymous_die(*i_die)
-						) << endl;
-					break;
+							: compiler.create_ident_for_anonymous_die(*i_die);
+						if (dynamic_pointer_cast<spec::typedef_die>(*i_die)->get_type())
+						{	
+							wrap_file << compiler.make_typedef(
+								dynamic_pointer_cast<spec::typedef_die>(*i_die)->get_type(),
+								name_to_use);
+						} 
+						else
+						{
+							wrap_file << "typedef void " << name_to_use << ";";
+						}
+						wrap_file << endl;
+					} break;
 					default:
 						wrap_file << "// FIXME: we seem to have added a DIE of tag " 
 							<< (*i_die)->get_spec().tag_lookup((*i_die)->get_tag()) << ", name "
@@ -2676,6 +2684,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				(*i_cu)->subprogram_children_begin(),
 				(*i_cu)->subprogram_children_end());
 		}
+		// if our sequence is empty, we can exit early
+		if (r_subprograms->is_empty()) return;
 		pair<subprograms_in_file_iterator, subprograms_in_file_iterator> r_subprograms_seq
 			= make_pair(
 				r_subprograms->begin(/*r_subprograms*/), 
@@ -2700,6 +2710,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				(*i_cu)->subprogram_children_end()
 			==  p_subprograms->end().base());
 		}
+		// if our sequence is empty, we can exit early
+		if (p_subprograms->is_empty()) return;
 		pair<subprograms_in_file_iterator, subprograms_in_file_iterator> p_subprograms_seq
 			= make_pair(
 				p_subprograms->begin(/*p_subprograms*/),
