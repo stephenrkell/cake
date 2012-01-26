@@ -58,7 +58,8 @@ namespace cake
 	struct co_objects_allocator
 	{
 		/* When we call ensure_co_objects on a non-pointer, we do nothing. */
-		inline void operator()(int source_rep_id, const T& obj, int target_rep_id) const
+		inline void operator()(int source_rep_id, const T& obj, int target_rep_id,
+			bool object_is_leaf) const
 		{ return; }
 	};
 	
@@ -67,7 +68,8 @@ namespace cake
 	{
 		/* When we call ensure_co_objects on a non-pointer, we walk it! */
 		typedef T *arg_type;
-		inline void operator()(int source_rep_id, const arg_type& obj, int target_rep_id) const
+		inline void operator()(int source_rep_id, const arg_type& obj, int target_rep_id,
+			bool object_is_leaf) const
 		{
 			if (!components_table_inited) init_components_table();
 			if (!component_pairs_table_inited) init_component_pairs_table();
@@ -78,15 +80,17 @@ namespace cake
 				target_rep_id,
 				allocate_co_object_idem,
 				source_rep_id,
-				target_rep_id
+				target_rep_id,
+				object_is_leaf
 			);
 		}
 	};
 	
 	template <typename T>
-	void ensure_co_objects_allocated(int source_rep_id, const T& obj, int target_rep_id)
+	void ensure_co_objects_allocated(int source_rep_id, const T& obj, int target_rep_id,
+		bool object_is_leaf)
 	{
-		co_objects_allocator<T>()(source_rep_id, obj, target_rep_id);
+		co_objects_allocator<T>()(source_rep_id, obj, target_rep_id, object_is_leaf);
 	}
 	
 	template <typename T>

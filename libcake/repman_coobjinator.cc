@@ -165,7 +165,7 @@ struct co_object_group *register_co_object(
 }
 
 struct co_object_group *
-new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by)
+new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by, int is_uninit)
 {
 	assert(!group_for_object(initial_object));
 	auto p_m = ensure_map_for_addr(initial_object);
@@ -173,6 +173,7 @@ new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by
 	groups.insert(group);
 	group->reps[initial_rep] = initial_object;
 	group->co_object_info[initial_rep].allocated_by = initial_alloc_by;
+	group->co_object_info[initial_rep].initialized = !is_uninit;
 	
 	p_m->insert(std::make_pair(initial_object, group));
 	
@@ -222,23 +223,29 @@ void sync_all_co_objects(int from_rep, int to_rep, ...)
 				/*rep_conv_funcs[from_rep][to_rep][p->form](p->reps[from_rep], p->reps[to_rep]);*/
 				bool is_overridden = (overrides.find(p_group->reps[from_rep]) != overrides.end());
 				
-				if (p_group->co_object_info[to_rep].initialized)
+				/* We can only go ahead if the from_rep is initialized. 
+				 * This might not be the case, if the co-objects were created
+				 * by an "out" argument. */
+				if (p_group->co_object_info[from_rep].initialized)
 				{
-					(is_overridden ? overrides[p_group->reps[from_rep]].conv : get_rep_conv_func(
-						from_rep, to_rep, 
-						p_group->reps[from_rep],
-						p_group->reps[to_rep]
-					))(p_group->reps[from_rep], p_group->reps[to_rep]);
-				}
-				else // not initialized
-				{
-					(is_overridden ? overrides[p_group->reps[from_rep]].init : get_init_func(
-						from_rep, to_rep, 
-						p_group->reps[from_rep],
-						p_group->reps[to_rep]
-					))(p_group->reps[from_rep], p_group->reps[to_rep]);
-					
-					p_group->co_object_info[to_rep].initialized = 1;
+					if (p_group->co_object_info[to_rep].initialized)
+					{
+						(is_overridden ? overrides[p_group->reps[from_rep]].conv : get_rep_conv_func(
+							from_rep, to_rep, 
+							p_group->reps[from_rep],
+							p_group->reps[to_rep]
+						))(p_group->reps[from_rep], p_group->reps[to_rep]);
+					}
+					else // not initialized
+					{
+						(is_overridden ? overrides[p_group->reps[from_rep]].init : get_init_func(
+							from_rep, to_rep, 
+							p_group->reps[from_rep],
+							p_group->reps[to_rep]
+						))(p_group->reps[from_rep], p_group->reps[to_rep]);
+
+						p_group->co_object_info[to_rep].initialized = 1;
+					}
 				}
 			}
 		}
@@ -249,7 +256,25 @@ void sync_all_co_objects(int from_rep, int to_rep, ...)
 	}
 }
 
-void allocate_co_object_idem(void *object, int object_rep, int co_object_rep)
+int mark_object_as_initialized(void *object, int rep)
+{
+	auto group = group_for_object(object);
+	if (!group) 
+	{
+		fprintf(stderr, "Failed to find co-object record for %p in rep %d\n",
+				object, rep);
+		return -1;
+	}
+	else 
+	{
+		assert(group->reps[rep] == object);
+		int old_initialized = group->co_object_info[rep].initialized;
+		group->co_object_info[rep].initialized = 1;
+		return old_initialized;
+	}
+}
+
+void allocate_co_object_idem(void *object, int object_rep, int co_object_rep, int is_leaf)
 {
 	if (object == NULL) return; /* nothing to do */
 	
@@ -267,7 +292,7 @@ void allocate_co_object_idem(void *object, int object_rep, int co_object_rep)
             co_object_rep, object, object_rep);
 	
 	/* we *may* need a new co object record */
-	if (!co_object_rec) co_object_rec = new_co_object_record(object, object_rep, ALLOC_BY_USER);
+	if (!co_object_rec) co_object_rec = new_co_object_record(object, object_rep, ALLOC_BY_USER, is_leaf);
 	
 	/* add info about the newly allocated co-object */
 	register_co_object(object, object_rep,

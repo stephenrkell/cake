@@ -30,13 +30,13 @@ int get_rep_for_component_name(const char *name)
 	return -1;
 }
 
-void do_nothing(void *object, int object_rep, int co_object_rep)
+void do_nothing(void *object, int object_rep, int co_object_rep, int is_leaf)
 {
 	/* Used for testing walk_bfs */
 }
 
 void init_co_object_from_object(int object_rep, void *object,
-		int co_object_rep, void *co_object)
+		int co_object_rep, void *co_object, int is_leaf)
 {
 	/* Initialising an object: we must initialise all cared-about fields. It doesn't matter
 	 * what order we do the contents and the pointers, as long as the pointed-to objects
@@ -49,11 +49,12 @@ void init_co_object_from_object(int object_rep, void *object,
 	get_rep_conv_func(object_rep, co_object_rep, object, co_object)(object, co_object);
 }
 
-void init_co_object(void *object, int from_rep, int to_rep)
+void init_co_object(void *object, int from_rep, int to_rep, int is_leaf)
 {
 	init_co_object_from_object(
 			from_rep, object, to_rep, 
-			find_co_object(object, from_rep, to_rep, NULL));
+			find_co_object(object, from_rep, to_rep, NULL),
+			is_leaf);
 }
 
 int object_is_live(struct co_object_group *rec)

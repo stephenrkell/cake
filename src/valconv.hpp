@@ -47,6 +47,8 @@ namespace cake
 		optional<string> indirect_local_tagstring_out;
 		optional<string> indirect_remote_tagstring_in;
 		optional<string> indirect_remote_tagstring_out;
+		
+		bool is_pointer_to_uninit;
 	};
 	//typedef std::map<std::string, bound_var_info> environment;
 	struct environment : public map<string, bound_var_info>

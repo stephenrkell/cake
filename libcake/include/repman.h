@@ -46,25 +46,27 @@ void print_object(void *);
 int invalidate_co_object(void *object, int rep);
 void *find_co_object(void *object, int object_rep, int co_object_rep, 
 		struct co_object_group **co_object_rec_out/*, int expected_size_words*/);		
-struct co_object_group *new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by);
+struct co_object_group *new_co_object_record(void *initial_object, int initial_rep, 
+	int initial_alloc_by, int is_uninit);
+int mark_object_as_initialized(void *, int);
 int object_is_live(struct co_object_group *rec);
 
 /* initialization and synchronisation */
 void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_rep);
 void init_co_object_from_object(int object_rep, void *object,
-		int co_object_rep, void *co_object);
+		int co_object_rep, void *co_object, int is_leaf);
 void sync_all_co_objects(int from_rep, int to_rep, ...);
 
 /* object graph walking */
 void walk_bfs(int object_rep, void *object, int co_object_rep,
-	void (*on_blacken)(void*, int, int), int arg_n_minus_1, int arg_n);
+	void (*on_blacken)(void*, int, int, int), int arg_n_minus_1, int arg_n, int object_is_leaf);
 
 /* Useful callbacks for graph walking */
-void allocate_co_object_idem(void *object, int object_rep, int co_object_rep);
+void allocate_co_object_idem(void *object, int object_rep, int co_object_rep, int is_leaf);
 /* FIXME: do we use these? */
-void init_co_object(void *object, int from_rep, int to_rep);
-void allocate_co_object_idem_caller_rep(int do_not_use, void *object, int form);
-void allocate_co_object_idem_callee_rep(int do_not_use, void *object, int form);
+void init_co_object(void *object, int from_rep, int to_rep, int is_leaf);
+void allocate_co_object_idem_caller_rep(int do_not_use, void *object, int form, int is_leaf);
+void allocate_co_object_idem_callee_rep(int do_not_use, void *object, int form, int is_leaf);
 
 /* Table lookups */
 conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, void *target_object);

@@ -849,7 +849,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 				/*if (is_a_pointer_this_time)*/ m_out << ")";
 				m_out << ", REP_ID("
 					<< m_d.name_of_module(new_module)
-					<<  "));" << std::endl;
+					<<  "), "
+					// is this an output parameter?
+					<< (i_first_binding->second.is_pointer_to_uninit ? "true" : "false")
+					<< ");" << std::endl;
 			}
 // 			/* Now insert code to ensure co-objects are allocated. We might pass
 // 			 * over the same cxxname multiple times. If we've seen it before,
@@ -1142,6 +1145,24 @@ assert(false && "disabled support for inferring positional argument mappings");
 		}
 		m_out << "NULL, NULL, NULL);" << std::endl;
 		
+		m_out << "// HACK: also mark initialized any co-objects of uninit'd objects" << endl;
+		m_out << "// They won't actually be initialized at least until the stub code has run," << endl;
+		m_out << "// but it makes no difference to us, and saves on compiler pain." << endl;
+		for (auto i_cxxname = old_bindings_by_cxxname.begin(); 
+			i_cxxname != old_bindings_by_cxxname.end(); ++i_cxxname)
+		{
+			assert(i_cxxname->second.begin() != i_cxxname->second.end());
+			auto i_binding = old_env.find(*i_cxxname->second.begin());
+			assert(i_binding != old_env.end());
+		
+			if (i_binding->second.is_pointer_to_uninit)
+			{
+				assert(new_env.find(i_binding->first) != new_env.end());
+				m_out << "mark_object_as_initialized("
+					<< new_env[i_binding->first].cxx_name
+					<< ", REP_ID(" << m_d.name_of_module(new_module) << "));" << endl;
+			}
+		}
 	}
 	
 	wrapper_file::environment 
@@ -1374,6 +1395,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			int argnum = 0;
 			auto i_caller_arg = caller_subprogram->formal_parameter_children_begin();
 			//int dummycount = 0;
+			bool arg_is_outparam = false;
 			FOR_REMAINING_CHILDREN(eventPattern)
 			{
 				//boost::shared_ptr<dwarf::spec::type_die> p_arg_type = boost::shared_ptr<dwarf::spec::type_die>();
@@ -1399,6 +1421,16 @@ assert(false && "disabled support for inferring positional argument mappings");
 				auto origin_as_unspec = boost::dynamic_pointer_cast<dwarf::spec::unspecified_parameters_die>(
 						p_arg_origin);
 				assert(origin_as_fp || origin_as_unspec || (std::cerr << *p_arg_origin, false));
+				if (origin_as_fp)
+				{
+					// HACK: our disgusting way of encoding output parameters
+					if (origin_as_fp->get_is_optional() && *origin_as_fp->get_is_optional()
+					 && origin_as_fp->get_variable_parameter() && *origin_as_fp->get_variable_parameter()
+					 && origin_as_fp->get_const_value() && *origin_as_fp->get_const_value())
+					{
+						arg_is_outparam = true;
+					}
+				}
 
 				ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
 				{
@@ -1512,7 +1544,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							{
 								assert(representative_ast);
 								if (string(CCP(GET_TEXT(seen_interp_type_ast)))
-							       != string(CCP(GET_TEXT(interp_type_ast))))
+								   != string(CCP(GET_TEXT(interp_type_ast))))
 								{
 									RAISE(*i_ctxt, 
 										"interpretation does not agree with previous uses of ident");
@@ -1545,7 +1577,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 						indirect_local_tagstring_in,
 						indirect_local_tagstring_out,
 						indirect_remote_tagstring_in,
-						indirect_remote_tagstring_out }));
+						indirect_remote_tagstring_out,
+						arg_is_outparam }));
 					if (friendly_name) out_env->insert(std::make_pair(*friendly_name, 
 						(bound_var_info) { basic_name,
 						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
@@ -1556,7 +1589,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 						indirect_local_tagstring_in,
 						indirect_local_tagstring_out,
 						indirect_remote_tagstring_in,
-						indirect_remote_tagstring_out }));
+						indirect_remote_tagstring_out,
+						arg_is_outparam }));
 				} // end ALIAS3(annotatedValuePattern
 				++argnum;
 				if (i_caller_arg != caller_subprogram->formal_parameter_children_end()) ++i_caller_arg;

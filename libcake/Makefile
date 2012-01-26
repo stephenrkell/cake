@@ -29,7 +29,7 @@ CFLAGS += -Iinclude
 
 CXXFLAGS += -std=c++0x -g3 -fPIC
 CXXFLAGS += -Iinclude
-CXXFLAGS += -I../include
+CXXFLAGS += -I../include -Wno-deprecated-declarations
 
 C_DEPS := $(patsubst %.c,.%.c.d,$(C_SRC)) 
 CXX_DEPS := $(patsubset %.cc,%,cc.d,$(patsubst %.cpp,.%.cpp.d,$(CXX_SRC)))

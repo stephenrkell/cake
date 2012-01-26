@@ -38,7 +38,7 @@ void build_adjacency_list_recursive(std::deque<node_rec>& adj_u,
 enum node_colour { WHITE, GREY, BLACK };
 
 void walk_bfs(int object_rep, void *object, /*int object_form,*/ int co_object_rep,
-	void (*on_blacken)(void*, int, int), int arg_n_minus_1, int arg_n)
+	void (*on_blacken)(void*, int, int, int), int arg_n_minus_1, int arg_n, int obj_is_leaf)
 {
 	/* We are doing breadth-first search through the object graph rooted at object,
 	 * using object_ref_derefed_offsets[object_rep][object_form] to make an adjacency list
@@ -79,33 +79,39 @@ void walk_bfs(int object_rep, void *object, /*int object_form,*/ int co_object_r
 		node_rec u = q.front(); 
 		q.pop_front();
 		
-		/* create the adjacency list for u, by flattening the subobject hierarchy */
-		std::deque<node_rec> adj_u;
-		build_adjacency_list_recursive(adj_u, u.obj, u.rep, /* subobj offset */ 0, u.dwarf_type);
-		/* ^-- this starts at the top-level subobject, i.e. the object, so it builds
-		 * the complete adjacency list for this node. */
-				
-		/* now that we have the adjacency list, process the adjacent nodes */
-		for (std::deque<node_rec>::iterator i = adj_u.begin();
-			i != adj_u.end();
-			i++)
-		{		
-			node_rec& v = *i; // alias the noderec
+		/* If the caller told us that the object is a leaf, it means that we
+		 * don't follow any pointers from it. So this while-loop will only run
+		 * a single iteration. */
+		if (!obj_is_leaf)
+		{
+			/* create the adjacency list for u, by flattening the subobject hierarchy */
+			std::deque<node_rec> adj_u;
+			build_adjacency_list_recursive(adj_u, u.obj, u.rep, /* subobj offset */ 0, u.dwarf_type);
+			/* ^-- this starts at the top-level subobject, i.e. the object, so it builds
+			 * the complete adjacency list for this node. */
 
-			/* we didn't initialise all nodes' colours to white, so treat 'no colour' <=> white */
-			if (colours.find(v.obj) == colours.end() || colours[v.obj] == WHITE)
-			{
-				colours[v.obj] = GREY;
-				distances[v.obj] = distances[v.obj] + 1;
-				predecessors[v.obj] = v.obj;
-				q.push_back(v); // the queue takes its own copy of v
+			/* now that we have the adjacency list, process the adjacent nodes */
+			for (std::deque<node_rec>::iterator i = adj_u.begin();
+				i != adj_u.end();
+				i++)
+			{		
+				node_rec& v = *i; // alias the noderec
+
+				/* we didn't initialise all nodes' colours to white, so treat 'no colour' <=> white */
+				if (colours.find(v.obj) == colours.end() || colours[v.obj] == WHITE)
+				{
+					colours[v.obj] = GREY;
+					distances[v.obj] = distances[v.obj] + 1;
+					predecessors[v.obj] = v.obj;
+					q.push_back(v); // the queue takes its own copy of v
+				}
 			}
 		}
-		
+
 		/* blacken u, and call the function for it */
 		colours[u.obj] = BLACK;
 		// (int do_not_use, void *object, int form, int object_rep, int co_object_rep)
-		on_blacken(u.obj, arg_n_minus_1, arg_n);
+		on_blacken(u.obj, arg_n_minus_1, arg_n, obj_is_leaf);
 	}
 	DEBUG_GUARD(fflush(debug_out))
 	DEBUG_GUARD(fprintf(debug_out, "}\n"))
