@@ -17,6 +17,8 @@ extern const char *rep_component_names[MAX_REPS];
 typedef long wordsize_integer;
 typedef void *(*conv_func_t)(void *, void *);
 
+void *noop_conv_func(void *, void *);
+
 struct co_object_info {
 	unsigned allocated_by:1; /* 0 == by rep_man; 1 == by user code */
 	unsigned initialized:1;

@@ -1,0 +1,14 @@
+Sending 0, u inout ....
+Received an object, and it is unlocked
+Received retval 0.
+Sending 1, u inout ....
+Locking object at 0xd9c7f0
+Received an object, and it is locked
+Unlocking object at 0xd9c7f0
+Received retval 0.
+Sending 2, u inout ....
+Received an object, and it is unlocked
+Locking an object in locked_on_return.
+Unlocking object at 0xd9c7f0
+Received retval 0.
+Lockable object at 0xd9c7f0 is now in state unlocked

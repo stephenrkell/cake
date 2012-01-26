@@ -227,6 +227,9 @@ namespace cake
 			case CAKE_TOKEN(IDENT):
 				*this = definite_member_name(1, std::string(CCP(GET_TEXT(t))));
 			break;
+			case CAKE_TOKEN(KEYWORD_VOID):
+				*this = vector<string>();
+			break;
 			case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
 				INIT;
 				FOR_ALL_CHILDREN(t)
@@ -671,7 +674,11 @@ namespace cake
 	{
 		if (!node) return boost::shared_ptr<dwarf::spec::basic_die>();
 //		antlr::tree::Tree *prev_node = 0;
-		assert(GET_TYPE(node) == CAKE_TOKEN(IDENT));
+		assert(GET_TYPE(node) == CAKE_TOKEN(IDENT)
+		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_IN_AS)
+		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_OUT_AS)
+		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
+		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_AS));
 		cerr << "Considering use contexts of ident " << CCP(TO_STRING_TREE(node))
 			<< endl;
 

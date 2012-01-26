@@ -1,0 +1,7 @@
+Passing a gadget at 0x7fffddce63a0, amplitude 42, base 103, containing (53.000000, 2.100000), density 1000000.000000.
+Received a gizmo, amplitude 42, base 103, containing (53.000000, 2.100000), density 1000000.000000, unuzed 69105.000000.
+Clearing amplitude...
+Now we have a gadget, unused 42, amplitude 0, base 103, containing (53.000000, 2.100000), density 1000000.000000; passing again.
+Received a gizmo, amplitude 0, base 103, containing (53.000000, 2.100000), density 1000000.000000, unuzed 69999.000000.
+Clearing amplitude...
+Finally we have a gadget, unused 42, amplitude 0, base 103, containing (53.000000, 2.100000), density 1000000.000000.

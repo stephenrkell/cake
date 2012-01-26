@@ -30,6 +30,9 @@ cake_cxx_target compiler;
 }
 
 using boost::dynamic_pointer_cast;
+using boost::shared_ptr;
+using std::string;
+using std::vector;
 using dwarf::spec::compile_unit_die;
 using dwarf::spec::type_die;
 using pmirror::process_image;
@@ -266,7 +269,7 @@ void init_component_pairs_table(void)
 	component_pairs_table_inited = 1;
 }
 
-static cake::init_table_t::mapped_type&  
+static cake::init_table_t::mapped_type *
 get_init_table_entry(void *obj, int obj_rep, int co_obj_rep)
 {
 	using namespace cake;
@@ -291,25 +294,30 @@ get_init_table_entry(void *obj, int obj_rep, int co_obj_rep)
 	else assert(false);
 	
 	assert(discovered);
-	
-	return (*p_table)[
-		(const init_table_key) {
+
+	auto key = (const init_table_key) {
 			cake::compiler.fq_name_parts_for(discovered),
 			from_first_to_second
-		}
-	];
+		};
+	
+	if (p_table->find(key) != p_table->end()) return &(*p_table)[key];
+	else return 0;
 }	
 
 size_t get_co_object_size(void *obj, int obj_rep, int co_obj_rep)
 {
-	return get_init_table_entry(obj, obj_rep, co_obj_rep).to_size;
+	auto init_tbl_ent = get_init_table_entry(obj, obj_rep, co_obj_rep);
+	if (init_tbl_ent) return init_tbl_ent->to_size;
+	else return 0; // use a zero-size co-object for uncorresponded types
 }
 
 /* This is for co-objects that we have allocated. Their allocation sites are
  * no good for discovery, so we inform process_image of their type explicitly. */
 void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_rep)
 {
-	auto name_parts = get_init_table_entry(object, obj_rep, co_obj_rep).to_typename;
+	auto init_tbl_ent = get_init_table_entry(object, obj_rep, co_obj_rep);
+	vector<string> name_parts;
+	if (init_tbl_ent) name_parts = init_tbl_ent->to_typename;
 	
 	/* Look through the CUs to find a definition of this typename. */
 	std::cerr << "Searching component CU map of " << p_components->size() 
@@ -324,20 +332,22 @@ void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_r
 			auto cu_pos = i_component_entry->first;
 			auto cu = dynamic_pointer_cast<compile_unit_die>(
 				(*cu_pos.p_ds)[cu_pos.off]);
-			auto found = cu->resolve(name_parts.begin(), name_parts.end());
-			if (found)
+
+			shared_ptr<type_die> found;
+			if (name_parts.size() > 0)
 			{
-				auto found_type = dynamic_pointer_cast<type_die>(found);
-				if (found_type)
-				{
-					// found it!
-					pmirror::self.inform_heap_object_descr(
-						(process_image::addr_t) co_object, found_type);
-					return;
-				}
-				assert(false);
+				auto found_basic = cu->resolve(name_parts.begin(), name_parts.end());
+				found = dynamic_pointer_cast<type_die>(found_basic);
+
+				// if we find it, it should be a type
+				assert((found_basic && found) || (!found_basic && !found));
 			}
-			assert(false);
+				
+			// if we didn't get an init table entry, it means "void" -- still okay
+			pmirror::self.inform_heap_object_descr(
+				(process_image::addr_t) co_object, found);
+				
+			return;
 		}
 	}
 	
@@ -353,20 +363,22 @@ conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, voi
 	auto discovered_target = self.discover_object_descr((process_image::addr_t) target_object);
 	
 	auto discovered_source_type = dynamic_pointer_cast<type_die>(discovered_source);
-	assert(discovered_source_type);
+	assert((discovered_source && discovered_source_type) || (!discovered_source && !discovered_source_type));
 	auto discovered_target_type = dynamic_pointer_cast<type_die>(discovered_target);
-	assert(discovered_target_type);
+	assert((discovered_target && discovered_target_type) || (!discovered_target && !discovered_target_type));
 	
 	/* We should assert that these two objects are in the same
 	 * co-object group. */
 	
 	std::cerr << "Getting rep conv func from object: ";
 	self.print_object(std::cerr, source_object);
-	std::cerr << *discovered_source
-		<< " to object: ";
+	if (discovered_source) std::cerr << *discovered_source;
+	else std::cerr << "(assumed void type)";
+	std::cerr << " to object: ";
 	self.print_object(std::cerr, target_object);
-	std::cerr << *discovered_target
-		<< std::endl;
+	if (discovered_target) std::cerr << *discovered_target;
+	else std::cerr << "(assumed void type)";
+	std::cerr << std::endl;
 	
 	bool from_first_to_second = 
 		(p_component_pairs->find(std::make_pair(from_rep, to_rep)) 
@@ -382,15 +394,19 @@ conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, voi
 		found_table->second.convs_from_first_to_second
 		: found_table->second.convs_from_second_to_first;
 	
-	auto found = convs_table->find(
-		(cake::conv_table_key) {
-			cake::compiler.name_parts_for(discovered_source_type),
-			cake::compiler.name_parts_for(discovered_target_type),
-			from_first_to_second,
-			0 // FIXME
-			});
-	assert(found != convs_table->end());
-	return found->second.func;
+	if (discovered_source_type && discovered_target_type)
+	{
+		auto found = convs_table->find(
+			(cake::conv_table_key) {
+				cake::compiler.name_parts_for(discovered_source_type),
+				cake::compiler.name_parts_for(discovered_target_type),
+				from_first_to_second,
+				0 // FIXME
+				});
+		assert(found != convs_table->end());
+		return found->second.func;
+	}
+	else return noop_conv_func;
 }
 
 conv_func_t get_init_func(int from_rep, int to_rep, void *source_object, void *target_object)
@@ -430,8 +446,12 @@ conv_func_t get_init_func(int from_rep, int to_rep, void *source_object, void *t
 		(cake::init_table_key) {
 			cake::compiler.name_parts_for(discovered_source_type),
 			from_first_to_second});
-	assert(found != init_table->end());
-	return found->second.func;
-	
-	
+			
+	if (found != init_table->end()) return found->second.func;
+	else return noop_conv_func;
+}
+
+void *noop_conv_func(void *arg1, void *arg2)
+{
+	return arg2;
 }

@@ -1523,7 +1523,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 						||     (friendly_name && CCP(GET_TEXT(*i_ctxt)) == *friendly_name));
 						
 						/* Just like before, we care about both the DWARF context
-						 * *and* any interpretations ("as") in the AST. And we look for
+						 * *and* any interpretations ("as") in the AST, and we look for
 						 * the AST ones first. */
 						if (!seen_interp_flavour) seen_interp_flavour = GET_TYPE(GET_PARENT(*i_ctxt));
 						else if (*seen_interp_flavour != GET_TYPE(GET_PARENT(*i_ctxt)))
@@ -1538,6 +1538,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							if (!seen_interp_type_ast)
 							{
 								seen_interp_type_ast = interp_type_ast;
+								// set it to point to the top of the interpretation
 								representative_ast = GET_PARENT(*i_ctxt);
 							}
 							else
@@ -1551,15 +1552,22 @@ assert(false && "disabled support for inferring positional argument mappings");
 								}
 							}
 						}
+						else
+						{
+							// We might still want to keep this AST
+							// ... set it to point to the function expression argument
+							if (!representative_ast) representative_ast = *i_ctxt;
+							else assert(*i_ctxt == representative_ast);
+						}
 					}
 					// now we have a single representative AST (or null)
 					shared_ptr<spec::basic_die> found;
 					if (representative_ast) found = map_ast_context_to_dwarf_element(
-						GET_CHILD(representative_ast, 0), remote_module, false);
+						representative_ast, remote_module, false);
 					shared_ptr<formal_parameter_die> found_fp
 					 = dynamic_pointer_cast<formal_parameter_die>(found);
 					infer_tagstrings(
-						representative_ast,
+						seen_interp_type_ast ? representative_ast : 0, // only pass interp ASTs, not vanilla parameter ASTs
 						found_fp ? found_fp->get_type() : shared_ptr<type_die>(),
 						remote_module,
 						remote_tagstring,
@@ -2113,6 +2121,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::float_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
 				return (post_emit_status){ident, "true", environment()};
+			case CAKE_TOKEN(NAME_AND_INTERPRETATION):
+				// just recurse on the name
+				expr = GET_CHILD(expr, 0);
+				return emit_stub_expression_as_statement_list(ctxt, expr);
 			case CAKE_TOKEN(KEYWORD_VOID):
 				return (post_emit_status){NO_VALUE, "true", environment()};
 			case CAKE_TOKEN(KEYWORD_NULL):
@@ -2130,6 +2142,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::false_value();" << std::endl;
 				return (post_emit_status){ident, "true", environment()};
+			case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+				assert(read_definite_member_name(expr).size() == 1);
+				expr = GET_CHILD(expr, 0);
+				// fall through
 			case CAKE_TOKEN(IDENT):
 				{
 					if (ctxt.env.find(unescape_ident(CCP(GET_TEXT(expr)))) == ctxt.env.end())

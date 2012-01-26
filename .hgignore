@@ -72,3 +72,6 @@ cake-generated.mk$
 .*/cake\.log$
 .*/make\.log$
 ^examples/p2k.*
+^examples/.*_instantiate\.cpp$
+^examples/run-all-stderr\.log$
+^examples/run-all-stdout\.log$
