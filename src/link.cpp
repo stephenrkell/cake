@@ -147,6 +147,17 @@ namespace cake
 			}
 		}
 		
+		/* Expand pattern rules. We can't do this 
+		 * until we have read in some rules. Or can we? 
+		 * If we do it here, then we will 
+		 * - merge names into parameters of pattern-matched functions
+		 *   ... whereas if we do it later, these will not show up in the DWARF
+		 *   ... I don't think this is too important
+		 * - have to make another pass.
+		 *
+		 * For now, do it later. */
+		
+		
 		// propagate guessed argument info
 		// -- we do this sooner rather than later, so that artificial types are available
 		// when the relevant correspondences are read in. 
@@ -570,14 +581,28 @@ namespace cake
 
 				INIT;
 				BIND3(p, eventContext, EVENT_CONTEXT);
-				BIND3(p, memberNameExpr, DEFINITE_MEMBER_NAME); // name of call being matched -- can ignore this here
+				BIND2(p, memberNameExprOrPattern); 
 				BIND3(p, eventCountPredicate, EVENT_COUNT_PREDICATE);
 				BIND3(p, eventParameterNamesAnnotation, KEYWORD_NAMES);
 				vector<optional<string> > argnames;
 				vector<antlr::tree::Tree *> interps;
-				auto dmn = read_definite_member_name(memberNameExpr);
-				if (subprogram->get_name() && dmn.size() == 1 
-					&& dmn.at(0) == *subprogram->get_name())
+				
+				definite_member_name dmn;
+				boost::smatch m;
+				if (
+					((GET_TYPE(memberNameExprOrPattern) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
+					 && (subprogram->get_name() 
+					 	&& dmn.size() == 1 
+							&& dmn.at(0) == *subprogram->get_name())
+					)
+				|| ((GET_TYPE(memberNameExprOrPattern) == CAKE_TOKEN(KEYWORD_PATTERN))
+					 && (subprogram->get_name() 
+					 	&& boost::regex_match(
+							*subprogram->get_name(), m, 
+							regex_from_pattern_ast(memberNameExprOrPattern))
+					 	)
+					)
+				)
 				{
 					cerr << "Pattern " << CCP(TO_STRING_TREE(p)) << " matched function "
 						<< (subprogram->get_name() ? *subprogram->get_name() : "(no name)")
@@ -854,7 +879,7 @@ namespace cake
 			find_usage_contexts(ident, n, out);
 		}
 	}
-
+	
 	void 
 	link_derivation::find_type_expectations_in_stub(module_ptr module,
 		antlr::tree::Tree *stub, 
@@ -1932,227 +1957,513 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		cerr << "Adding explicit corresps from block: " << CCP(TO_STRING_TREE(corresps))
 			<< endl;
 		assert(GET_TYPE(corresps) == CAKE_TOKEN(CORRESP));
+		
+		// We make two passes, to accommodate the lower priority of ident-pattern rules.
+		// In the first pass, we remember pattern rules.
+		std::vector<antlr::tree:Tree *> deferred;
 		INIT;
 		FOR_ALL_CHILDREN(corresps)
 		{
 			switch(GET_TYPE(n))
 			{
 				case CAKE_TOKEN(EVENT_CORRESP):
+				{
+					INIT;
+					BIND2(n, correspHead);
+
+					/* We filter out the ident-pattern rules here, and defer processing. */
+					if (
+						(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
+						&& GET_TYPE(GET_CHILD(GET_CHILD(correspHead, 0), 1)) == CAKE_TOKEN(KEYWORD_PATTERN))
+					||  (GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
+						&& GET_TYPE(GET_CHILD(GET_CHILD(correspHead, 3), 1)) == CAKE_TOKEN(KEYWORD_PATTERN))
+					||  (GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
+						&& (GET_TYPE(GET_CHILD(GET_CHILD(correspHead, 0), 1)) == CAKE_TOKEN(KEYWORD_PATTERN)
+						  || GET_TYPE(GET_CHILD(GET_CHILD(correspHead, 3), 1)) == CAKE_TOKEN(KEYWORD_PATTERN)))
+					)
 					{
-						INIT;
-						BIND2(n, correspHead);
-						switch (GET_TYPE(correspHead))
-						{
-							case CAKE_TOKEN(LR_DOUBLE_ARROW):
-								// left is the source, right is the sink
-								{
-									INIT;
-									BIND3(correspHead, sourcePattern, EVENT_PATTERN);
-									{
-										INIT;
-										BIND2(sourcePattern, eventContext);
-										BIND2(sourcePattern, memberNameExpr);
-										touched_events[left].insert(
-											read_definite_member_name(memberNameExpr));
-									}
-									BIND3(correspHead, sourceInfixStub, INFIX_STUB_EXPR);
-									BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
-									BIND2(correspHead, sinkExpr);
-									BIND3(correspHead, returnEvent, RETURN_EVENT);
-									
-									add_event_corresp(left, sourcePattern, sourceInfixStub,
-										right, sinkExpr, sinkInfixStub, returnEvent);
-								}
-								break;
-							case CAKE_TOKEN(RL_DOUBLE_ARROW):
-								// right is the source, left is the sink
-								{
-									INIT;
-									BIND2(correspHead, sinkExpr);
-									BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
-									BIND3(correspHead, sourceInfixStub, INFIX_STUB_EXPR);
-									BIND3(correspHead, sourcePattern, EVENT_PATTERN);
-									{
-										INIT;
-										BIND2(sourcePattern, eventContext);
-										BIND2(sourcePattern, memberNameExpr);
-										touched_events[right].insert(
-											read_definite_member_name(memberNameExpr));
-									}
-									BIND3(correspHead, returnEvent, RETURN_EVENT);
-									add_event_corresp(right, sourcePattern, sourceInfixStub,
-										left, sinkExpr, sinkInfixStub, returnEvent);
-								}
-								break;
-							case CAKE_TOKEN(BI_DOUBLE_ARROW):
-								// add *two* correspondences
-								{
-									INIT;
-									BIND3(correspHead, leftPattern, EVENT_PATTERN);
-									{
-										INIT;
-										BIND2(leftPattern, eventContext);
-										BIND2(leftPattern, memberNameExpr);
-										touched_events[left].insert(
-											read_definite_member_name(memberNameExpr));
-									}
-									BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
-									BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
-									BIND3(correspHead, rightPattern, EVENT_PATTERN);
-									{
-										INIT;
-										BIND2(rightPattern, eventContext);
-										BIND2(rightPattern, memberNameExpr);
-										touched_events[right].insert(
-											read_definite_member_name(memberNameExpr));
-									}
-									BIND3(correspHead, returnEvent, RETURN_EVENT);
-									add_event_corresp(left, leftPattern, leftInfixStub, 
-										right, rightPattern, rightInfixStub, returnEvent);
-									add_event_corresp(right, rightPattern, rightInfixStub,
-										left, leftPattern, leftInfixStub, returnEvent);
-								}
-								break;
-							default: RAISE(correspHead, "expected a double-stemmed arrow");
-						}
-					}					
-					break;
+						// it's a pattern rule that we need to expand separately, later
+						deferred.push_back(n);
+					}
+					else
+					{
+						process_non_ident_pattern_event_corresp(left, right, n);
+					}
+				}
+				break;
 				case CAKE_TOKEN(KEYWORD_VALUES):
+				{
+					INIT;
+					// we may have multiple value corresps here
+					FOR_ALL_CHILDREN(n)
+					{
+						ALIAS2(n, correspHead);
+						assert(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
+							|| GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW_Q)
+							|| GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
+							|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
+							|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW_Q)
+							|| GET_TYPE(correspHead) == CAKE_TOKEN(NAMED_VALUE_CORRESP));
+
+						string ruleName;
+						if (GET_TYPE(correspHead) == CAKE_TOKEN(NAMED_VALUE_CORRESP))
+						{
+							if (GET_CHILD_COUNT(correspHead) != 2) RAISE_INTERNAL(correspHead,
+								"named rules must be a simple pair");
+							auto ruleNameIdent = GET_CHILD(correspHead, 1); 
+							if (GET_TYPE(ruleNameIdent) != CAKE_TOKEN(IDENT))
+							{ RAISE_INTERNAL(ruleNameIdent, "must be a simple ident"); }
+							ruleName = CCP(GET_TEXT(ruleNameIdent));
+							// HACK: move down one
+							correspHead = GET_CHILD(correspHead, 0);
+						}
+						assert(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
+							|| GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW_Q)
+							|| GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
+							|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
+							|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW_Q));
+
+						switch(GET_TYPE(correspHead))
+						{
+							case CAKE_TOKEN(BI_DOUBLE_ARROW):
+							{
+								INIT;
+								/* The BI_DOUBLE_ARROW is special because 
+								* - it might have multivalue children (for many-to-many)
+								* - it should not have nonempty infix stubs
+									(because these would be ambiguous) */
+								BIND2(correspHead, leftValDecl);
+								BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
+								BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
+								if (GET_CHILD_COUNT(leftInfixStub)
+								|| GET_CHILD_COUNT(rightInfixStub) > 0)
+								{
+									RAISE(correspHead, 
+									"infix stubs are ambiguous for bidirectional value correspondences");
+								}
+								BIND2(correspHead, rightValDecl);
+								BIND3(correspHead, valueCorrespondenceRefinement, 
+									VALUE_CORRESPONDENCE_REFINEMENT);
+								// we don't support many-to-many yet
+								assert(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
+								&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE));
+								ALIAS3(leftValDecl, leftMember, NAME_AND_INTERPRETATION);
+								ALIAS3(rightValDecl, rightMember, NAME_AND_INTERPRETATION);
+								// each add_value_corresp call denotes a 
+								// value conversion function that needs to be generated
+								add_value_corresp(left, GET_CHILD(leftMember, 0), leftInfixStub,
+									right, GET_CHILD(rightMember, 0), rightInfixStub,
+									valueCorrespondenceRefinement, true, correspHead);
+								add_value_corresp(right, GET_CHILD(rightMember, 0), rightInfixStub,
+									left, GET_CHILD(leftMember, 0), leftInfixStub, 
+									valueCorrespondenceRefinement, false, correspHead);
+
+							}
+							break;
+							case CAKE_TOKEN(LR_DOUBLE_ARROW):
+							case CAKE_TOKEN(RL_DOUBLE_ARROW):
+							case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
+							case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
+							{
+								INIT;
+								BIND2(correspHead, leftValDecl);
+								BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
+								BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
+								BIND2(correspHead, rightValDecl);
+								BIND3(correspHead, valueCorrespondenceRefinement, 
+									VALUE_CORRESPONDENCE_REFINEMENT);
+								// many-to-many not allowed
+								if(!(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
+								&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE)))
+								{ RAISE(correspHead, "many-to-many value correspondences must be bidirectional"); }
+
+								// one of these is a valuePattern, so will be a NAME_AND_INTERPRETATION;
+								// the other is a stub expression, so need not have an interpretation.
+								ALIAS2(leftValDecl, leftMember);
+								ALIAS2(rightValDecl, rightMember);
+								bool init_only = false;
+								bool left_is_pattern = false;
+								bool right_is_pattern = false;
+								switch(GET_TYPE(correspHead))
+								{
+									case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
+										init_only = true;
+									case CAKE_TOKEN(LR_DOUBLE_ARROW):
+										// the valuePattern is the left-hand one
+										assert(GET_TYPE(leftMember) == CAKE_TOKEN(NAME_AND_INTERPRETATION));
+										add_value_corresp(left, GET_CHILD(leftMember, 0), leftInfixStub,
+											right, rightMember, rightInfixStub,
+											valueCorrespondenceRefinement, true, correspHead,
+											init_only);
+										left_is_pattern = true;
+										goto record_touched;
+									case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
+										init_only = true;
+									case CAKE_TOKEN(RL_DOUBLE_ARROW):
+										// the valuePattern is the right-hand one
+										assert(GET_TYPE(rightMember) == CAKE_TOKEN(NAME_AND_INTERPRETATION));
+										add_value_corresp(right, GET_CHILD(rightMember, 0), rightInfixStub,
+											left, leftMember, leftInfixStub, 
+											valueCorrespondenceRefinement, false, correspHead,
+											init_only);
+										right_is_pattern = true;
+										goto record_touched;
+									record_touched:
+										touched_data_types[left].insert(
+											read_definite_member_name(left_is_pattern ? 
+												(GET_CHILD(leftMember, 0)) : leftMember));
+										touched_data_types[right].insert(
+											read_definite_member_name(right_is_pattern ? 
+												(GET_CHILD(rightMember, 0)): rightMember));
+										break;
+									default: assert(false);
+								}
+							}
+							break;
+							default: assert(false);
+						} // end switch on correspHead type
+					} // end FOR_ALL_CHILDREN
+				} // end case VALUES
+				break;
+				default: RAISE(n, "expected an event correspondence or a value correspondence block");
+			} // end switch
+		} // end FOR_ALL_CHILDREN
+		
+		/* Now process deferred ident-pattern rules. */
+		expand_patterns_and_process(left, right, deferred);
+		
+	}
+	
+	void link_derivation::expand_patterns_and_process(
+		module_ptr left,
+		module_ptr right,
+		const std::vector<antlr::tree::Tree *>& deferred
+	)
+	{
+		for (auto i_d = deferred.begin(); i_d != deferred.end(); ++i_d)
+		{
+			antlr::tree::Tree *n = *i_d;
+			INIT;
+			BIND2(n, correspHead);
+			switch (GET_TYPE(correspHead))
+			{
+				case CAKE_TOKEN(LR_DOUBLE_ARROW):
+				// left is the source, right is the sink
+				{
+					INIT;
+					matches_info_t matched;
+					BIND3(correspHead, sourcePattern, EVENT_PATTERN);
 					{
 						INIT;
-						// we may have multiple value corresps here
-						FOR_ALL_CHILDREN(n)
+						BIND2(sourcePattern, eventContext);
+						BIND3(sourcePattern, pattern, KEYWORD_PATTERN);
+						matched = find_subprograms_matching_pattern(
+							left, regex_from_pattern_ast(pattern)
+						);
+					}
+					BIND3(correspHead, sourceInfixStub, INFIX_STUB_EXPR);
+					BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
+					BIND2(correspHead, sinkExpr);
+					BIND3(correspHead, returnEvent, RETURN_EVENT);
+					
+					for (auto i_match = matched.begin(); i_match != matched_end; ++i_match)
+					{
+						// only if not already touched
+						if (touched_events[left].find(*i_match->first->get_name()) 
+							== touched_events[left].end())
 						{
-							ALIAS2(n, correspHead);
-							assert(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
-								|| GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW_Q)
-								|| GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
-								|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
-								|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW_Q)
-								|| GET_TYPE(correspHead) == CAKE_TOKEN(NAMED_VALUE_CORRESP));
+							process_non_ident_pattern_event_corresp(
+								left,
+								right,
+								make_non_ident_pattern_event_corresp(
+									true /* is_left_to_right */
+									*i_match->first->get_name(),
+									i_match->second,
+									// then as before
+									sourcePattern,
+									sourceInfixStub,
+									sinkInfixStub,
+									sinkExpr,
+									returnEvent
+								)
+							);
+						
+						}
+					}
+					
+				}
+				break;
+				case CAKE_TOKEN(RL_DOUBLE_ARROW):
+				// right is the source, left is the sink
+				{
+					INIT;
+					matches_info_t matched;
+					BIND2(correspHead, sinkExpr);
+					BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
+					BIND3(correspHead, sourceInfixStub, INFIX_STUB_EXPR);
+					BIND3(correspHead, pattern, EVENT_PATTERN);
+					{
+						INIT;
+						BIND2(sourcePattern, eventContext);
+						BIND3(sourcePattern, pattern, KEYWORD_PATTERN);
+						matched = find_subprograms_matching_pattern(
+							right, regex_from_pattern_ast(pattern)
+						);
+						
+					}
+					BIND3(correspHead, returnEvent, RETURN_EVENT);
+					
+					for (auto i_match = matched.begin(); i_match != matched_end; ++i_match)
+					{
+						// only if not already touched
+						if (touched_events[right].find(*i_match->second->get_name()) 
+							== touched_events[right].end())
+						{
+							process_non_ident_pattern_event_corresp(
+								left,
+								right,
+								make_non_ident_pattern_event_corresp(
+									false /* is_left_to_right */
+									*i_match->first->get_name(),
+									i_match->second,
+									// then as before
+									sourcePattern,
+									sourceInfixStub,
+									sinkInfixStub,
+									sinkExpr,
+									returnEvent
+								)
+							);
+						}
+					}
+				}
+				break;
+				case CAKE_TOKEN(BI_DOUBLE_ARROW):
+				// do it up to twice
+				{
+					INIT;
+					matches_info_t lr_matched;
+					matches_info_t rl_matched;
+					BIND3(correspHead, leftPattern, EVENT_PATTERN);
+					{
+						INIT;
+						BIND2(leftPattern, eventContext);
+						BIND2(leftPattern, memberNameExprOrPattern);
+						if (GET_TYPE(memberNameExprOrPattern) == CAKE_TOKEN(KEYWORD_PATTERN))
+						{
+							lr_matched = find_subprograms_matching_pattern(
+								left,
+								regex_from_pattern_ast(memberNameExprOrPattern)
+							);
+						}
+						else
+						{
+							// *** just add one rule, in this direction?
+							// This doesn't make sense, because what will the stub be?
+							cerr << "Warning: ident pattern rule " << CCP(correpHead)
+								<< " will only generate correspondences with source "
+								<< left->get_filename()
+								<< " and sink " << right->get_filename() << endl;
+						}
+					}
+					BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
+					BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
+					BIND3(correspHead, rightPattern, EVENT_PATTERN);
+					{
+						INIT;
+						BIND2(rightPattern, eventContext);
+						BIND2(rightPattern, memberNameExprOrPattern);
+						if (GET_TYPE(memberNameExprOrPattern) == CAKE_TOKEN(KEYWORD_PATTERN))
+						{
+							rl_matched = find_subprograms_matching_pattern(
+								left,
+								regex_from_pattern_ast(memberNameExprOrPattern)
+							);
+						}
+						else
+						{
+							// *** just add one rule, in this direction?
+							// This doesn't make sense, because what will the stub be?
+							cerr << "Warning: ident pattern rule " << CCP(correpHead)
+								<< " will only generate correspondences with source "
+								<< right->get_filename()
+								<< " and sink " << left->get_filename() << endl;
+						}
 
-							string ruleName;
-							if (GET_TYPE(correspHead) == CAKE_TOKEN(NAMED_VALUE_CORRESP))
-							{
-								if (GET_CHILD_COUNT(correspHead) != 2) RAISE_INTERNAL(correspHead,
-									"named rules must be a simple pair");
-								auto ruleNameIdent = GET_CHILD(correspHead, 1); 
-								if (GET_TYPE(ruleNameIdent) != CAKE_TOKEN(IDENT))
-								{ RAISE_INTERNAL(ruleNameIdent, "must be a simple ident"); }
-								ruleName = CCP(GET_TEXT(ruleNameIdent));
-								// HACK: move down one
-								correspHead = GET_CHILD(correspHead, 0);
-							}
-							assert(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
-								|| GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW_Q)
-								|| GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
-								|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
-								|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW_Q));
+					}
+					BIND3(correspHead, returnEvent, RETURN_EVENT);
+					
+					if (lr_matched.size() > 0)
+					{
+						for (auto i_match = lr_matched.begin(); i_match != lr_matched_end; ++i_match)
+						{
+							process_non_ident_pattern_event_corresp(
+								left,
+								right,
+								make_non_ident_pattern_event_corresp(
+									true /* is_left_to_right */
+									*i_match->first->get_name(),
+									i_match->second,
+									// then as before
+									leftPattern,
+									leftInfixStub,
+									rightInfixStub
+									rightPattern,
+									returnEvent
+								)
+							);
+						}
+					
+					}
+					else if (rl_matched.size() > 0)
+					{
+						for (auto i_match = rl_matched.begin(); i_match != rl_matched_end; ++i_match)
+						{
+							process_non_ident_pattern_event_corresp(
+								left,
+								right,
+								make_non_ident_pattern_event_corresp(
+									false /* is_left_to_right */
+									*i_match->first->get_name(),
+									i_match->second,
+									// then as before
+									rightPattern,
+									rightInfixStub,
+									leftInfixStub,
+									leftPattern,
+									returnEvent
+								)
+							);
+						}
+					}
+					
+					
+				}
+				break;
+				default: RAISE(correspHead, "expected a long arrow (<--, -->, <-->)");
+			} // end switch
+		} // end for deferred
+	}
+	
+	vector<shared_ptr<subprogram_die> > 
+	link_derivation::find_subprograms_matching_pattern(
+		module_ptr module,
+		const boost::regex& re
+	)
+	{
+		vector<shared_ptr<subprogram_die> > v;
+		boost::smatch m;
 
-							switch(GET_TYPE(correspHead))
-							{
-								case CAKE_TOKEN(BI_DOUBLE_ARROW):
-								{
-									INIT;
-									/* The BI_DOUBLE_ARROW is special because 
-									* - it might have multivalue children (for many-to-many)
-									* - it should not have nonempty infix stubs
-										(because these would be ambiguous) */
-									BIND2(correspHead, leftValDecl);
-									BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
-									BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
-									if (GET_CHILD_COUNT(leftInfixStub)
-									|| GET_CHILD_COUNT(rightInfixStub) > 0)
-									{
-										RAISE(correspHead, 
-										"infix stubs are ambiguous for bidirectional value correspondences");
-									}
-									BIND2(correspHead, rightValDecl);
-									BIND3(correspHead, valueCorrespondenceRefinement, 
-										VALUE_CORRESPONDENCE_REFINEMENT);
-									// we don't support many-to-many yet
-									assert(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
-									&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE));
-									ALIAS3(leftValDecl, leftMember, NAME_AND_INTERPRETATION);
-									ALIAS3(rightValDecl, rightMember, NAME_AND_INTERPRETATION);
-									// each add_value_corresp call denotes a 
-									// value conversion function that needs to be generated
-									add_value_corresp(left, GET_CHILD(leftMember, 0), leftInfixStub,
-										right, GET_CHILD(rightMember, 0), rightInfixStub,
-										valueCorrespondenceRefinement, true, correspHead);
-									add_value_corresp(right, GET_CHILD(rightMember, 0), rightInfixStub,
-										left, GET_CHILD(leftMember, 0), leftInfixStub, 
-										valueCorrespondenceRefinement, false, correspHead);
+		/* First we match all event names against the pattern */
+		auto seq = module->get_ds().toplevel()->visible_grandchildren_sequence();
+		for (auto i_child = seq->begin(); i_child != seq->end(); ++i_child)
+		{
+			if ((*i_child)->get_tag() == DW_TAG_subprogram)
+			{
+				auto subp = dynamic_pointer_cast<subprogram_die>(*i_child);
+				if (subp && subp->get_declaration() && *subp->get_declaration()
+				 && subp->get_name())
+				{
+					auto name = *subp->get_name();
+					// it's a declared-not-defined function...
+					// ... does it match the pattern?
+					if (boost::regex_match(name, m, re))
+					{
+						cerr << "pattern " << CCP(TO_STRING_TREE(memberNameExprOrPattern)) 
+							<< " matched " << *subp
+							<< endl;
 
-								}
-								break;
-								case CAKE_TOKEN(LR_DOUBLE_ARROW):
-								case CAKE_TOKEN(RL_DOUBLE_ARROW):
-								case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
-								case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
-								{
-									INIT;
-									BIND2(correspHead, leftValDecl);
-									BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
-									BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
-									BIND2(correspHead, rightValDecl);
-									BIND3(correspHead, valueCorrespondenceRefinement, 
-										VALUE_CORRESPONDENCE_REFINEMENT);
-									// many-to-many not allowed
-									if(!(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
-									&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE)))
-									{ RAISE(correspHead, "many-to-many value correspondences must be bidirectional"); }
-									
-									// one of these is a valuePattern, so will be a NAME_AND_INTERPRETATION;
-									// the other is a stub expression, so need not have an interpretation.
-									ALIAS2(leftValDecl, leftMember);
-									ALIAS2(rightValDecl, rightMember);
-									bool init_only = false;
-									bool left_is_pattern = false;
-									bool right_is_pattern = false;
-									switch(GET_TYPE(correspHead))
-									{
-										case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
-											init_only = true;
-										case CAKE_TOKEN(LR_DOUBLE_ARROW):
-											// the valuePattern is the left-hand one
-											assert(GET_TYPE(leftMember) == CAKE_TOKEN(NAME_AND_INTERPRETATION));
-											add_value_corresp(left, GET_CHILD(leftMember, 0), leftInfixStub,
-												right, rightMember, rightInfixStub,
-												valueCorrespondenceRefinement, true, correspHead,
-												init_only);
-											left_is_pattern = true;
-											goto record_touched;
-										case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
-											init_only = true;
-										case CAKE_TOKEN(RL_DOUBLE_ARROW):
-											// the valuePattern is the right-hand one
-											assert(GET_TYPE(rightMember) == CAKE_TOKEN(NAME_AND_INTERPRETATION));
-											add_value_corresp(right, GET_CHILD(rightMember, 0), rightInfixStub,
-												left, leftMember, leftInfixStub, 
-												valueCorrespondenceRefinement, false, correspHead,
-												init_only);
-											right_is_pattern = true;
-											goto record_touched;
-										record_touched:
-											touched_data_types[left].insert(
-												read_definite_member_name(left_is_pattern ? 
-													(GET_CHILD(leftMember, 0)) : leftMember));
-											touched_data_types[right].insert(
-												read_definite_member_name(right_is_pattern ? 
-													(GET_CHILD(rightMember, 0)): rightMember));
-											break;
-										default: assert(false);
-									}
-								}
-								break;
-								default: assert(false);
-							} // end switch on correspHead type
-						} // end FOR_ALL_CHILDREN
-					} // end case VALUES
-					break;
-				default: RAISE(n, "expected an event correspondence or a value correspondence block");
+						v.push_back(make_pair(subp, m));
+					}
+				}
 			}
+		}
+	
+		return v;
+	}
+
+	void link_derivation::process_non_ident_pattern_event_corresp(
+		module_ptr left,
+		module_ptr right, 
+		antlr::tree::Tree *n)
+	{
+		assert(GET_TYPE(n) == CAKE_TOKEN(EVENT_CORRESP));
+		INIT;
+		BIND2(n, correspHead);
+		
+		switch (GET_TYPE(correspHead))
+		{
+			case CAKE_TOKEN(LR_DOUBLE_ARROW):
+				// left is the source, right is the sink
+				{
+					INIT;
+					BIND3(correspHead, sourcePattern, EVENT_PATTERN);
+					{
+						INIT;
+						BIND2(sourcePattern, eventContext);
+						BIND3(sourcePattern, memberNameExpr, DEFINITE_MEMBER_NAME);
+						touched_events[left].insert(
+							read_definite_member_name(memberNameExpr));
+					}
+					BIND3(correspHead, sourceInfixStub, INFIX_STUB_EXPR);
+					BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
+					BIND2(correspHead, sinkExpr);
+					BIND3(correspHead, returnEvent, RETURN_EVENT);
+
+					add_event_corresp(left, sourcePattern, sourceInfixStub,
+						right, sinkExpr, sinkInfixStub, returnEvent);
+				}
+				break;
+			case CAKE_TOKEN(RL_DOUBLE_ARROW):
+				// right is the source, left is the sink
+				{
+					INIT;
+					BIND2(correspHead, sinkExpr);
+					BIND3(correspHead, sinkInfixStub, INFIX_STUB_EXPR);
+					BIND3(correspHead, sourceInfixStub, INFIX_STUB_EXPR);
+					BIND3(correspHead, sourcePattern, EVENT_PATTERN);
+					{
+						INIT;
+						BIND2(sourcePattern, eventContext);
+						BIND3(sourcePattern, memberNameExpr, DEFINITE_MEMBER_NAME);
+						touched_events[right].insert(
+							read_definite_member_name(memberNameExpr));
+					}
+					BIND3(correspHead, returnEvent, RETURN_EVENT);
+					add_event_corresp(right, sourcePattern, sourceInfixStub,
+						left, sinkExpr, sinkInfixStub, returnEvent);
+				}
+				break;
+			case CAKE_TOKEN(BI_DOUBLE_ARROW):
+				// add *two* correspondences
+				{
+					INIT;
+					BIND3(correspHead, leftPattern, EVENT_PATTERN);
+					{
+						INIT;
+						BIND2(leftPattern, eventContext);
+						BIND3(leftPattern, memberNameExpr, DEFINITE_MEMBER_NAME);
+						touched_events[left].insert(
+							read_definite_member_name(memberNameExpr));
+					}
+					BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
+					BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
+					BIND3(correspHead, rightPattern, EVENT_PATTERN);
+					{
+						INIT;
+						BIND2(rightPattern, eventContext);
+						BIND3(rightPattern, memberNameExpr, DEFINITE_MEMBER_NAME);
+						touched_events[right].insert(
+							read_definite_member_name(memberNameExpr));
+					}
+					BIND3(correspHead, returnEvent, RETURN_EVENT);
+					add_event_corresp(left, leftPattern, leftInfixStub, 
+						right, rightPattern, rightInfixStub, returnEvent);
+					add_event_corresp(right, rightPattern, rightInfixStub,
+						left, leftPattern, leftInfixStub, returnEvent);
+				}
+				break;
+			default: RAISE(correspHead, "expected a long arrow (<--, -->, <-->)");
 		}
 	}
 	
@@ -2233,13 +2544,43 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		bool free_sink,
 		bool init_only)
 	{
-		assert(GET_TYPE(sink_expr) == CAKE_TOKEN(EVENT_SINK_AS_STUB));
 		auto key = sorted(make_pair(source, sink));
 		assert(all_iface_pairs.find(key) != all_iface_pairs.end());
+		
+		antlr::tree::Tree *sink_expr_as_stub = 0;
+		sink_expr_as_stub = sink_expr;
+		assert(GET_TYPE(sink_expr) == CAKE_TOKEN(EVENT_SINK_AS_STUB));
+		
+		// two source cases: pattern rules and normal non-pattern rules
+		switch (GET_TYPE(source_pattern))
+		{
+			case CAKE_TOKEN(KEYWORD_PATTERN):
+				// we want to match this pattern against all source-side call-sites
+				break; 
+			case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+			
+				break;
+			default: assert(false);
+		}
+		
+		
+		// two sink cases: pattern rules and normal non-pattern rules
+		
+		switch (GET_TYPE(sink_expr))
+		{
+			case CAKE_TOKEN(EVENT_SINK_AS_STUB):
+				sink_expr_as_stub = sink_expr;
+				break;
+			case CAKE_TOKEN(IDENT):
+				if (GET_TYPE(source_pattern) != CAKE_TOKEN(KEYWORD_PATTERN)) RAISE_INTERNAL(
+					sink_expr, "non-pattern event pattern");
+				
+			default: assert(false);
+		}
 
 		ensure_all_artificial_data_types(source_pattern, source);
 		if (source_infix_stub) ensure_all_artificial_data_types(source_infix_stub, source);
-		ensure_all_artificial_data_types(sink_expr, sink);
+		ensure_all_artificial_data_types(sink_expr_as_stub, sink);
 		if (sink_infix_stub) ensure_all_artificial_data_types(sink_infix_stub, sink);
 		if (return_leg) ensure_all_artificial_data_types(return_leg, source);
 		
@@ -2248,19 +2589,19 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 							/*.source_pattern = */ source_pattern,
 							/*.source_infix_stub = */ source_infix_stub,
 							/*.sink = */ sink, // sink is the *provider*
-							/*.sink_expr = */ sink_expr,
+							/*.sink_expr = */ sink_expr_as_stub,
 							/*.sink_infix_stub = */ sink_infix_stub,
 							return_leg,
 							/*.source_pattern_to_free = */ (free_source) ? source_pattern : 0,
 							/*.sink_pattern_to_free = */ (free_sink) ? sink_expr : 0 }));
 		/* print debugging info: what type expectations did we find in the stubs? */
-		if (sink_expr)
-		{
-			cerr << "stub: " << CCP(TO_STRING_TREE(sink_expr))
+		//if (sink_expr)
+		//{
+			cerr << "stub: " << CCP(TO_STRING_TREE(sink_expr_as_stub))
 				<< " implies type expectations as follows: " << endl;
 			multimap< string, shared_ptr<dwarf::spec::type_die> > out;
 			find_type_expectations_in_stub(sink,
-				sink_expr, shared_ptr<dwarf::spec::type_die>(), // FIXME: use return type
+				sink_expr_as_stub, shared_ptr<dwarf::spec::type_die>(), // FIXME: use return type
 				out);
 			if (out.size() == 0) cerr << "(no type expectations inferred)" << endl;
 			else for (auto i_exp = out.begin(); i_exp != out.end(); ++i_exp)
@@ -2268,7 +2609,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				cerr << i_exp->first << " as " << *i_exp->second << endl;
 			}
 			
-		}
+		//}
 	}
 
 	/* This version is called from processing the pairwise block AST.

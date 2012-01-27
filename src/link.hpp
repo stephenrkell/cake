@@ -229,7 +229,24 @@ namespace cake {
 			antlr::tree::Tree *stub, 
 			shared_ptr<spec::type_die> current_type_expectation,
 			multimap< string, shared_ptr<spec::type_die> >& out);
-
+		
+		void process_non_ident_pattern_event_corresp(
+			module_ptr left,
+			module_ptr right, 
+			antlr::tree::Tree *n);
+		
+		void expand_patterns_and_process(
+			module_ptr left,
+			module_ptr right,
+			const std::vector<antlr::tree::Tree *>& deferred);
+	
+		typedef vector<pair<shared_ptr<subprogram_die>, boost::smatch > > matches_info_t;
+		matches_info_t
+		find_subprograms_matching_pattern(
+			module_ptr module,
+			const boost::regex& re
+		);
+		
 		typedef unsigned long module_tag_t;
 		
 	private:

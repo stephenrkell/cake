@@ -5,6 +5,7 @@
 #include <boost/static_assert.hpp>
 #include <boost/type_traits/is_pointer.hpp>
 #include <boost/type_traits/remove_pointer.hpp>
+#include <boost/regex.hpp>
 //#include <java/lang/ClassCastException.h>
 //#include <java/lang/String.h>
 #include <string>
@@ -112,6 +113,19 @@ namespace cake
 
 	bool treat_subprogram_as_untyped(
 		shared_ptr<spec::subprogram_die> subprogram);
+	
+	boost::regex regex_from_pattern_ast(antlr::tree::Tree *t);
+	
+	antlr::tree::Tree *
+	make_non_ident_pattern_event_corresp(
+		bool is_left_to_right,
+		const std::string& event_name,
+		antlr::tree::Tree *sourcePattern,
+		antlr::tree::Tree *sourceInfixStub,
+		antlr::tree::Tree *sinkInfixStub,
+		antlr::tree::Tree *sinkExpr,
+		antlr::tree::Tree *returnEvent
+	);
 
     //optional<definite_member_name> 
     //dwarf_fq_member_name(dwarf::abstract::Die_abstract_base<>& d);
