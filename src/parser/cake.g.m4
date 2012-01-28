@@ -226,9 +226,9 @@ contextBindingEventPattern : bindingPrefix^ atomicEventPattern
 
 atomicEventPattern	: 
 	eventContext memberNameExpr eventParameterNamesAnnotation ( '(' ( ( annotatedValueBindingPattern ( ',' annotatedValueBindingPattern )* (',' ELLIPSIS )? ) | ELLIPSIS )? ')' eventCountPredicate? )?
-		-> ^( EVENT_PATTERN eventContext memberNameExpr ^( EVENT_COUNT_PREDICATE eventCountPredicate? ) eventParameterNamesAnnotation annotatedValueBindingPattern* )
+		-> ^( EVENT_PATTERN eventContext memberNameExpr ^( EVENT_COUNT_PREDICATE eventCountPredicate? ) eventParameterNamesAnnotation annotatedValueBindingPattern* ELLIPSIS? )
     | eventContext identPattern eventParameterNamesAnnotation ( '(' ( ( annotatedValueBindingPattern ( ',' annotatedValueBindingPattern )* (',' ELLIPSIS )? ) | ELLIPSIS )? ')' eventCountPredicate? )?
-		-> ^( EVENT_PATTERN eventContext identPattern ^( EVENT_COUNT_PREDICATE eventCountPredicate? ) eventParameterNamesAnnotation annotatedValueBindingPattern* )
+		-> ^( EVENT_PATTERN eventContext identPattern ^( EVENT_COUNT_PREDICATE eventCountPredicate? ) eventParameterNamesAnnotation annotatedValueBindingPattern* ELLIPSIS? )
 	;
 
 eventCountPredicate : '['! ( INT | IDENT )^ ']'!

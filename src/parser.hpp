@@ -33,6 +33,8 @@ namespace antlr {
     typedef ANTLR3_COMMON_TOKEN CommonToken;
     typedef ANTLR3_INPUT_STREAM ANTLRInputStream;
     typedef ANTLR3_COMMON_TOKEN_STREAM CommonTokenStream;
+	typedef ANTLR3_STRING_FACTORY StringFactory;
+	typedef ANTLR3_ARBORETUM Arboretum;
 namespace tree { 
 	typedef ANTLR3_BASE_TREE Tree; 
     typedef ANTLR3_COMMON_TREE CommonTree;
@@ -57,6 +59,7 @@ static inline antlr::tree::Tree *get_child_(antlr::tree::Tree *n, int i)
 // #define GET_CHILD(node, i) (reinterpret_cast<antlr::tree::Tree*>((node)->getChild((node), i)))
 #define GET_CHILD(node, i) (get_child_((node), (i)))
 #define CAKE_TOKEN(tokname) tokname
+#define GET_FACTORY(node) (((pANTLR3_COMMON_TREE) (node)->super)->factory)
 
 /* Since antlr doesn't provide us with named tree elements, or a convenient way of
  * querying for subtrees (except using tree grammars), let's define some nasty

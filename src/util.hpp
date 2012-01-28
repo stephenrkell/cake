@@ -67,7 +67,10 @@ namespace cake
 	};
 	std::ostream& operator<<(std::ostream&, const definite_member_name&);
 	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName);
-	antlr::tree::Tree *make_definite_member_name_expr(const definite_member_name& arg);
+	antlr::tree::Tree *make_definite_member_name_expr(
+		const definite_member_name& arg,
+		bool include_header_node = false
+		);
 	antlr::tree::Tree *make_ident_expr(const string& ident);
 
 	template<typename AntlrReturnedObject>
@@ -77,11 +80,22 @@ namespace cake
 		AntlrReturnedObject (* cakeCParser::* parserFunction)(cakeCParser_Ctx_struct*)
 	);
 	
+	antlr::tree::Tree *clone_ast(antlr::tree::Tree *t);
+	
+	antlr::tree::Tree *build_ast(
+		antlr::Arboretum *treeFactory,
+		int tokenType, const string& text, 
+		const std::vector<antlr::tree::Tree *>& children = std::vector<antlr::tree::Tree *>());
+	
 	string cake_token_text_from_ident(const string& arg);
 	bool is_cake_keyword(const string& arg);
 	
 	string get_event_pattern_call_site_name(antlr::tree::Tree *t);
-    
+	antlr::tree::Tree *
+	instantiate_definite_member_name_from_pattern_match(
+		antlr::tree::Tree *t,
+		const boost::smatch& m);
+		
     antlr::tree::Tree *make_simple_event_pattern_for_call_site(
     	const string& name);
     
@@ -120,6 +134,7 @@ namespace cake
 	make_non_ident_pattern_event_corresp(
 		bool is_left_to_right,
 		const std::string& event_name,
+		const boost::smatch& match,
 		antlr::tree::Tree *sourcePattern,
 		antlr::tree::Tree *sourceInfixStub,
 		antlr::tree::Tree *sinkInfixStub,

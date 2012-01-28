@@ -246,11 +246,12 @@ namespace cake
 	definite_member_name read_definite_member_name(antlr::tree::Tree *memberName)
 	{ return definite_member_name(memberName); }
 	
-	antlr::tree::Tree *make_definite_member_name_expr(const definite_member_name& arg)
+	antlr::tree::Tree *make_definite_member_name_expr(const definite_member_name& arg,
+		bool include_header_node /* = false */)
 	{
 		// We do this by building a string and feeding it to the parser.
 	 	std::cerr << "creating definite member name tree for " << arg << std::endl;
-
+		antlr::tree::Tree *ret_tree;
 		std::string fragment;
 		for (auto i = arg.begin(); i != arg.end(); i++)
 		{
@@ -264,8 +265,17 @@ namespace cake
 		cakeCLexer *lexer = cakeCLexerNew(ss);
 		antlr::CommonTokenStream *tokenStream = antlr3CommonTokenStreamSourceNew(
 			ANTLR3_SIZE_HINT, TOKENSOURCE(lexer));
-		cakeCParser *parser = cakeCParserNew(tokenStream); 
-		cakeCParser_definiteMemberName_return ret = parser->definiteMemberName(parser);
+		cakeCParser *parser = cakeCParserNew(tokenStream);
+		if (include_header_node)
+		{
+			cakeCParser_memberNameExpr_return ret = parser->memberNameExpr(parser);
+			ret_tree = ret.tree;
+		}
+		else 
+		{
+			cakeCParser_definiteMemberName_return ret = parser->definiteMemberName(parser);
+			ret_tree = ret.tree;
+		}
 		
 		// We should now have the tree in ret.tree. 
 		// Free all the other temporary stuff we created.
@@ -276,7 +286,7 @@ namespace cake
 		//parser->free(parser);
 		//free(dup);
 		
-		return ret.tree;
+		return ret_tree;
 	}
 	antlr::tree::Tree *make_ident_expr(const std::string& ident)
 	{
@@ -415,12 +425,72 @@ namespace cake
 				RAISE_INTERNAL(t, "not an event pattern");
 		}
 	} 
+	
+	antlr::tree::Tree *clone_ast(antlr::tree::Tree *t)
+	{
+		#define CLONE(t)  GET_FACTORY(t)->newFromTree(GET_FACTORY(t), (pANTLR3_COMMON_TREE)t->super)
+		antlr::tree::Tree *cloned_head = CLONE(t);
+		for (unsigned i = 0; i < GET_CHILD_COUNT(t); ++i)
+		{
+			cloned_head->addChild(cloned_head, clone_ast(GET_CHILD(t, i)));
+		}
+		return cloned_head;
+	}
+	
+	antlr::tree::Tree *
+	instantiate_definite_member_name_from_pattern_match(
+		antlr::tree::Tree *t,
+		const boost::smatch& match
+	)
+	{
+		auto raw_event_dmn = read_definite_member_name(t);
+		assert(raw_event_dmn.size() == 1);
+		auto unescaped_name = unescape_ident(raw_event_dmn.at(0));
+		ostringstream out;
+		enum { NORMAL, ESCAPE } state = NORMAL; 
+		for (auto i_c = unescaped_name.begin(); 
+			i_c != unescaped_name.end(); 
+			++i_c)
+		{
+			switch(*i_c)
+			{
+				case '\\': 
+					if (state == NORMAL) { state = ESCAPE; break; }
+					else                 { out << '\\'; state = NORMAL; break; }
+				default:
+					if (state == NORMAL) { out << *i_c; break; }
+					else {
+						string tmp;
+						state = NORMAL;
+						switch (*i_c)
+						{
+					#define CASE(n) case (n): tmp = ""; tmp.assign(match[n - '0'].first, match[n - '0'].second); \
+						out << tmp; break;
+							CASE('0') CASE('1') CASE('2') CASE('3') CASE('4') 
+							CASE('5') CASE('6') CASE('7') CASE('8') CASE('9')
+							case 'U':
+							case 'E':
+							case 'L': assert(false); // FIXME
+							default: RAISE(t, "unrecognised escape");
+					#undef CASE
+						}
+					}
+					break;
+			}
+		}
+		auto new_event_name = out.str();
+		auto newMemberName = make_definite_member_name_expr(
+			vector<string>(1, new_event_name),
+			true);
+
+		return newMemberName;
+	}
 
 	antlr::tree::Tree *
 	make_non_ident_pattern_event_corresp(
 		bool is_left_to_right,
 		const std::string& event_name,
-		const boost::smatch match,
+		const boost::smatch& match,
 		antlr::tree::Tree *sourcePattern,
 		antlr::tree::Tree *sourceInfixStub,
 		antlr::tree::Tree *sinkInfixStub,
@@ -428,104 +498,198 @@ namespace cake
 		antlr::tree::Tree *returnEvent
 	)
 	{
-		// we clone everything, in case we want to rewrite something
-		#define CLONE(t)  (t)->factory->newFromTree((t)->factory, t)
-		antlr::tree::Tree *cloneSourcePattern = 0; //CLONE(sourcePattern);
-		antlr::tree::Tree *cloneSourceInfixStub = CLONE(sourceInfixStub);
-		antlr::tree::Tree *cloneSinkInfixStub = CLONE(sinkInfixStub);
-		antlr::tree::Tree *cloneSinkExpr = CLONE(sinkExpr);
-		antlr::tree::Tree *cloneReturnEvent = CLONE(returnEvent);
+		using antlr::tree::Tree;
 		
-		// replace the source pattern
-		cloneSourcePattern = make_definite_member_name_expr(
-			vector<string>(1, event_name));
+		// we clone everything, in case we want to rewrite something
+		Tree *cloneSourcePattern = clone_ast(sourcePattern); 
+		Tree *cloneSourceInfixStub = clone_ast(sourceInfixStub);
+		Tree *cloneSinkInfixStub = clone_ast(sinkInfixStub);
+		Tree *cloneSinkExpr = clone_ast(sinkExpr);
+		Tree *cloneReturnEvent = clone_ast(returnEvent);
+
+		// replace the source pattern with the matched event name
+		auto newMemberName = make_definite_member_name_expr(
+			vector<string>(1, event_name), true);
+		cloneSourcePattern->setChild(cloneSourcePattern, 1, newMemberName);
+
+		
+		// add an ellipsis to the source args, if one is not there already
+		if (GET_TYPE(GET_CHILD(cloneSourcePattern, GET_CHILD_COUNT(cloneSourcePattern) - 1))
+			!= CAKE_TOKEN(ELLIPSIS))
+		{
+			cloneSourcePattern->addChild(cloneSourcePattern, 
+				build_ast(GET_FACTORY(cloneSinkExpr),
+					CAKE_TOKEN(ELLIPSIS),
+					"...",
+					vector<Tree*>()
+					)
+				);
+		}
+			
 		
 		// replace the sink expr with an instantiated version of the pattern
 		// HACK: for now, just support stubs that are a single call expression...
 		// ... and build a call expr (under EVENT_SINK_AS_STUB) 
 		if (GET_TYPE(cloneSinkExpr) == CAKE_TOKEN(EVENT_PATTERN))
 		{
+			// example: 
+			//     (EVENT_PATTERN EVENT_CONTEXT
+			//         (DEFINITE_MEMBER_NAME bar_do_xyzzy)
+			//         (ANNOTATED_VALUE_PATTERN
+			//             (NAME_AND_INTERPRETATION
+			//                 (DEFINITE_MEMBER_NAME blorb)
+			//             )
+			//         )
+			//         (ANNOTATED_VALUE_PATTERN
+			//             (NAME_AND_INTERPRETATION
+			//                 (DEFINITE_MEMBER_NAME frotz)
+			//             )
+			//         )
+			//     )
+			// needs to become
+			// (EVENT_SINK_AS_STUB
+			//    (INVOKE_WITH_ARGS 
+			//        (MULTIVALUE ...)
+			//        (DEFINITE_MEMBER_NAME bar_do_xyzzy)
+			//    
+
 			INIT;
 			BIND3(cloneSinkExpr, context, EVENT_CONTEXT);
 			BIND3(cloneSinkExpr, memberName, DEFINITE_MEMBER_NAME);
-
-			auto raw_event_dmn = read_definite_member_name(memberName);
-			assert(raw_event_dmn.size() == 1);
-			ostringstream out_ident;
-			enum { NORMAL, ESCAPE } state = NORMAL; 
-			for (auto i_c = raw_event_dmn.at(0).begin(); 
-				i_c != raw_event_dmn.at(0).end(); 
-				++i_c)
+			std::vector<antlr::tree::Tree *> args;
+			FOR_REMAINING_CHILDREN(cloneSinkExpr)
 			{
-				switch(*i_c)
-				{
-					case '\\': 
-						if (state == NORMAL) { state = ESCAPE; break; }
-						else                 { out << '\\'; state = NORMAL; break; }
-					default:
-						if (state == NORMAL) { out << *i_c; break; }
-						else {
-							state = NORMAL;
-							switch (*i_c)
-							{
-						#define CASE(n) case (n): out << m.at(n); break;
-								CASE(0) CASE(1) CASE(2) CASE(3) CASE(4) 
-								CASE(5) CASE(6) CASE(7) CASE(8) CASE(9)
-								case 'U':
-								case 'E':
-								case 'L': assert(false); // FIXME
-								default: RAISE(memberName, "unrecognised escape");
-						#undef CASE
-							}
-						}
-						break;
-				}
+				INIT;
+				BIND2(n, argExpr);
+				args.push_back(argExpr);
 			}
-			auto new_event_name = out.str();
-			auto newMemberName = make_definite_member_name_expr(vector<string>(1, new_event_name));
-			cloneSinkExpr->setChild(cloneSinkExpr, 1, newMemberName);
+			// because we're a pattern rule, add an ellipsis if not already
+			if (GET_TYPE(args.at(args.size() - 1)) != CAKE_TOKEN(ELLIPSIS))
+			{
+				args.push_back(
+					build_ast(GET_FACTORY(cloneSinkExpr),
+						CAKE_TOKEN(ELLIPSIS),
+						"...",
+						vector<Tree*>()
+					)
+				);
+			}
+
+			Tree *newMemberName =
+			instantiate_definite_member_name_from_pattern_match(
+				memberName,
+				match);
 			
-			// currently no need to mess with args
-			//FOR_REMAINING_CHILDREN(cloneSinkExpr)
-			//{
-			//	// these are the args!
-			//}
+			// cloneSinkExpr->setChild(cloneSinkExpr, 1, newMemberName);
 			
+			cloneSinkExpr = build_ast(GET_FACTORY(cloneSinkExpr),
+				CAKE_TOKEN(EVENT_SINK_AS_STUB),
+				"EVENT_SINK_AS_STUB",
+				(vector<Tree *>){
+					build_ast(GET_FACTORY(cloneSinkExpr),
+						CAKE_TOKEN(INVOKE_WITH_ARGS),
+						"INVOKE_WITH_ARGS",
+						(vector<Tree *>){
+							build_ast(GET_FACTORY(cloneSinkExpr),
+								CAKE_TOKEN(MULTIVALUE),
+								"MULTIVALUE",
+								args
+							),
+							//newMemberName
+							// actually we want a single ident here
+							build_ast(GET_FACTORY(cloneSinkExpr),
+								CAKE_TOKEN(IDENT),
+								read_definite_member_name(newMemberName).at(0),
+								vector<Tree*>()
+							)
+						}
+					)
+				}
+			);
 
 		} else assert(false);
 		
 		// glue it all together in the correct l-to-r or r-to-l direction
-		antlr::tree::Tree *new_event_corresp = sourcePattern->factory->newTree(sourcePattern->factory);
-		new_event_corresp->setType(new_event_corresp, CAKE_TOKEN(
-		assert(new_event_corresp);
+		Tree *new_event_corresp;
+		
 		if (is_left_to_right)
 		{
-			new_event_corresp->setType(new_event_corresp, CAKE_TOKEN(LR_DOUBLE_ARROW));
-			new_event_corresp->addChild(new_event_corresp, cloneSourcePattern);
-			new_event_corresp->addChild(new_event_corresp, cloneSourceInfixStub);
-			new_event_corresp->addChild(new_event_corresp, cloneSinkInfixStub);
-			new_event_corresp->addChild(new_event_corresp, cloneSinkExpr);
-			new_event_corresp->addChild(new_event_corresp, cloneReturnEvent);
+			new_event_corresp = build_ast(
+				GET_FACTORY(sourcePattern),
+				CAKE_TOKEN(LR_DOUBLE_ARROW),
+				"-->",
+				(vector<Tree *>){
+					cloneSourcePattern,
+					cloneSourceInfixStub,
+					cloneSinkInfixStub,
+					cloneSinkExpr,
+					cloneReturnEvent
+				}
+			);
 			
 		}
 		else // right to left
 		{
-			new_event_corresp->setType(new_event_corresp, CAKE_TOKEN(RL_DOUBLE_ARROW));
-			new_event_corresp->addChild(new_event_corresp, cloneSinkExpr);
-			new_event_corresp->addChild(new_event_corresp, cloneSinkInfixStub);
-			new_event_corresp->addChild(new_event_corresp, cloneSourceInfixStub);
-			new_event_corresp->addChild(new_event_corresp, cloneSourcePattern);
-			new_event_corresp->addChild(new_event_corresp, cloneReturnEvent);
+			new_event_corresp = build_ast(
+				GET_FACTORY(sourcePattern),
+				CAKE_TOKEN(RL_DOUBLE_ARROW),
+				"<--",
+				(vector<Tree *>){
+					cloneSinkExpr,
+					cloneSinkInfixStub,
+					cloneSourceInfixStub,
+					cloneSourcePattern,
+					cloneReturnEvent,
+				}
+			);
 		}
 		
 		#undef CLONE
 		
+		// check we made it right
+		assert(new_event_corresp);
+		assert(GET_TYPE(new_event_corresp)
+			 == (is_left_to_right ? CAKE_TOKEN(LR_DOUBLE_ARROW) : CAKE_TOKEN(RL_DOUBLE_ARROW)));
+		assert(strcmp(CCP(GET_TEXT(new_event_corresp)), "-->") == 0
+		    || strcmp(CCP(GET_TEXT(new_event_corresp)), "<--") == 0);
+		
 		cerr << "Instantiated a pattern to create new event corresp: "
 			<< CCP(TO_STRING_TREE(new_event_corresp)) << endl;
 		
-		return new_event_corresp;
+		return build_ast(GET_FACTORY(new_event_corresp),
+			CAKE_TOKEN(EVENT_CORRESP),
+			"EVENT_CORRESP",
+			(vector<Tree*>){
+				new_event_corresp
+			}
+		);
 		
 		// FIXME: missing deallocation for all of the stuff we allocate in this function
+	}
+	
+	antlr::tree::Tree *build_ast(
+		antlr::Arboretum *treeFactory,
+		int tokenType, const string& text, 
+		const std::vector<antlr::tree::Tree *>& children
+	)
+	{
+		auto p_token = antlr3CommonTokenNew(tokenType);
+		auto p_node = treeFactory->newFromToken(treeFactory, p_token);
+		assert(p_node->strFactory);
+		p_token->setText(p_token, p_node->strFactory->newPtr8(
+				p_node->strFactory,
+				(pANTLR3_UINT8) text.c_str(),
+				text.length()
+			)
+		);
+		
+		// add the children
+		for (auto i_child = children.begin(); i_child != children.end(); ++i_child)
+		{
+			p_node->addChild(p_node, *i_child);
+		}
+		
+		return p_node;
 	}
 
 	boost::regex regex_from_pattern_ast(antlr::tree::Tree *t)
@@ -613,7 +777,9 @@ namespace cake
 	}
 	
 	antlr::tree::Tree *make_simple_corresp_expression(
-		const std::vector<std::string>& ident, boost::optional<std::vector<std::string>& > rhs_ident)
+		const std::vector<std::string>& ident, 
+		boost::optional<std::vector<std::string>& > rhs_ident
+	)
 	{
 		std::cerr << "creating corresp expression for: " << ident  << std::endl;
 

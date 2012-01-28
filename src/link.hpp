@@ -27,6 +27,7 @@ namespace cake {
 	using boost::optional;
 	using namespace dwarf;
 	using dwarf::spec::type_die;
+	using dwarf::spec::subprogram_die;
 	using dwarf::tool::cxx_target;
 	
 	class wrapper_file;

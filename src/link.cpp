@@ -1960,7 +1960,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		
 		// We make two passes, to accommodate the lower priority of ident-pattern rules.
 		// In the first pass, we remember pattern rules.
-		std::vector<antlr::tree:Tree *> deferred;
+		std::vector<antlr::tree::Tree *> deferred;
 		INIT;
 		FOR_ALL_CHILDREN(corresps)
 		{
@@ -2166,17 +2166,18 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					BIND2(correspHead, sinkExpr);
 					BIND3(correspHead, returnEvent, RETURN_EVENT);
 					
-					for (auto i_match = matched.begin(); i_match != matched_end; ++i_match)
+					for (auto i_match = matched.begin(); i_match != matched.end(); ++i_match)
 					{
 						// only if not already touched
-						if (touched_events[left].find(*i_match->first->get_name()) 
+						if (touched_events[left].find(
+								definite_member_name(1, *i_match->first->get_name())) 
 							== touched_events[left].end())
 						{
 							process_non_ident_pattern_event_corresp(
 								left,
 								right,
 								make_non_ident_pattern_event_corresp(
-									true /* is_left_to_right */
+									true, /* is_left_to_right */
 									*i_match->first->get_name(),
 									i_match->second,
 									// then as before
@@ -2204,8 +2205,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					BIND3(correspHead, pattern, EVENT_PATTERN);
 					{
 						INIT;
-						BIND2(sourcePattern, eventContext);
-						BIND3(sourcePattern, pattern, KEYWORD_PATTERN);
+						BIND2(pattern, eventContext);
+						BIND3(pattern, pattern, KEYWORD_PATTERN);
 						matched = find_subprograms_matching_pattern(
 							right, regex_from_pattern_ast(pattern)
 						);
@@ -2213,21 +2214,22 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					}
 					BIND3(correspHead, returnEvent, RETURN_EVENT);
 					
-					for (auto i_match = matched.begin(); i_match != matched_end; ++i_match)
+					for (auto i_match = matched.begin(); i_match != matched.end(); ++i_match)
 					{
 						// only if not already touched
-						if (touched_events[right].find(*i_match->second->get_name()) 
+						if (touched_events[right].find(
+							definite_member_name(1, *i_match->first->get_name())) 
 							== touched_events[right].end())
 						{
 							process_non_ident_pattern_event_corresp(
 								left,
 								right,
 								make_non_ident_pattern_event_corresp(
-									false /* is_left_to_right */
+									false, /* is_left_to_right */
 									*i_match->first->get_name(),
 									i_match->second,
 									// then as before
-									sourcePattern,
+									pattern,
 									sourceInfixStub,
 									sinkInfixStub,
 									sinkExpr,
@@ -2258,12 +2260,13 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 						}
 						else
 						{
+							// the left is *not* a pattern, so the right *must* be.
 							// *** just add one rule, in this direction?
 							// This doesn't make sense, because what will the stub be?
-							cerr << "Warning: ident pattern rule " << CCP(correpHead)
+							cerr << "Warning: ident pattern rule " << CCP(TO_STRING_TREE(correspHead))
 								<< " will only generate correspondences with source "
-								<< left->get_filename()
-								<< " and sink " << right->get_filename() << endl;
+								<< right->get_filename()
+								<< " and sink " << left->get_filename() << endl;
 						}
 					}
 					BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
@@ -2282,12 +2285,13 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 						}
 						else
 						{
+							// the right is *not* a pattern, so the left *must* be.
 							// *** just add one rule, in this direction?
 							// This doesn't make sense, because what will the stub be?
-							cerr << "Warning: ident pattern rule " << CCP(correpHead)
+							cerr << "Warning: ident pattern rule " << CCP(TO_STRING_TREE(correspHead))
 								<< " will only generate correspondences with source "
-								<< right->get_filename()
-								<< " and sink " << left->get_filename() << endl;
+								<< left->get_filename()
+								<< " and sink " << right->get_filename() << endl;
 						}
 
 					}
@@ -2295,45 +2299,56 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					
 					if (lr_matched.size() > 0)
 					{
-						for (auto i_match = lr_matched.begin(); i_match != lr_matched_end; ++i_match)
+						for (auto i_match = lr_matched.begin(); i_match != lr_matched.end(); ++i_match)
 						{
-							process_non_ident_pattern_event_corresp(
-								left,
-								right,
-								make_non_ident_pattern_event_corresp(
-									true /* is_left_to_right */
-									*i_match->first->get_name(),
-									i_match->second,
-									// then as before
-									leftPattern,
-									leftInfixStub,
-									rightInfixStub
-									rightPattern,
-									returnEvent
-								)
-							);
+							// only if not already touched
+							if (touched_events[left].find(
+								definite_member_name(1, *i_match->first->get_name())) 
+								== touched_events[left].end())
+							{
+								process_non_ident_pattern_event_corresp(
+									left,
+									right,
+									make_non_ident_pattern_event_corresp(
+										true, /* is_left_to_right */
+										*i_match->first->get_name(),
+										i_match->second,
+										// then as before
+										leftPattern,
+										leftInfixStub,
+										rightInfixStub,
+										rightPattern,
+										returnEvent
+									)
+								);
+							}
 						}
 					
 					}
 					else if (rl_matched.size() > 0)
 					{
-						for (auto i_match = rl_matched.begin(); i_match != rl_matched_end; ++i_match)
+						for (auto i_match = rl_matched.begin(); i_match != rl_matched.end(); ++i_match)
 						{
-							process_non_ident_pattern_event_corresp(
-								left,
-								right,
-								make_non_ident_pattern_event_corresp(
-									false /* is_left_to_right */
-									*i_match->first->get_name(),
-									i_match->second,
-									// then as before
-									rightPattern,
-									rightInfixStub,
-									leftInfixStub,
-									leftPattern,
-									returnEvent
-								)
-							);
+							if (touched_events[right].find(
+								definite_member_name(1, *i_match->first->get_name())) 
+								== touched_events[right].end())
+							{
+								process_non_ident_pattern_event_corresp(
+									left,
+									right,
+									make_non_ident_pattern_event_corresp(
+										false, /* is_left_to_right */
+										*i_match->first->get_name(),
+										i_match->second,
+										// then as before
+										rightPattern,
+										rightInfixStub,
+										leftInfixStub,
+										leftPattern,
+										returnEvent
+									)
+								);
+							}
 						}
 					}
 					
@@ -2345,13 +2360,13 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		} // end for deferred
 	}
 	
-	vector<shared_ptr<subprogram_die> > 
+	link_derivation::matches_info_t
 	link_derivation::find_subprograms_matching_pattern(
 		module_ptr module,
 		const boost::regex& re
 	)
 	{
-		vector<shared_ptr<subprogram_die> > v;
+		matches_info_t v;
 		boost::smatch m;
 
 		/* First we match all event names against the pattern */
@@ -2369,7 +2384,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					// ... does it match the pattern?
 					if (boost::regex_match(name, m, re))
 					{
-						cerr << "pattern " << CCP(TO_STRING_TREE(memberNameExprOrPattern)) 
+						cerr << "pattern " << re
 							<< " matched " << *subp
 							<< endl;
 
@@ -2551,33 +2566,6 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		sink_expr_as_stub = sink_expr;
 		assert(GET_TYPE(sink_expr) == CAKE_TOKEN(EVENT_SINK_AS_STUB));
 		
-		// two source cases: pattern rules and normal non-pattern rules
-		switch (GET_TYPE(source_pattern))
-		{
-			case CAKE_TOKEN(KEYWORD_PATTERN):
-				// we want to match this pattern against all source-side call-sites
-				break; 
-			case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
-			
-				break;
-			default: assert(false);
-		}
-		
-		
-		// two sink cases: pattern rules and normal non-pattern rules
-		
-		switch (GET_TYPE(sink_expr))
-		{
-			case CAKE_TOKEN(EVENT_SINK_AS_STUB):
-				sink_expr_as_stub = sink_expr;
-				break;
-			case CAKE_TOKEN(IDENT):
-				if (GET_TYPE(source_pattern) != CAKE_TOKEN(KEYWORD_PATTERN)) RAISE_INTERNAL(
-					sink_expr, "non-pattern event pattern");
-				
-			default: assert(false);
-		}
-
 		ensure_all_artificial_data_types(source_pattern, source);
 		if (source_infix_stub) ensure_all_artificial_data_types(source_infix_stub, source);
 		ensure_all_artificial_data_types(sink_expr_as_stub, sink);
