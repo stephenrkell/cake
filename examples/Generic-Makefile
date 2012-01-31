@@ -18,6 +18,9 @@ default: cake-generated.mk $(BASENAME)
 
 -include cake-generated.mk
 
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o "$@" "$<"
+
 # Including this command seems to imply that there are no commands to run for
 # $(BASENAME).o, so if cake-generated.mk happens to be empty (after a failing Cake run),
 # it will assume $(BASENAME).o is built (and try to build $(BASENAME)) even when

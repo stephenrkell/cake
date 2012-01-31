@@ -1025,7 +1025,6 @@ namespace cake
 					}
 					else
 					{
-					
 						definite_member_name dmn;
 						if (GET_TYPE(invoked_function) == CAKE_TOKEN(IDENT))
 						{ dmn.push_back(CCP(GET_TEXT(invoked_function))); }
@@ -1055,7 +1054,7 @@ namespace cake
 					}
 				}
 				case CAKE_TOKEN(EVENT_PATTERN): {
-					unsigned prev_node_pos = 0U;
+					unsigned prev_node_pos = 0U; 
 					while (prev_node_pos < GET_CHILD_COUNT(node) && GET_CHILD(node, prev_node_pos) != prev_node)
 					{ ++prev_node_pos; }
 					assert(prev_node_pos != GET_CHILD_COUNT(node)); // we should always find prev_node
@@ -1076,8 +1075,8 @@ namespace cake
 						subprogram = dynamic_pointer_cast<spec::subprogram_die>(found);
 						assert(subprogram);
 					}
-					// now look for the pos'th fp
-					unsigned pos = 0;
+					// now look for the pos-4'th fp (HACK!)
+					unsigned pos = 3;
 					spec::subprogram_die::formal_parameter_iterator i_fp;
 					for (i_fp = subprogram->formal_parameter_children_begin();	
 						i_fp != subprogram->formal_parameter_children_end();	
@@ -1085,7 +1084,21 @@ namespace cake
 					{
 						if (pos == prev_node_pos) break;
 					}
-					assert(i_fp != subprogram->formal_parameter_children_end());
+					/* If we get all the way to formal_parameter_children_end,
+					 * it means our event pattern has more args than the subprogram.
+					 * This might be okay if we are varargs.*/
+					if (i_fp == subprogram->formal_parameter_children_end())
+					{
+						if (subprogram->unspecified_parameters_children_begin()
+						 != subprogram->unspecified_parameters_children_end())
+						{
+							return *subprogram->unspecified_parameters_children_begin();
+						}
+						else
+						{
+							RAISE_INTERNAL(node, "too many parameters for subprogram");
+						}
+					}
 					
 					return *i_fp;
 				} break;

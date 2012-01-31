@@ -185,7 +185,7 @@ namespace cake
 					request::module_tbl_t::iterator found_left = 
 						r.module_tbl.find(string(CCP(GET_TEXT(leftChild))));
 					if (found_left == r.module_tbl.end()) RAISE(n, "module not defined!");
-   					request::module_tbl_t::iterator found_right = 
+					request::module_tbl_t::iterator found_right = 
 						r.module_tbl.find(string(CCP(GET_TEXT(rightChild))));
 					if (found_right == r.module_tbl.end()) RAISE(n, "module not defined!");
 					
@@ -286,9 +286,9 @@ namespace cake
 							0,
 							i_val_corresp->second->source_is_on_left, // source_is_on_left -- irrelevant as we have no refinement
 							make_simple_corresp_expression(i_val_corresp->second->source_is_on_left ?
-				 					source_name_parts : sink_name_parts,
+									source_name_parts : sink_name_parts,
 								 i_val_corresp->second->source_is_on_left ?
-				 					sink_name_parts : source_name_parts ));
+									sink_name_parts : source_name_parts ));
 						
 						// FIXME: now we recompute dependencies until we get a fixed point
 					}
@@ -587,13 +587,13 @@ namespace cake
 				vector<optional<string> > argnames;
 				vector<antlr::tree::Tree *> interps;
 				
-				definite_member_name dmn;
+				optional<definite_member_name> opt_dmn;
 				boost::smatch m;
 				if (
 					((GET_TYPE(memberNameExprOrPattern) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
 					 && (subprogram->get_name() 
-					 	&& dmn.size() == 1 
-							&& dmn.at(0) == *subprogram->get_name())
+					 	&& (opt_dmn = read_definite_member_name(memberNameExprOrPattern))->size() == 1 
+							&& opt_dmn->at(0) == *subprogram->get_name())
 					)
 				|| ((GET_TYPE(memberNameExprOrPattern) == CAKE_TOKEN(KEYWORD_PATTERN))
 					 && (subprogram->get_name() 
@@ -607,6 +607,12 @@ namespace cake
 					cerr << "Pattern " << CCP(TO_STRING_TREE(p)) << " matched function "
 						<< (subprogram->get_name() ? *subprogram->get_name() : "(no name)")
 						<< endl;
+					// if we came by the pattern route, we didn't read a dmn; fix that
+					if (!opt_dmn)
+					{
+						assert(subprogram->get_name());
+						opt_dmn = definite_member_name(1, *subprogram->get_name());
+					}
 					FOR_REMAINING_CHILDREN(p)
 					{
 						INIT;
@@ -627,15 +633,20 @@ namespace cake
 								{
 									INIT;
 									antlr::tree::Tree *interpretation = 0;
-									BIND3(arg, memberName, DEFINITE_MEMBER_NAME);
-									if (GET_CHILD_COUNT(arg) > 1) {
-										interpretation = GET_CHILD(arg, 1);
+									BIND2(arg, memberName);
+									if (GET_TYPE(memberName) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
+									{
+										if (GET_CHILD_COUNT(arg) > 1) {
+											interpretation = GET_CHILD(arg, 1);
+										}
+										ostringstream s;
+										s << read_definite_member_name(memberName);
+										argnames.push_back(s.str());
+										cerr << "Pushed an argument name: " 
+											<< s.str() << endl;
 									}
-									ostringstream s;
-									s << read_definite_member_name(memberName);
-									argnames.push_back(s.str());
-									cerr << "Pushed an argument name: " 
-										<< s.str() << endl;
+									else argnames.push_back(optional<string>());
+
 									interps.push_back(interpretation);
 									break;
 								}
@@ -656,8 +667,9 @@ namespace cake
 					||     GET_TYPE(p_corresp) == CAKE_TOKEN(RL_DOUBLE_ARROW));
 					
 					// add this pattern
+					assert(opt_dmn);
 					patterns.insert(make_pair(
-						dmn,
+						*opt_dmn,
 						(pattern_info) {
 						argnames,
 						interps,
@@ -665,18 +677,20 @@ namespace cake
 						p_corresp
 						}
 					));
-					callnames.insert(dmn);
+					callnames.insert(*opt_dmn);
 				} // end if name matches
 				else 
 				{
 					cerr << "Pattern " << CCP(TO_STRING_TREE(p)) << " did not match function "
-						<< (subprogram->get_name() ? *subprogram->get_name() : "(no name)")
+						//<< (subprogram->get_name() ? *subprogram->get_name() : "(no name)")
+						<< *subprogram
 						<< endl;
-					if (dmn.size() != 1)
+					if (!opt_dmn || opt_dmn->size() != 1)
 					{
-						cerr << "Warning: encountered function name of size " 
-							<< dmn.size()
-							<< endl;
+						cerr << "Warning: encountered function name ";
+						if (!opt_dmn) cerr << "that is empty.";
+						else cerr << "of size " << opt_dmn->size();
+						cerr << endl;
 					}
 				}
 			} // end for pattern
@@ -779,7 +793,8 @@ namespace cake
 							/* Given an interpretation, there are several cases: 
 							 * - the type just names an existing type;
 							 * - the type AST explicitly defines a type that doesn't currently exist in DWARF info;
-							 * - the type is an ident which should become an artificial 
+							 * - the type is an ident which should become an artificial data type
+							 * - the type is an ident which should become a virtual data type
 							 **/
 							BIND2(*i_interp, dwarfType);
 							// FIXME: pay attention to the kind (as, in_as, out_as)
@@ -789,75 +804,152 @@ namespace cake
 							// if no existing, then try creating one
 							if (!existing)
 							{
-								existing = module_for_die(subprogram)
-									->create_dwarf_type(dwarfType);
-								// if this failed, it means it was just a reference
-								// (ident) not a definition
-								// -- this might be okay for us, as we can create a typedef
-								if (!existing)
+								try
 								{
-									assert(false);
-									// when we finish the code below, it would be sensible
-									// to create a typedef here, pointing to the type
-									// discovered below. For now, do nothing.
+									existing = module_for_die(subprogram)
+										->create_dwarf_type(dwarfType);
+								} 
+								catch (dwarf::lib::Not_supported)
+								{
+									// if this failed, it means it was just a reference
+									// (ident) not a definition
+									// -- this might be okay for us, as we can create a typedef
 								}
+								// when we finish the code below, it would be sensible
+								// to create a typedef here, pointing to the type
+								// discovered below. For now, do nothing.
 							}
-							assert(existing);
-							cerr << "existing type: " << *existing << endl;
-							// Now let's update the fp
-							// FIXME: check for unanimity
-							auto encap_fp = dynamic_pointer_cast<encap::formal_parameter_die>(
-								*i_fp);
-							encap_fp->set_type(existing);
+							if (existing)
+							{
+								cerr << "existing type: " << *existing << endl;
+								// Now let's update the fp
+								// FIXME: check for unanimity
+								auto encap_fp = dynamic_pointer_cast<encap::formal_parameter_die>(
+									*i_fp);
+								encap_fp->set_type(existing);
+							}
 
-						}
+						} // end if *i_interp
+						
+						// if we get here, there is no explicit interp
+						// -- but we might be able to 
 
-// 						// if the vector contains a null entry, it means that 
-// 						// we saw no name for this argument.
-// 						if (!*i_arg)
-// 						{
-// 							// we saw no name for it, but we might have an interpretation
-// 
-// 						}
-// 						else // it definitely has a name, so we can search for its uses
-// 						{
-// 							find_usage_contexts(**i_arg,
-// 								i_pattern->second.corresp->sink_expr,
-// 								contexts);
-// 							if (contexts.size() > 0)
-// 							{
-// 								cerr << "Considering type expectations "
-// 									<< "for stub uses of identifier " 
-// 									<< **i_arg << endl;
-// 								for (auto i_ctxt = contexts.begin(); 
-// 									i_ctxt != contexts.end();
-// 									++i_ctxt)
-// 								{
-// 									auto found_die = map_ast_context_to_dwarf_element(
-// 										*i_ctxt,
-// 										i_pattern->second.corresp->sink, true);
-// 
-// 									if (found_die)
+						if (*i_arg) // it definitely has a name, so we can search for its uses
+						{
+							find_usage_contexts(**i_arg,
+								i_pattern->second.corresp,
+								contexts);
+							if (contexts.size() > 0)
+							{
+								cerr << "Considering type expectations "
+									<< "for stub uses of identifier " 
+									<< **i_arg << endl;
+								shared_ptr<type_die> seen_concrete_type;
+								for (auto i_ctxt = contexts.begin(); 
+									i_ctxt != contexts.end();
+									++i_ctxt)
+								{
+									// which module's DWARF info should we search through?
+									// HACK HACK HACK HACK
+// 									auto pairwise_block = GET_PARENT(i_pattern->second.corresp);
+// 									const char *module_name = 0;
+// 									switch (GET_TYPE(GET_CHILD(i_pattern->second.corresp, 0))
 // 									{
-// 										cerr << "FIXME: found a stub function call using ident " 
-// 											<< **i_arg 
-// 											<< " as " << *found_die
-// 											<< ", child of " << *found_die->get_parent()
-// 											<< endl;
-// 										// FIXME: extract its type information
+// 										case_is_left:
+// 										case CAKE_TOKEN(LR_DOUBLE_ARROW):
+// 											// we are the left-hand module
+// 											module_name = CCP(GET_TEXT(GET_CHILD(pairwise_block, 0)));
+// 											break;
+// 										case_is_right:
+// 										case CAKE_TOKEN(RL_DOUBLE_ARROW):
+// 											module_name = CCP(GET_TEXT(GET_CHILD(pairwise_block, 1)));
+// 											break;
+// 										case CAKE_TOKEN(BI_DOUBLE_ARROW):
+// 											// could be either, but pattern is either 1st or 4th child
+// 											assert(GET_CHILD(i_pattern->second.corresp, 0)
+// 												 == i_pattern->second.pattern
+// 												 || GET_CHILD(i_pattern->second.corresp, 3)
+// 												 ==i_pattern->second.pattern);
+// 											if (GET_CHILD(i_pattern->second.corresp, 0))
+// 												goto case_is_left;
+// 											else goto case_is_right;
+// 										default: assert(false);
 // 									}
-// 								}
-// 								// when we get here, we may have identified some
-// 								// type expectations, or we may not.
-// 								// FIXME: finish this code by
-// 								// - checking all the type expectations are
-// 								// the same
-// 								// - invoking unique_correpsonding_type
-// 								// - filling in the output of this in the fp die
-// 
-// 							} // end if contexts.size() > 0
-// 						}
-					}
+									ev_corresp_map_t::iterator i_corresp;
+									for (i_corresp = ev_corresps.begin();
+											i_corresp != ev_corresps.end();
+											++i_corresp)
+									{
+										if (i_corresp->second.corresp == i_pattern->second.corresp)
+											break;
+									}
+									assert(i_corresp != ev_corresps.end());
+									//assert(module_name && string(module_name) != "");
+									//auto source_module = r.module_inverse_tbl[module_name];
+									//assert(source_module);
+									
+									auto found_die = map_ast_context_to_dwarf_element(
+										*i_ctxt,
+										i_corresp->second.sink, false);
+
+									if (found_die)
+									{
+										cerr << "Found a stub function call using ident " 
+											<< **i_arg 
+											<< " as " << *found_die
+											<< ", child of " << *found_die->get_parent()
+											<< endl;
+										
+										auto has_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(found_die);
+										assert(has_type);
+										shared_ptr<type_die> is_type = has_type->get_type();
+										if (has_type && !is_type)
+										{
+											// this means we found an arg with no type info
+											continue;
+										}
+										
+										if (seen_concrete_type)
+										{
+											if (seen_concrete_type != is_type->get_concrete_type())
+											{
+												// disagreement in usage contexts of ident....
+												assert(false);
+											}
+										} else seen_concrete_type = is_type->get_concrete_type();
+										
+									}
+								}
+								// when we get here, we may have identified some
+								// type expectations, or we may not.
+								
+								if (seen_concrete_type)
+								{
+									// okay, check for unique corresponding type
+									auto found_unique_from_sink_to_source
+									 = unique_corresponding_dwarf_type(
+										seen_concrete_type,
+										i_corresp->second.source,
+										true);
+									auto found_unique_from_source_to_sink
+									 = unique_corresponding_dwarf_type(
+										seen_concrete_type,
+										i_corresp->second.corresp->source,
+										false);
+									assert(found_unique_from_sink_to_source == found_unique_from_source_to_sink);
+									
+									if (found_unique_from_sink_to_source)
+									{
+										// success!
+										auto encap_fp = dynamic_pointer_cast<encap::formal_parameter_die>(
+											*i_fp);
+										encap_fp->set_type(existing);
+										break;
+									}
+								}
+							} // end if contexts.size() > 0
+						} // end if *i_arg
+					} // end for i_arg
 				} // end for i_pattern
 			} // end for i_callname
 		} // end for i_subp
@@ -2514,9 +2606,28 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 							false
 						);
 						assert(found);
+						cerr << "found " << *found;
+						if (found->get_tag() == DW_TAG_unspecified_parameters)
+						{
+							cerr << "Was not expecting to find unspecified_parameters "
+								<< "for subprogram " << *found->get_parent() << endl
+								<< " with children: ";
+							for (auto i_child = found->get_parent()->children_begin();
+								i_child != found->get_parent()->children_end();
+								++i_child)
+							{ cerr << **i_child << endl; }
+								
+							assert(false);
+						}
 						auto has_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(found);
 						assert(has_type);
 						shared_ptr<type_die> is_type = has_type->get_type();
+						if (has_type && !is_type)
+						{
+							// this means we have no type info for this arg.
+							// HMM. This should not happen.
+						}
+						
 						assert(is_type);
 						
 						// now handle implicit indirection (pointerness)

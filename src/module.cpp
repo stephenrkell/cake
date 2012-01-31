@@ -229,6 +229,12 @@ namespace cake
 		#define TAG_AND_TOKEN(tag, token) ((((long long)(tag)) << ((sizeof (int))<<3)) | (token))
 		switch(TAG_AND_TOKEN(falsifier->get_tag(), GET_TYPE(falsifiable)))
 		{
+			case TAG_AND_TOKEN(0, MEMBERSHIP_CLAIM):
+			{
+				/* This is a claim about some top-level member that doesn't exist.
+				 * Not supported for now, but (FIXME) wanted before too long. */
+				goto not_supported;
+			}
 			case TAG_AND_TOKEN(DW_TAG_subprogram, MULTIVALUE):
 			{
 				// This means that some element in the MULTIVALUE
@@ -306,6 +312,7 @@ namespace cake
 					<< std::hex << fp->get_offset() << std::dec << endl;
 				return true;
 			}
+			not_supported:
 			default:
 				cerr << "Warning: did not know how to handle 'declare' claim " 
 					<< CCP(TO_STRING_TREE(falsifiable)) << " on " << *falsifier
