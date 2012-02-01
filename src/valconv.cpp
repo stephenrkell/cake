@@ -171,7 +171,13 @@ namespace cake
 			<< "return *reinterpret_cast<const " 
 			<< w.get_type_name(sink_data_type) << "*>(&__cake_from);" << endl;
 	}
-			
+	
+	void virtual_value_conversion::emit_body()
+	{
+		m_out << "assert(false);" << endl;
+	}
+	
+	
 	struct member_has_name
 	 : public std::unary_function<shared_ptr<member_die> , bool>
 	{
@@ -643,17 +649,20 @@ namespace cake
 						dynamic_pointer_cast<with_named_children_die>(
 							this->sink_data_type
 						)->named_child(i_mapping->second->target.at(0)));
-			auto source_member_type = source_member->get_type();
-			auto sink_member_type = sink_member->get_type();
+			auto source_member_type = source_member ? source_member->get_type() : shared_ptr<type_die>();
+			auto sink_member_type = sink_member ? sink_member->get_type() : shared_ptr<type_die>();
 			
-			auto pair = make_pair(source_member_type, sink_member_type);
+			if (source_member_type && sink_member_type)
+			{
+				auto pair = make_pair(source_member_type, sink_member_type);
 
-			assert(pair.first && pair.second);
-			auto retval = working.insert(pair);
-			assert(retval.second); // assert that we actually inserted something
-			// FIX: use multimap::equal_range to generate a list of all rules
-			// that have the same string, then group these as constraints 
-			// and add them to the dependency
+				assert(pair.first && pair.second);
+				auto retval = working.insert(pair);
+				assert(retval.second); // assert that we actually inserted something
+				// FIX: use multimap::equal_range to generate a list of all rules
+				// that have the same string, then group these as constraints 
+				// and add them to the dependency
+			}
 		}
 		//cerr << "DEPENDENCIES of conversion " 
 		//	<< " from " << *this->source_data_type

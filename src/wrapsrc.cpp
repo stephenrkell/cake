@@ -181,18 +181,21 @@ assert(false && "disabled support for inferring positional argument mappings");
 							case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
 								assert(false);
 							case CAKE_TOKEN(NAME_AND_INTERPRETATION):
+							{
+								INIT;
+								BIND2(valuePattern, definiteMemberName);
+								if (GET_TYPE(definiteMemberName) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
 								{
-									INIT;
-									BIND3(valuePattern, definiteMemberName, DEFINITE_MEMBER_NAME);
 									definite_member_name mn = 
 										read_definite_member_name(definiteMemberName);
 									if (mn.size() > 1) RAISE(valuePattern, "may not be compound");
 									// output the variable type, or unspecified_wordsize_type
-									if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? " ::cake::unspecified_wordsize_type" : get_type_name(
-										(*i_arg)->get_type()));
-									// output the variable name, prefixed 
-									m_out << ' ' << arg_name_prefix << argnum /*<< '_' << mn.at(0)*/;
-								} break;
+								} else assert(GET_TYPE(definiteMemberName) == CAKE_TOKEN(ANY_VALUE));
+								// output the variable name, prefixed 
+								//m_out << ' ' << arg_name_prefix << argnum /*<< '_' << mn.at(0)*/;
+								// NO -- now done by FALL THROUGH
+							} // FALL THROUGH
+							case CAKE_TOKEN(ANY_VALUE):
 							case CAKE_TOKEN(INDEFINITE_MEMBER_NAME):
 							case CAKE_TOKEN(METAVAR):
 							case CAKE_TOKEN(KEYWORD_CONST):

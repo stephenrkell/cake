@@ -118,15 +118,16 @@ namespace cake
 	
 	struct basic_value_conversion
 	{
-        module_ptr source;
-        boost::shared_ptr<dwarf::spec::type_die> source_data_type;
-        antlr::tree::Tree *source_infix_stub;
-        module_ptr sink;
-        boost::shared_ptr<dwarf::spec::type_die> sink_data_type;
-        antlr::tree::Tree *sink_infix_stub;
-        antlr::tree::Tree *refinement;
+		module_ptr source;
+
+		boost::shared_ptr<dwarf::spec::type_die> source_data_type;
+		antlr::tree::Tree *source_infix_stub;
+		module_ptr sink;
+		boost::shared_ptr<dwarf::spec::type_die> sink_data_type;
+		antlr::tree::Tree *sink_infix_stub;
+		antlr::tree::Tree *refinement;
 		bool source_is_on_left;
-        antlr::tree::Tree *corresp; // for generating errors
+		antlr::tree::Tree *corresp; // for generating errors
 		bool init_only;
 		
 		friend std::ostream& operator<<(std::ostream& s, const basic_value_conversion& c);
@@ -202,6 +203,18 @@ namespace cake
 	{
 	public:
 		reinterpret_value_conversion(wrapper_file& w,
+			srk31::indenting_ostream& out, 
+			const basic_value_conversion& basic) 
+		: value_conversion(w, out, basic) {}
+		
+		void emit_body();
+	};
+	
+	// virtual data types
+	class virtual_value_conversion : public value_conversion
+	{
+	public:
+		virtual_value_conversion(wrapper_file& w,
 			srk31::indenting_ostream& out, 
 			const basic_value_conversion& basic) 
 		: value_conversion(w, out, basic) {}

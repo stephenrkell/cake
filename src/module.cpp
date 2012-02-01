@@ -27,6 +27,7 @@ using dwarf::spec::base_type_die;
 using dwarf::spec::pointer_type_die;
 using dwarf::spec::typedef_die;
 using dwarf::spec::file_toplevel_die;
+using dwarf::spec::with_type_describing_layout_die;
 using namespace dwarf;
 
 namespace cake
@@ -219,6 +220,7 @@ namespace cake
 		debug_out << "DECLARE found falsifiable claim at token " //<< CCP(falsifiable->getText())
 			<< CCP(TO_STRING_TREE(falsifiable))
 			<< ", " << *falsifier << endl
+			<< "Missing hint: " << (missing ? CCP(TO_STRING_TREE(missing)) : "(none given)") << endl
 			<< "Proceeding to add module info, if we know how." << std::endl;
 
 		assert(falsifier);
@@ -269,9 +271,25 @@ namespace cake
 				cerr << "Added formal parameter at 0x" << std::hex
 					<< created->get_offset() << std::dec << endl;
 				
+				antlr::tree::Tree *recursive_claim;
+				if (GET_TYPE(missing) == CAKE_TOKEN(MEMBERSHIP_CLAIM))
+				{
+					/* This means we have a name. We handle this now rather than
+					 * issuing a confusing recursive claim. */
+					INIT;
+					BIND2(missing, memberName);
+					BIND2(missing, description);
+					recursive_claim = description;
+					assert(GET_TYPE(memberName) == CAKE_TOKEN(DEFINITE_MEMBER_NAME));
+					auto dmn = read_definite_member_name(memberName);
+					assert(dmn.size() == 1);
+					created->set_name(dmn.at(0));
+					
+				} else recursive_claim = missing;
+				
 				// recurse on the parameter, to set up its attributes
 				bool param_success = eval_claim_depthfirst(
-					missing,
+					recursive_claim,
 					dynamic_pointer_cast<spec::basic_die>(created),
 					p_resolver,
 					&module_described_by_dwarf::declare_handler);
@@ -303,14 +321,35 @@ namespace cake
 					p_resolver,
 					&module_described_by_dwarf::declare_handler);
 			}
+			case TAG_AND_TOKEN(DW_TAG_formal_parameter, DEFINITE_MEMBER_NAME): // HACK
 			case TAG_AND_TOKEN(DW_TAG_formal_parameter, IDENT): // HACK
 			{
 				auto fp = dynamic_pointer_cast<encap::formal_parameter_die>(falsifier);
 				assert(fp);
-				fp->set_name(string(CCP(GET_TEXT(falsifiable))));
-				cerr << "Added name '" << CCP(GET_TEXT(falsifiable)) << "' to fp at 0x" 
+				string raw_name = 
+					(GET_TYPE(falsifiable) == CAKE_TOKEN(DEFINITE_MEMBER_NAME)) 
+						? read_definite_member_name(falsifiable).at(0)
+						: string(CCP(GET_TEXT(falsifiable)));
+				string unescaped_name = unescape_ident(raw_name);
+				fp->set_name(unescaped_name);
+				cerr << "Added name '" << unescaped_name
+					<< "' to fp at 0x" 
 					<< std::hex << fp->get_offset() << std::dec << endl;
 				return true;
+			}
+			case TAG_AND_TOKEN(DW_TAG_formal_parameter, VALUE_DESCRIPTION):
+			{
+				auto fp = dynamic_pointer_cast<encap::formal_parameter_die>(falsifier);
+				assert(fp);
+				// we can only proceed if we currently have no type
+				if (fp->get_type()) return false;
+				else
+				{
+					auto type_ast = GET_CHILD(falsifiable, 0);
+					auto existing_type = ensure_dwarf_type(type_ast);
+					fp->set_type(existing_type);
+					return true;
+				}
 			}
 			not_supported:
 			default:
@@ -428,6 +467,7 @@ namespace cake
 								handler
 							) );
 						// FIXME: other with named children can go here
+						case TAG_AND_TOKEN(DW_TAG_subprogram, MEMBERSHIP_CLAIM):
 						case TAG_AND_TOKEN(DW_TAG_compile_unit, MEMBERSHIP_CLAIM):
 							RETURN_VALUE_IS( eval_claim_for_with_named_children_and_MEMBERSHIP_CLAIM(
 								claim,
@@ -460,18 +500,45 @@ namespace cake
 								p_resolver,
 								handler) );
 						// FIXME: others which satisfy value descriptions go here
-						case TAG_AND_TOKEN(DW_TAG_subprogram, VALUE_DESCRIPTION): 
-						case TAG_AND_TOKEN(DW_TAG_variable, VALUE_DESCRIPTION):
-						case TAG_AND_TOKEN(DW_TAG_formal_parameter, VALUE_DESCRIPTION): {
+						case TAG_AND_TOKEN(DW_TAG_subprogram, VALUE_DESCRIPTION): {
+							// a subprogram is its own type/description, so
 							// we simply unpack the description and continue
 							INIT;
 							BIND2(claim, valueDescription);
 							RETURN_VALUE_IS( eval_claim_depthfirst(
 								valueDescription,
-								dynamic_pointer_cast<spec::with_named_children_die>(p_d),
+								p_d,
 								p_resolver,
 								handler) );
 						}
+						case TAG_AND_TOKEN(DW_TAG_variable, VALUE_DESCRIPTION):
+						case TAG_AND_TOKEN(DW_TAG_formal_parameter, VALUE_DESCRIPTION): {
+							// variables and fps are described by their type,
+							// which may be missing. Check that first.
+							auto with_type = dynamic_pointer_cast<with_type_describing_layout_die>(
+								p_d);
+							if (with_type && with_type->get_type())
+							{
+								// unpack the description and recurse on the type
+								INIT;
+								BIND2(claim, valueDescription);
+								RETURN_VALUE_IS( eval_claim_depthfirst(
+									valueDescription,
+									with_type->get_type(),
+									p_resolver,
+									handler) );
+							}
+							else
+							{
+								// we're missing some information.
+								RETURN_VALUE_IS ( (this->*handler)(claim, p_d, 0, p_resolver) );
+							}
+						}
+						case TAG_AND_TOKEN(DW_TAG_formal_parameter, DEFINITE_MEMBER_NAME):
+							// HACK
+							if (read_definite_member_name(claim).size() != 1) RAISE(claim,
+								"formal parameter names must be atomic");
+							// else fall through
 						case TAG_AND_TOKEN(DW_TAG_formal_parameter, IDENT): // HACK
 							if (p_d->get_name() && *p_d->get_name() == string(CCP(GET_TEXT(claim))))
 							RETURN_VALUE_IS( true );
@@ -504,8 +571,16 @@ namespace cake
 							assert(subprogram);
 							bool ran_out_of_fps = false;
 							auto i_fp = subprogram->formal_parameter_children_begin();
+							// FIXME: we should use recursively_and_subclaims at this point
+							// ... but need to accommodate workarounds for too-few-fps
+							// ... and ellipsis
 							FOR_ALL_CHILDREN(claim)
 							{
+								if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS))
+								{
+									break; // HACK
+								}
+								
 								if (i_fp == subprogram->formal_parameter_children_end())
 								{ 
 									ran_out_of_fps = true;
@@ -516,16 +591,36 @@ namespace cake
 								}
 
 								// else
+								bool subclaim_is_positional = (GET_TYPE(n) != CAKE_TOKEN(MEMBERSHIP_CLAIM));
 								auto p_fp = ran_out_of_fps ? shared_ptr<spec::basic_die>() : *i_fp;
 								if (!eval_claim_depthfirst(
 									n,
-									p_fp,
+									subclaim_is_positional ? p_fp : subprogram,
 									p_resolver,
 									handler)) RETURN_VALUE_IS( (this->*handler)(n, p_fp, 0, p_resolver) );
 
 								if (!ran_out_of_fps) ++i_fp;
 							}
 							RETURN_VALUE_IS(true);
+						}
+						case TAG_AND_TOKEN(DW_TAG_pointer_type, KEYWORD_PTR): {
+							// this part is true, but overall truth depends on the pointed-to type
+							auto as_pointer = dynamic_pointer_cast<spec::pointer_type_die>(p_d);
+							assert(as_pointer);
+							assert(GET_CHILD_COUNT(claim) == 1);
+							//if (!as_pointer->get_type()) 
+							//{
+							//	// this is a void pointer type
+							//}
+							//else if (GET_CHILD_COUNT(claim) == 0 || !as_pointer->get_type())
+							//{
+							//	// we're missing something
+							//}
+							RETURN_VALUE_IS( eval_claim_depthfirst(
+								GET_CHILD(claim, 0),
+								as_pointer->get_type(),
+								p_resolver,
+								handler) );
 						}
 						case TAG_AND_TOKEN(0, MEMBERSHIP_CLAIM): {
 							INIT;
@@ -596,6 +691,7 @@ namespace cake
 							p_d,
 							p_resolver,
 							recursive_event_handler);
+						if (!retval) cerr << "Recursive ANDing of claims failed at this point." << endl;
 						/* Note: if a subclaim is found to be false, the handler will be called *before*
 						 * we get a false result. So potentially there is another bite at the cherry here --
 						 * we might locally fail to override some DWARF data, but then get the chance
@@ -748,7 +844,7 @@ namespace cake
 				return shared_ptr<spec::type_die>();
 			}
 			case CAKE_TOKEN(ARRAY): assert(false);
-			case CAKE_TOKEN(KEYWORD_VOID): assert(false); // for now
+			case CAKE_TOKEN(KEYWORD_VOID): return shared_ptr<type_die>(); // void is not reified
 			case CAKE_TOKEN(KEYWORD_ENUM): assert(false); // for now
 			case CAKE_TOKEN(FUNCTION_ARROW): assert(false); // for now
 			case CAKE_TOKEN(ANY_VALUE):
@@ -768,7 +864,7 @@ namespace cake
 						}
 					}
 				}
-				return shared_ptr<spec::type_die>();
+				assert(false); //return shared_ptr<spec::type_die>();
 			}
 			default: assert(false);
 		}
@@ -798,6 +894,23 @@ namespace cake
 			);
 		dynamic_pointer_cast<encap::typedef_die>(created)->set_type(p_d);
 		return dynamic_pointer_cast<spec::type_die>(created);
+	}
+	
+	shared_ptr<spec::structure_type_die>
+	module_described_by_dwarf::create_empty_structure_type(
+		const string& name
+	)
+	{
+		auto cu = *get_ds().toplevel()->compile_unit_children_begin();
+		shared_ptr<encap::basic_die> encap_cu = dynamic_pointer_cast<encap::basic_die>(cu);
+		auto created =
+			dwarf::encap::factory::for_spec(
+				dwarf::spec::DEFAULT_DWARF_SPEC
+			).create_die(DW_TAG_structure_type,
+				encap_cu,
+				opt<string>(name) 
+			);
+		return dynamic_pointer_cast<spec::structure_type_die>(created);
 	}
 	
 	shared_ptr<type_die> module_described_by_dwarf::create_dwarf_type(antlr::tree::Tree *t)

@@ -105,6 +105,8 @@ namespace cake {
 
 			antlr::tree::Tree *return_leg;
 			
+			antlr::tree::Tree *corresp;
+			
 			// if we created a temporary AST, for implicit rules, free these ptrs
 			antlr::tree::Tree *source_pattern_to_free; 
 			antlr::tree::Tree *sink_pattern_to_free;
@@ -124,7 +126,8 @@ namespace cake {
 
 		void ensure_all_artificial_data_types(
 			antlr::tree::Tree *t,
-			module_ptr p_module);
+			module_ptr p_module,
+			optional<const ev_corresp&> corresp = optional<const ev_corresp&>());
 	
 	public:
 		static iface_pair sorted(iface_pair p) 
@@ -298,6 +301,7 @@ namespace cake {
                 antlr::tree::Tree *sink_expr,
                 antlr::tree::Tree *sink_infix_stub,
 				antlr::tree::Tree *return_leg,
+				antlr::tree::Tree *corresp_head,
                 bool free_source = false,
                 bool free_sink = false,
 				bool init_only = false);
