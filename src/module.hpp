@@ -166,6 +166,10 @@ namespace cake
 		shared_ptr<type_die> create_typedef(shared_ptr<type_die> p_d, const string& name);
 		
 		shared_ptr<spec::structure_type_die> create_empty_structure_type(const string& name);
+		shared_ptr<spec::reference_type_die>
+		ensure_reference_type_with_target(shared_ptr<spec::type_die> t);
+		shared_ptr<spec::reference_type_die>
+		create_reference_type_with_target(shared_ptr<spec::type_die> t);
 	};
 
 	class elf_module : 	private ifstream_holder, 

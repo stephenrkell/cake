@@ -28,6 +28,8 @@ using dwarf::spec::type_die;
 using dwarf::spec::subprogram_die;
 using dwarf::spec::pointer_type_die;
 using dwarf::spec::opt;
+using dwarf::spec::abstract_dieset;
+using srk31::indenting_ostream;
 
 namespace cake
 {
@@ -98,7 +100,8 @@ namespace cake
 			boost::filesystem::path(id + "_wrap.cpp").string()),
 		wrap_file_name((boost::filesystem::path(r.in_filename).branch_path() 
 				/ wrap_file_makefile_name).string()),
-		wrap_file(wrap_file_name.c_str()),
+		raw_wrap_file(wrap_file_name.c_str()),
+		wrap_file(raw_wrap_file),
 		p_wrap_code(new wrapper_file(*this, compiler, wrap_file)), wrap_code(*p_wrap_code)
 	{
 		/* Add a derived module to the module table, and keep the pointer. */
@@ -130,7 +133,7 @@ namespace cake
 	}
 	
 	link_derivation::~link_derivation() 
-	{ wrap_file.flush(); wrap_file.close(); delete p_wrap_code; }
+	{ raw_wrap_file.flush(); raw_wrap_file.close(); delete p_wrap_code; }
 
 	void link_derivation::extract_definition()
 	{
@@ -960,62 +963,63 @@ namespace cake
 					<< " { namespace " << r.module_inverse_tbl[*i] << " {" << endl;
 					
 			wrap_file << "\t#include \"" << (*i)->get_filename() << ".hpp\"" << endl;
-			// also output any extra definitions we have added to the dieset;
+			// also output any extra definitions we have added to the dieset.
+			// We start with the firss new offset, then add its siblings (only);
 			// these will mainly be typedefs and pointer types
-			for (auto i_die = (*i)->get_ds().find((*i)->greatest_preexisting_offset());
-				i_die != (*i)->get_ds().end();
-				++i_die)
+			for (abstract_dieset::iterator i_die(
+				 	(*i)->get_ds().find((*i)->greatest_preexisting_offset() + 1),
+					abstract_dieset::siblings_policy_sg);
+					i_die != (*i)->get_ds().end();
+					++i_die)
 			{
-				// we skip the first one because we didn't create that one 
-				if (i_die == (*i)->get_ds().find((*i)->greatest_preexisting_offset())) continue;
-				
-				// now output something if we know how
-				switch((*i_die)->get_tag())
-				{
-					case DW_TAG_pointer_type: {
-						string name_to_use
-						 = (*i_die)->get_name() 
-						 ? compiler.cxx_name_from_string(*(*i_die)->get_name(), "_dwarfhpp_") 
-						 : compiler.create_ident_for_anonymous_die(*i_die);
-
-						if (!dynamic_pointer_cast<spec::pointer_type_die>(*i_die)->get_type())
-						{
-							wrap_file << "typedef void *" 
-								<< compiler.protect_ident(name_to_use) 
-								<< ";" << endl;
-						}
-						else 
-						{
-							wrap_file << compiler.make_typedef(
-								dynamic_pointer_cast<spec::type_die>(*i_die),
-								name_to_use
-							) << endl;
-						}
-					}
-					break;
-					case DW_TAG_typedef: {
-						auto name_to_use = (*i_die)->get_name() 
-							? *(*i_die)->get_name()
-							: compiler.create_ident_for_anonymous_die(*i_die);
-						if (dynamic_pointer_cast<spec::typedef_die>(*i_die)->get_type())
-						{	
-							wrap_file << compiler.make_typedef(
-								dynamic_pointer_cast<spec::typedef_die>(*i_die)->get_type(),
-								name_to_use);
-						} 
-						else
-						{
-							wrap_file << "typedef void " << name_to_use << ";";
-						}
-						wrap_file << endl;
-					} break;
-					default:
-						wrap_file << "// FIXME: we seem to have added a DIE of tag " 
-							<< (*i_die)->get_spec().tag_lookup((*i_die)->get_tag()) << ", name "
-							<< ((*i_die)->get_name() ? *(*i_die)->get_name() : "(no name)")
-							<< " at offset 0x" << std::hex << (*i_die)->get_offset() << std::dec << endl;
-					break;
-				}
+// 				// now output something if we know how
+// 				switch((*i_die)->get_tag())
+// 				{
+// 					case DW_TAG_pointer_type: {
+// 						string name_to_use
+// 						 = (*i_die)->get_name() 
+// 						 ? compiler.cxx_name_from_string(*(*i_die)->get_name(), "_dwarfhpp_") 
+// 						 : compiler.create_ident_for_anonymous_die(*i_die);
+// 
+// 						if (!dynamic_pointer_cast<spec::pointer_type_die>(*i_die)->get_type())
+// 						{
+// 							wrap_file << "typedef void *" 
+// 								<< compiler.protect_ident(name_to_use) 
+// 								<< ";" << endl;
+// 						}
+// 						else 
+// 						{
+// 							wrap_file << compiler.make_typedef(
+// 								dynamic_pointer_cast<spec::type_die>(*i_die),
+// 								name_to_use
+// 							) << endl;
+// 						}
+// 					}
+// 					break;
+// 					case DW_TAG_typedef: {
+// 						auto name_to_use = (*i_die)->get_name() 
+// 							? *(*i_die)->get_name()
+// 							: compiler.create_ident_for_anonymous_die(*i_die);
+// 						if (dynamic_pointer_cast<spec::typedef_die>(*i_die)->get_type())
+// 						{	
+// 							wrap_file << compiler.make_typedef(
+// 								dynamic_pointer_cast<spec::typedef_die>(*i_die)->get_type(),
+// 								name_to_use);
+// 						} 
+// 						else
+// 						{
+// 							wrap_file << "typedef void " << name_to_use << ";";
+// 						}
+// 						wrap_file << endl;
+// 					} break;
+// 					default:
+// 						wrap_file << "// FIXME: we seem to have added a DIE of tag " 
+// 							<< (*i_die)->get_spec().tag_lookup((*i_die)->get_tag()) << ", name "
+// 							<< ((*i_die)->get_name() ? *(*i_die)->get_name() : "(no name)")
+// 							<< " at offset 0x" << std::hex << (*i_die)->get_offset() << std::dec << endl;
+// 					break;
+// 				}
+				compiler.emit_model<0>(wrap_file, i_die);
 				
 			}
 			
@@ -2462,7 +2466,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 							false
 						);
 						assert(found);
-						cerr << "found " << *found;
+						cerr << "found " << *found << " as DWARF context of " 
+							<< CCP(TO_STRING_TREE(target_type_in_ast)) << endl;
 						if (found->get_tag() == DW_TAG_unspecified_parameters)
 						{
 							cerr << "Was not expecting to find unspecified_parameters "
@@ -2477,9 +2482,17 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 						}
 						auto can_have_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(found);
 						assert(can_have_type);
+						auto maybe_subprogram = can_have_type->get_parent();
+						assert(maybe_subprogram);
+						shared_ptr<subprogram_die> subprogram;
+						subprogram = dynamic_pointer_cast<subprogram_die>(maybe_subprogram);
 						shared_ptr<type_die> is_type = can_have_type->get_type();
+						shared_ptr<spec::with_type_describing_layout_die> has_type = can_have_type;
 						if (can_have_type && !is_type)
 						{
+							cerr << "Guessing type info for arg "
+								<< *can_have_type
+								<< endl;
 							// this means we have no type info for this arg.
 							// This might happen if we use "as" in an
 							// event pattern (=> caller-side => no DWARF info).
@@ -2548,7 +2561,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 									i_ctxt != contexts.end();
 									++i_ctxt)
 								{
-									auto found_die = map_ast_context_to_dwarf_element(
+									shared_ptr<spec::basic_die> found_die
+									 = map_ast_context_to_dwarf_element(
 										*i_ctxt,
 										opt_corresp->sink, false);
 
@@ -2560,7 +2574,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 											<< ", child of " << *found_die->get_parent()
 											<< endl;
 										
-										auto has_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(found_die);
+										has_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(found_die);
 										assert(has_type);
 										shared_ptr<type_die> is_type = has_type->get_type();
 										if (has_type && !is_type)
@@ -2653,11 +2667,31 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 						assert(is_type);
 						
 						// if we are dealing with a virtual data type, we do things differently
-						if (GET_TYPE(GET_CHILD(GET_PARENT(target_type_in_ast), 1))
+						auto interp_head = GET_PARENT(target_type_in_ast);
+						assert(GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_AS)
+						   ||  GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_IN_AS)
+						   ||  GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_OUT_AS)
+						   ||  GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_INTERPRET_AS));
+						if (GET_TYPE(GET_CHILD(interp_head, 1))
 							== CAKE_TOKEN(VALUE_CONSTRUCT))
 						{
+							antlr::tree::Tree *val_construct = GET_CHILD(interp_head, 1);
+							
 							// for now, we only do this for pointers
-							assert(is_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type);
+							if (is_type->get_concrete_type()->get_tag() != DW_TAG_pointer_type)
+							{
+								cerr << "Bad type: " << *is_type->get_concrete_type() << endl;
+								cerr << "For interpretation: " << CCP(TO_STRING_TREE(interp_head)) << endl;
+								cerr << "Referenced by: " << *has_type->get_parent() << endl;
+								cerr << "All referer's children: " << endl;
+								for (auto i_child = has_type->get_parent()->children_begin();
+									i_child != has_type->get_parent()->children_end();
+									++i_child)
+								{
+									cerr << **i_child;
+								}
+								assert(false);
+							}
 							shared_ptr<encap::pointer_type_die> is_pointer_type
 							 = dynamic_pointer_cast<encap::pointer_type_die>(is_type);
 							// also for now: only do this for void-typed pointers!
@@ -2668,10 +2702,57 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 								CCP(GET_TEXT(target_type_in_ast)));
 							dynamic_pointer_cast<encap::structure_type_die>(created)
 								->set_artificial(true);
+							/* We create a reference-typed member for each argument. */
+							{
+								INIT;
+								FOR_ALL_CHILDREN(val_construct)
+								{
+									ALIAS3(n, named_field, IDENT);
+									string field_name = unescape_ident(CCP(GET_TEXT(named_field)));
+									// look for a parameter of this name, and grab its type
+									shared_ptr<type_die> found_type;
+									for (auto i_child = subprogram->formal_parameter_children_begin();
+										i_child != subprogram->formal_parameter_children_end();
+										++i_child)
+									{
+										if ((*i_child)->get_name() && *(*i_child)->get_name()
+											== field_name)
+										{
+											if (!(*i_child)->get_type())
+											{
+												RAISE(named_field, 
+													"virtual data types require parameter type information"
+												);
+											}
+											found_type = (*i_child)->get_type();
+											break;
+										}
+									}
+									if (!found_type)
+									{
+										cerr << "Problem with " << *subprogram << endl;
+										RAISE(named_field, "no such field in subprogram");
+									}
+									
+									// now we have a type; add a member
+									auto member_type = p_module->ensure_reference_type_with_target(
+										found_type);
+									auto member = dwarf::encap::factory::for_spec(
+										dwarf::spec::DEFAULT_DWARF_SPEC
+									).create_die(DW_TAG_member,
+										dynamic_pointer_cast<encap::structure_type_die>(created),
+										opt<string>(field_name)
+									);
+									dynamic_pointer_cast<encap::member_die>(member)->set_type(
+										dynamic_pointer_cast<spec::type_die>(member_type));
+
+								}
+							}
 							
 							is_pointer_type->set_type(dynamic_pointer_cast<spec::type_die>(created));
 							
-							cerr << "Created opaque structure named " << CCP(GET_TEXT(target_type_in_ast))
+							cerr << "Created opaque structure named " 
+								<< CCP(GET_TEXT(target_type_in_ast))
 								<< endl;
 							cerr << "Really! " << *created  << endl;
 						}

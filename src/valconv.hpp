@@ -12,6 +12,7 @@ namespace cake
 {
 	using std::string;
 	using std::map;
+	using std::vector;
 	using boost::optional;
 	using boost::shared_ptr;
 	using namespace dwarf;
@@ -49,6 +50,9 @@ namespace cake
 		optional<string> indirect_remote_tagstring_out;
 		
 		bool is_pointer_to_uninit;
+		
+		/** Whether the wrapper will handle crossover. Only meaningful if do_not_crossover. */
+		bool crossover_by_wrapper;
 	};
 	//typedef std::map<std::string, bound_var_info> environment;
 	struct environment : public map<string, bound_var_info>
@@ -210,18 +214,6 @@ namespace cake
 		void emit_body();
 	};
 	
-	// virtual data types
-	class virtual_value_conversion : public value_conversion
-	{
-	public:
-		virtual_value_conversion(wrapper_file& w,
-			srk31::indenting_ostream& out, 
-			const basic_value_conversion& basic) 
-		: value_conversion(w, out, basic) {}
-		
-		void emit_body();
-	};
-	
 	// primitive_value_conversion impl
 	class primitive_value_conversion : public virtual value_conversion
 	{
@@ -237,8 +229,10 @@ namespace cake
 		module_ptr source_module;
 		module_ptr target_module;
 		std::pair<module_ptr, module_ptr> modules;
-		void emit_buffer_declaration();
-		void write_single_field(
+		virtual void emit_source_object_alias();
+		virtual void emit_target_buffer_declaration();
+		virtual void emit_initial_declarations();
+		virtual void write_single_field(
 			codegen_context& ref_ctxt,
 			string target_field_selector,
 			optional<string> unique_source_field_selector,
@@ -246,7 +240,6 @@ namespace cake
 			antlr::tree::Tree *source_infix,
 			antlr::tree::Tree *sink_infix);
 	};
-	
 	
 	// structural impl
 	class structural_value_conversion : public virtual value_conversion, 
@@ -298,8 +291,24 @@ namespace cake
 			bool& out_init_and_update_are_identical);
 		
 		void emit_body();
-		std::vector< dep
-				> get_dependencies();
+		vector<dep> get_dependencies();
+	};
+	
+	// virtual data types
+	class virtual_value_conversion : public structural_value_conversion
+	{
+	public:
+		virtual_value_conversion(wrapper_file& w,
+			srk31::indenting_ostream& out, 
+			const basic_value_conversion& basic,
+			bool dummy = false) 
+		: value_conversion(w, out, basic), 
+		  structural_value_conversion(w, out, basic, false, dummy) {}
+		
+		void emit_body();
+		vector<dep> get_dependencies()
+		{ return vector<dep>(); }
+		void emit_target_buffer_declaration();
 	};
 	
 } // end namespace cake

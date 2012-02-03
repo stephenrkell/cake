@@ -280,10 +280,13 @@ namespace cake
 					BIND2(missing, memberName);
 					BIND2(missing, description);
 					recursive_claim = description;
-					assert(GET_TYPE(memberName) == CAKE_TOKEN(DEFINITE_MEMBER_NAME));
-					auto dmn = read_definite_member_name(memberName);
-					assert(dmn.size() == 1);
-					created->set_name(dmn.at(0));
+					if (GET_TYPE(memberName) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
+					{
+						auto dmn = read_definite_member_name(memberName);
+						assert(dmn.size() == 1);
+						created->set_name(dmn.at(0));
+					}
+					else cerr << "Not setting name of this fp" << endl;
 					
 				} else recursive_claim = missing;
 				
@@ -564,7 +567,6 @@ namespace cake
 							}
 							else RETURN_VALUE_IS( (this->*handler)(claim, p_d, 0, p_resolver) );
 						}
-
 						case TAG_AND_TOKEN(DW_TAG_subprogram, MULTIVALUE): {
 							INIT;
 							auto subprogram = dynamic_pointer_cast<spec::subprogram_die>(p_d);
@@ -595,7 +597,7 @@ namespace cake
 								auto p_fp = ran_out_of_fps ? shared_ptr<spec::basic_die>() : *i_fp;
 								if (!eval_claim_depthfirst(
 									n,
-									subclaim_is_positional ? p_fp : subprogram,
+									subclaim_is_positional ? p_fp : subprogram, // HACK
 									p_resolver,
 									handler)) RETURN_VALUE_IS( (this->*handler)(n, p_fp, 0, p_resolver) );
 
@@ -621,6 +623,22 @@ namespace cake
 								as_pointer->get_type(),
 								p_resolver,
 								handler) );
+						}
+						case TAG_AND_TOKEN(DW_TAG_unspecified_parameters, VALUE_DESCRIPTION): {
+							cerr << "Warning: unspecifid_parameters satisfies no value descriptions."
+								<< endl;
+							return false; // HACK: do not call handler, for now
+						}
+						case TAG_AND_TOKEN(DW_TAG_base_type, IDENT):
+						case TAG_AND_TOKEN(DW_TAG_pointer_type, IDENT): {
+							if (p_d->get_name()
+							&& *p_d->get_name() == unescape_ident(CCP(GET_TEXT(claim))))
+								RETURN_VALUE_IS(true);
+							else
+							{
+								// HACK: don't call handler, for now
+								RETURN_VALUE_IS(false);
+							}
 						}
 						case TAG_AND_TOKEN(0, MEMBERSHIP_CLAIM): {
 							INIT;
@@ -791,7 +809,7 @@ namespace cake
 			} break;
 			case CAKE_TOKEN(IDENT): {
 				// we resolve the ident and check it resolves to a type
-				definite_member_name dmn; dmn.push_back(CCP(GET_TEXT(t)));
+				definite_member_name dmn; dmn.push_back(unescape_ident(CCP(GET_TEXT(t))));
 				auto found = this->get_ds().toplevel()->visible_resolve(
 					dmn.begin(),
 					dmn.end()
@@ -911,6 +929,47 @@ namespace cake
 				opt<string>(name) 
 			);
 		return dynamic_pointer_cast<spec::structure_type_die>(created);
+	}
+	
+	shared_ptr<spec::reference_type_die>
+	module_described_by_dwarf::ensure_reference_type_with_target(
+		shared_ptr<spec::type_die> t
+	)
+	{
+		auto gchildren_seq =  get_ds().toplevel()->grandchildren_sequence();
+		for (auto i_gchild = gchildren_seq->begin(); i_gchild != gchildren_seq->end();
+			++i_gchild)
+		{
+			if ((*i_gchild)->get_tag() == DW_TAG_reference_type)
+			{
+				cerr << "Found: " << **i_gchild << endl;
+				auto reftype = dynamic_pointer_cast<spec::reference_type_die>(*i_gchild);
+				assert(reftype);
+				if (reftype->get_type() && reftype->get_type() == t)
+				{
+					return reftype;
+				}
+			}
+		}
+		return create_reference_type_with_target(t);
+	}
+	
+	shared_ptr<spec::reference_type_die>
+	module_described_by_dwarf::create_reference_type_with_target(
+		shared_ptr<spec::type_die> t
+	)
+	{
+		auto cu = t->enclosing_compile_unit();
+		shared_ptr<encap::basic_die> encap_cu = dynamic_pointer_cast<encap::basic_die>(cu);
+		auto created =
+			dwarf::encap::factory::for_spec(
+				dwarf::spec::DEFAULT_DWARF_SPEC
+			).create_die(DW_TAG_reference_type,
+				encap_cu,
+				opt<string>() 
+			);
+		dynamic_pointer_cast<encap::reference_type_die>(created)->set_type(t);
+		return dynamic_pointer_cast<spec::reference_type_die>(created);
 	}
 	
 	shared_ptr<type_die> module_described_by_dwarf::create_dwarf_type(antlr::tree::Tree *t)
@@ -1057,6 +1116,7 @@ namespace cake
 					i_child != p_d->children_end();
 					++i_child)
 				{
+					// here we are ORing together subclaims
 					if (eval_claim_depthfirst(subclaim, *i_child, p_resolver, handler))
 					{
 						return true;

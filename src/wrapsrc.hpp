@@ -36,7 +36,7 @@ namespace cake
         cxx_target& compiler;
         link_derivation& m_d;
         request& m_r;
-        indenting_ostream m_out;
+        indenting_ostream& m_out;
         const string ns_prefix;
         int binding_count;
 
@@ -80,7 +80,7 @@ namespace cake
 		string get_type_name_prefix(
 			shared_ptr<spec::type_die> t/*,
 				const std::string& namespace_prefix*/);
-				
+		string basic_name_for_argnum(int argnum);
 	private:
 		
 		// Cake high-level constructs
@@ -122,6 +122,13 @@ namespace cake
 			bool direction_is_out,
 			bool do_not_sync = false
 			);
+		
+// 		environment
+// 		do_virtual_crossover(
+// 			module_ptr old_module_context,
+// 			const environment& env,
+// 			module_ptr new_module_context
+// 		);
 
 		struct value_conversion_params_t
 		{
@@ -280,7 +287,7 @@ namespace cake
 			bool is_init);
 
     public:
-        wrapper_file(link_derivation& d, cxx_target& c, std::ostream& out) 
+        wrapper_file(link_derivation& d, cxx_target& c, indenting_ostream& out) 
         : 	compiler(c),
         	m_d(d), m_r(d.r), m_out(out), ns_prefix("cake::" + m_d.namespace_name()), 
             binding_count(0) {}

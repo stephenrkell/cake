@@ -964,7 +964,6 @@ namespace cake
 	)
 	{
 		if (!node) return boost::shared_ptr<dwarf::spec::basic_die>();
-//		antlr::tree::Tree *prev_node = 0;
 		assert(GET_TYPE(node) == CAKE_TOKEN(IDENT)
 		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_IN_AS)
 		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_OUT_AS)
@@ -991,9 +990,9 @@ namespace cake
 
 		//auto i_path = path.rbegin();
 		antlr::tree::Tree *begin_node = node;
-		antlr::tree::Tree *prev_node = 0;
-		antlr::tree::Tree *prev_prev_node = 0;
-		while (node && (prev_prev_node = prev_node, prev_node = node, ((node = GET_PARENT(node)) != NULL)))
+		vector<antlr::tree::Tree *> node_ancestors;
+		node_ancestors.push_back(node);
+		while (node && (node_ancestors.push_back(node), (node = GET_PARENT(node)) != NULL))
 		//for (auto i_node = parent_chain.begin(); i_node != parent_chain.end(); ++i_node, ++i_path)
 		{
 			if (!node) 
@@ -1039,11 +1038,13 @@ namespace cake
 						for (auto i_fp = found_subp->formal_parameter_children_begin(); i_fp != 
 							found_subp->formal_parameter_children_end(); ++i_fp, ++num)
 						{
-							cerr << "Is our context argument " << num 
+							cerr << "Is our context (" << CCP(TO_STRING_TREE(node_ancestors.at(0))) 
+								<< ") child " << num 
 								<< " of " << CCP(TO_STRING_TREE(node))
 								<< "? ";
 							auto multivalue = GET_CHILD(node, 0); assert(multivalue);
-							if (GET_CHILD(multivalue, num) == /**i_path */ prev_prev_node) 
+							if (std::find(node_ancestors.begin(), node_ancestors.end(), 
+								GET_CHILD(multivalue, num)) != node_ancestors.end())
 							{
 								cerr << "yes." << endl;
 								return *i_fp;
@@ -1054,10 +1055,12 @@ namespace cake
 					}
 				}
 				case CAKE_TOKEN(EVENT_PATTERN): {
-					unsigned prev_node_pos = 0U; 
-					while (prev_node_pos < GET_CHILD_COUNT(node) && GET_CHILD(node, prev_node_pos) != prev_node)
-					{ ++prev_node_pos; }
-					assert(prev_node_pos != GET_CHILD_COUNT(node)); // we should always find prev_node
+					unsigned argument_node_pos = 0U; 
+					while (argument_node_pos < GET_CHILD_COUNT(node) 
+						&& GET_CHILD(node, argument_node_pos) 
+							!= node_ancestors.at(node_ancestors.size() - 1))
+					{ ++argument_node_pos; }
+					assert(argument_node_pos != GET_CHILD_COUNT(node)); // we should always find child_node
 					
 					// get the subprogram
 					shared_ptr<spec::subprogram_die> subprogram;
@@ -1075,14 +1078,15 @@ namespace cake
 						subprogram = dynamic_pointer_cast<spec::subprogram_die>(found);
 						assert(subprogram);
 					}
-					// now look for the pos-4'th fp (HACK!)
-					unsigned pos = 3;
+					// (EVENT_PATTERN EVENT_CONTEXT (DEFINITE_MEMBER_NAME getstuff) EVENT_COUNT_PREDICATE KEYWORD_NAMES (ANNOTATED_VALUE_PATTERN ... ) )
+					// the first (ind 0) parameter is the 5th (ind 4) AST node of an EVENT_PATTERN
+					unsigned pos = 4;
 					spec::subprogram_die::formal_parameter_iterator i_fp;
 					for (i_fp = subprogram->formal_parameter_children_begin();	
 						i_fp != subprogram->formal_parameter_children_end();	
 						++i_fp, ++pos)
 					{
-						if (pos == prev_node_pos) break;
+						if (pos == argument_node_pos) break;
 					}
 					/* If we get all the way to formal_parameter_children_end,
 					 * it means our event pattern has more args than the subprogram.

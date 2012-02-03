@@ -29,6 +29,7 @@ namespace cake {
 	using dwarf::spec::type_die;
 	using dwarf::spec::subprogram_die;
 	using dwarf::tool::cxx_target;
+	using srk31::indenting_ostream;
 	
 	class wrapper_file;
 	class value_conversion;
@@ -275,7 +276,8 @@ namespace cake {
 
         string wrap_file_makefile_name;
         string wrap_file_name;
-        std::ofstream wrap_file;
+		std::ofstream raw_wrap_file;
+        indenting_ostream wrap_file;
 
         wrapper_file *p_wrap_code; // FIXME: this should be a contained subobject...
         wrapper_file& wrap_code;	// but is a pointer because of...

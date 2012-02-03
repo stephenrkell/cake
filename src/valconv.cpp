@@ -175,6 +175,7 @@ namespace cake
 	void virtual_value_conversion::emit_body()
 	{
 		m_out << "assert(false);" << endl;
+		this->structural_value_conversion::emit_body();
 	}
 	
 	
@@ -526,12 +527,17 @@ namespace cake
 		/* Which of these are toplevel? 
 		 * These are the toplevel explicit mappings. */
 		//std::multimap<std::string, member_mapping_rule*> explicit_toplevel_mappings;
+		
+//		vector<string> touched_toplevel_field_names;
+		
 		for (auto i_mapping = explicit_field_corresps.begin(); 
 			i_mapping != explicit_field_corresps.end();
 			++i_mapping)
 		{
 			if (i_mapping->first.size() <= 1)
 			{
+//				if (i_mapping->first.size() > 0) touched_toplevel_field_names.insert(
+//					i_mapping->first.at(0));
 				explicit_toplevel_mappings.insert(
 					make_pair(
 						(i_mapping->first.size() > 0 ? i_mapping->first.at(0) : ""), 
@@ -555,7 +561,9 @@ namespace cake
 		{
 			assert((*i_member)->get_name());
 			if (name_matched_mappings.find(*(*i_member)->get_name())
-				== name_matched_mappings.end())
+				== name_matched_mappings.end()
+				&& explicit_toplevel_mappings.find(*(*i_member)->get_name())
+				== explicit_toplevel_mappings.end())
 			{
 				/* We have a name-matching candidate -- look for like-named
 				 * field in opposing structure. */
@@ -676,11 +684,10 @@ namespace cake
 		return vector< dep >(working.begin(), working.end());
 	}
 	
-	void primitive_value_conversion::emit_buffer_declaration()
+//	void primitive_value_conversion::emit_declare_buffer
+	
+	void primitive_value_conversion::emit_source_object_alias()
 	{
-		/* Create or find buffer */
-		m_out << w.get_type_name(sink_data_type) << " __cake_tmp, *__cake_p_buf;" << endl
-			<< "if (__cake_p_to) __cake_p_buf = __cake_p_to; else __cake_p_buf = &__cake_tmp;" << endl;
 		/* HACK: create a non-const "from" reference, because we want to index
 		 * our templates by CV-qualifier-free typenames. */
 		string dest_type_string	=
@@ -695,11 +702,33 @@ namespace cake
 				<< dest_type_string <<
 			" >(__cake_from);" << endl;
 	
+	
+	}
+	
+	void primitive_value_conversion::emit_target_buffer_declaration()
+	{
+		/* Create or find buffer */
+		m_out << w.get_type_name(sink_data_type) << " __cake_tmp, *__cake_p_buf;" << endl
+			<< "if (__cake_p_to) __cake_p_buf = __cake_p_to; else __cake_p_buf = &__cake_tmp;" << endl;
+	}
+
+	// override for the virtual corresp case
+	void virtual_value_conversion::emit_target_buffer_declaration()
+	{
+		/* Create or find buffer */
+		m_out << w.get_type_name(sink_data_type) << " *__cake_p_buf = __cake_p_to;" << endl
+			<< "assert (__cake_p_to); /* no temporary buffer option for virtual corresps */" << endl;
+	}
+	
+	void primitive_value_conversion::emit_initial_declarations()
+	{
+		emit_source_object_alias();
+		emit_target_buffer_declaration();
 	}
 	
 	void primitive_value_conversion::emit_body()
 	{
-		emit_buffer_declaration();
+		emit_initial_declarations();
 		
 		wrapper_file::environment basic_env; // empty!
 		wrapper_file::context ctxt(
@@ -931,7 +960,7 @@ namespace cake
 	
 	void structural_value_conversion::emit_body()
 	{
-		emit_buffer_declaration();
+		emit_initial_declarations();
 		/* Here's how we emit these.
 		 * 
 		 * 0. Build the list of sink-side (target) fields we are going to write.
@@ -1024,13 +1053,13 @@ namespace cake
 					string("__cake_nonconst_from.") + *(*i_field)->get_name(), // cxx name
 					"__cake_nonconst_from." + *(*i_field)->get_name(), // typeof
 					source_module,
-					true // do not crossover!
+					false // was true / "do not crossover!" -- WHY NOT? "once only"/balanced semantics?
 				}));
 		}
 		// environment complete for now; create a context out of this environment
 		wrapper_file::context ctxt(w, source_module, target_module, basic_env);
 		ctxt.opt_val_corresp = (wrapper_file::context::val_info_s){ this->corresp };
-				
+		
 		/* 1a. Emit the overall source-side stub, if there is one. */
 		if (source_infix_stub && GET_CHILD_COUNT(source_infix_stub) > 0)
 		{
@@ -1081,8 +1110,8 @@ namespace cake
 				++i_selector)
 		{
 			auto rules_for_this_selector = target_fields_to_write.equal_range(*i_selector);
-			assert(*i_selector == "" 
-				|| srk31::count(rules_for_this_selector.first, rules_for_this_selector.second) == 1);
+			auto rules_count = srk31::count(rules_for_this_selector.first, rules_for_this_selector.second);
+			assert(*i_selector == "" || rules_count == 1);
 			
 			for (auto i_target = rules_for_this_selector.first;
 					i_target != rules_for_this_selector.second;
@@ -1131,38 +1160,46 @@ namespace cake
 			 * Why didn't it work?
 			 */
 		}
+		/* Emit overall sink-side stub. Since we have  */
 		if (sink_infix_stub && GET_CHILD_COUNT(sink_infix_stub) > 0)
 		{
 			// make sure we are in the sink module context now
 			ctxt.modules.current = target_module;
-			
-			environment extra_env = basic_env;
+			// we cross over this env...
+			// there should already be some stuff in there
+			assert(basic_env.size() > 0);
+			auto crossed_env = w.crossover_environment_and_sync(
+				source_module, basic_env, target_module, 
+				/* no constraints */ 
+				std::multimap< string, shared_ptr<type_die> >(), false, true);
+		
 			// sink-side stubs have "this", "that", "here" and "there". 
 			// NOTE: "this" and "that" mean the same here!? These semantics are
 			// messed up, but they are all I can think of right now that makes sense.
 			// Maybe "that" is never needed, and "this" or "there" are all we should use?
-			extra_env.insert(make_pair("__cake_that",
+// 			extra_env.insert(make_pair("__cake_that",
+// 				(wrapper_file::bound_var_info) {
+// 					"(*__cake_p_buf)", // cxx name
+// 					"(*__cake_p_buf)", // typeof
+// 					target_module,
+// 					false
+// 				}));
+
+			crossed_env.insert(make_pair("__cake_this",
 				(wrapper_file::bound_var_info) {
 					"(*__cake_p_buf)", // cxx name
 					"(*__cake_p_buf)", // typeof
 					target_module,
 					false
 				}));
-			extra_env.insert(make_pair("__cake_this",
-				(wrapper_file::bound_var_info) {
-					"(*__cake_p_buf)", // cxx name
-					"(*__cake_p_buf)", // typeof
-					target_module,
-					false
-				}));
-			extra_env.insert(make_pair("__cake_here",
+			crossed_env.insert(make_pair("__cake_here",
 				(wrapper_file::bound_var_info) {
 					"__cake_p_buf", // cxx name
 					"__cake_p_buf", // typeof
 					target_module,
 					false
 				}));
-			extra_env.insert(make_pair("__cake_there",
+			crossed_env.insert(make_pair("__cake_there",
 				(wrapper_file::bound_var_info) {
 					"(&__cake_nonconst_from)", // cxx name
 					"(&__cake_nonconst_from)", // typeof
@@ -1170,245 +1207,15 @@ namespace cake
 					false
 				}));
 			auto saved_env = ctxt.env;
-			ctxt.env = extra_env;
+			ctxt.env = crossed_env;
+			
 			auto return_status = w.emit_stub_expression_as_statement_list(
 				ctxt, 
 				GET_CHILD(sink_infix_stub, 0)
 			);
+			
 			ctxt.env = saved_env;
 		}
-			
-// 			if (unique_source_field_selector)
-// 			{
-// 				// If we have a source-side infix stub, we must emit that.
-// 				// It may use "this", "here" and "there" (but not "that").
-// 				// So first we insert magic "__cake_this", "__cake_here" and "__cake_there"
-// 				// entries to the Cake environment for this.
-// 				extra_env.insert(make_pair("__cake_this",
-// 					(wrapper_file::bound_var_info) {
-// 						"__cake_nonconst_from." + *unique_source_field_selector, // cxx name
-// 						"__cake_nonconst_from." + *unique_source_field_selector, // typeof
-// 						source_module,
-// 						false,
-// 						"__cake_default"
-// 					}));
-// 				extra_env.insert(make_pair("__cake_here",
-// 					(wrapper_file::bound_var_info) {
-// 						"&__cake_from." + *unique_source_field_selector, // cxx name
-// 						"&__cake_nonconst_from." + *unique_source_field_selector, // typeof
-// 						source_module,
-// 						false,
-// 						"__cake_default"
-// 					}));
-// 			}
-// 			// we always have a "there"
-// 			extra_env.insert(make_pair("__cake_there",
-// 				(wrapper_file::bound_var_info) {
-// 					"&__cake_p_buf->" + target_field_selector, // cxx name
-// 					"&__cake_p_buf->" + target_field_selector, // typeof
-// 					source_module,
-// 					false,
-// 					"__cake_default"
-// 				}));
-// 			
-// 			// compute the merged environment
-// 			auto extended_env1 = w.merge_environment(ctxt.env, extra_env);
-// 			ctxt.env = extended_env1;
-// 			
-// 			/* Evaluate the source expression in this environment. */
-// 			auto status1 = w.emit_stub_expression_as_statement_list(ctxt,
-// 				i_target->second->stub/*,
-// 				sink_data_type*/);
-// 			
-// 			/* Keep things simple: assert there are no new bindings. 
-// 			 * If there are, we'll have to stash the bindings with a different name, then 
-// 			 * re-establish them in the post-stub. */
-// 			assert(status1.new_bindings.size() == 0);
-// 			// auto new_env1 = w.merge_environment(ctxt.env, status1.new_bindings);
-// 			/* Bind the result under a special name (not __cake_it). 
-// 			 * The source expression should always yield a value. */
-// 			assert(status1.result_fragment != w.NO_VALUE && status1.result_fragment != "");
-// 			// we extend the *basic* (shared) environment
-// 			extended_env1["__cake_it"] = 
-// 				(wrapper_file::bound_var_info) {
-// 					status1.result_fragment,
-// 					status1.result_fragment,  //shared_ptr<type_die>(),
-// 					ctxt.modules.source,
-// 					false,
-// 					"__cake_default" };
-// 			
-// 			/* Now we can evaluate the pre-stub if there is one. It should use "this" if
-// 			 * it depends on the field value. */
-// 			auto extended_env2 = extended_env1; // provisional value
-// 			if (i_target->second->pre_stub && GET_CHILD_COUNT(i_target->second->pre_stub) > 0)
-// 			{
-// 				auto status2 = w.emit_stub_expression_as_statement_list(ctxt,
-// 					i_target->second->pre_stub);
-// 				extended_env2 = w.merge_environment(extended_env1, status2.new_bindings);
-// 					if (status2.result_fragment != w.NO_VALUE) extended_env2["__cake_it"] = 
-// 						(wrapper_file::bound_var_info) {
-// 							status2.result_fragment,
-// 							status2.result_fragment,  //shared_ptr<type_die>(),
-// 							ctxt.modules.source,
-// 							false,
-// 							"__cake_default"
-// 						};
-// 			}
-// 			// stash the result in the basic env
-// 			assert(extended_env2.find("__cake_it") != extended_env2.end());
-// 			basic_env["__cake_source_" + target_field_selector]
-// 			 = extended_env2["__cake_it"];
-// 			
-// 			// revert to the basic env, with this extension
-// 			ctxt.env = basic_env;
-// 		} // end for i_target
-// 
-// 		/* Now our environment contains bindings for each evaluated source expression,
-// 		 * we can delete "from" and the original fields from the environment. 
-// 		 * HMM. But should we? What if we have 
-// 		 *
-// 		 * destfield (twiddle(f, that))<-- f + g;   ?
-// 		 * 
-// 		 * Here our stub depends on retaining a binding of f in the post-context,
-// 		 * i.e. that f can be crossed-over independently of the result of f and g.
-// 		 * I don't see anything desperately wrong with this.
-// 		 * Nevertheless, let's go for the simpler option now.  */
-// 		for (auto i_field = dynamic_pointer_cast<with_data_members_die>(
-// 					source_data_type)->member_children_begin();
-// 				i_field != dynamic_pointer_cast<with_data_members_die>(
-// 					source_data_type)->member_children_end();
-// 				++i_field)
-// 		{
-// 			assert((*i_field)->get_name());
-// 
-// 			basic_env.erase(*(*i_field)->get_name());
-// 		} 
-// 		basic_env.erase("__cake_from");
-// 
-// 		/* 3. Crossover the environment. This has the effect of applying depended-on correspondences. */
-// 		ctxt.modules.current = target_module;
-// 		assert(ctxt.env.find("__cake_this") == ctxt.env.end());
-// 		assert(ctxt.env.find("__cake_here") == ctxt.env.end());
-// 		assert(ctxt.env.find("__cake_there") == ctxt.env.end());
-// 		/* Now we need to "cross over" the environment. This crossover is different
-// 		 * from the one in the wrapper code. We don't need to allocate or sync
-// 		 * co-objects: the allocation has already been done, and we're in the middle
-// 		 * of a sync process right now, most likely. Nevertheless, crossover_environment
-// 		 * should work. But first we erase "this", "here" and "there" from the environment
-// 		 * if we added them -- these are side-specific. */
-// 		// crossover point
-// 		ctxt.modules.current = target_module;
-// 		m_out << "// source->sink crossover point" << endl;
-// 		auto crossed_env = w.crossover_environment(source_module, basic_env, target_module, 
-// 			/* no constraints */ 
-// 			std::multimap< string, shared_ptr<type_die> >());
-// 		
-// 		/* 4, 5. Now finish the job: for each target field, compute any post-stub and assign. */
-// 		for (auto i_target = target_fields_to_write.begin();
-// 				i_target != target_fields_to_write.end();
-// 				++i_target)
-// 		{
-// 			// always start with crossed-over environment
-// 			ctxt.env = crossed_env;
-// 			
-// 			// HACK: code cloned from above
-// 			optional<string> unique_source_field_selector;
-// 			if (i_target->second->unique_source_field)
-// 			{
-// 				ostringstream s;
-// 				for (auto i_name_part = i_target->second->unique_source_field->begin();
-// 					i_name_part != i_target->second->unique_source_field->end();
-// 					++i_name_part)
-// 				{
-// 					if (i_name_part != i_target->second->unique_source_field->begin())
-// 					{ s << "."; }
-// 					s << *i_name_part;
-// 				}
-// 				unique_source_field_selector = s.str();
-// 			}
-// 				
-// 			// XXX: recover the stashed source value __cake_source + target_field_selector!
-// 			// In the simple-source-expression, no-pre-stub case, how do we map from field name to this value?
-// 			// -- the target side will have a name for it (not necessarily the source name!) 
-// 			// -- we want this name to map to __cake_source_ + target_field_selector
-// 			// In the more complex pre-stub and/or source expression case, how do we reference __cake_it?
-// 			// -- the stub can *only* use "here", "there" and "that"
-// 			// AH. It's a non-problem. Implicitly, we *always* write __cake_it!
-// 			// That's all the sink-side rule ever does -- there are no sink-side expressions.
-// 			
-// 			/* Now we add "that", "there" and "here" (but not "this") to the environment. */
-// 			if (i_target->second->unique_source_field)
-// 			{
-// 				ctxt.env.insert(make_pair("__cake_that",
-// 					(wrapper_file::bound_var_info) {
-// 						"__cake_nonconst_from." + *unique_source_field_selector, // cxx name
-// 						"__cake_nonconst_from." + *unique_source_field_selector, // typeof
-// 						target_module,
-// 						false,
-// 						"__cake_default"
-// 					}));
-// 
-// 				ctxt.env.insert(make_pair("__cake_there",
-// 					(wrapper_file::bound_var_info) {
-// 						"&__cake_nonconst_from." + *unique_source_field_selector, // cxx name
-// 						"&__cake_nonconst_from." + *unique_source_field_selector, // typeof
-// 						target_module,
-// 						false,
-// 						"__cake_default"
-// 					}));
-// 			} 
-// 			string target_field_selector = i_target->first;
-// 			// we can always add "here"
-// 			ctxt.env.insert(make_pair("__cake_here",
-// 				(wrapper_file::bound_var_info) {
-// 					"&__cake_p_buf->" + target_field_selector, // cxx name
-// 					"&__cake_p_buf->" + target_field_selector, // typeof
-// 					target_module,
-// 					false,
-// 					"__cake_default"
-// 				}));
-// 			// we can also always add "it"!
-// 			ctxt.env.insert(make_pair("__cake_it", ctxt.env["__cake_source_" + i_target->first]));
-// 
-// 			/* Now emit the post-stub. */
-// 			auto new_env3 = ctxt.env; // provisional value
-// 			if (i_target->second->post_stub && GET_CHILD_COUNT(i_target->second->post_stub) > 0)
-// 			{
-// 				auto status3 = w.emit_stub_expression_as_statement_list(ctxt,
-// 					i_target->second->post_stub);
-// 				new_env3 = w.merge_environment(ctxt.env, status3.new_bindings);
-// 					if (status3.result_fragment != w.NO_VALUE) new_env3["__cake_it"] = 
-// 						(wrapper_file::bound_var_info) {
-// 							status3.result_fragment,
-// 							status3.result_fragment,  //shared_ptr<type_die>(),
-// 							ctxt.modules.sink,
-// 							false,
-// 							"__cake_default"
-// 						};
-// 			}
-// 			
-// 			/* Now we have an "it": either the output of the stub, if there was one,
-// 			 * or else the converted field value. */
-// 			
-// // 			auto result = w.emit_stub_expression_as_statement_list(ctxt,
-// // 				i_name_matched->second.stub/*,
-// // 				sink_data_type*/);
-// // 				//, modules, pre_context_pair, post_context_pair,
-// // 				//boost::shared_ptr<dwarf::spec::type_die>(), env);
-// // 			m_out << "assert(" << result.success_fragment << ");" << std::endl;
-// // 			m_out << "__cake_p_buf->" << target_field_selector
-// // 				<< " = ";
-// // 			m_out << w.component_pair_classname(modules);
-// // 			m_out << "::value_convert_from_"
-// // 				<< ((modules.first == source_module) ? "first_to_second" : "second_to_first")
-// // 				<< "<" << "__typeof(__cake_p_buf->" << target_field_selector << ")"
-// // 				<< ">(__cake_from." << target_field_selector << ");" << std::endl;
-// 			
-// 			assert(ctxt.env["__cake_it"].cxx_name != "");
-// 			m_out << "__cake_p_buf->" << target_field_selector << " = " <<
-// 				ctxt.env["__cake_it"].cxx_name << ";" << endl;
-				
-//		} // end for i_target
 
 		// output return statement
 		m_out << "return *__cake_p_buf;" << endl;

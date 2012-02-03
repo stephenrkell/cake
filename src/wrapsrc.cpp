@@ -503,6 +503,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				sink, sink_infix_stub, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
 			m_d.find_type_expectations_in_stub(
 				sink, action, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
+			//auto returned_outward = do_virtual_crossover(source, new_env1, sink);
 			ctxt.env = crossover_environment_and_sync(source, new_env1, sink, constraints, false);
 
 			// FIXME: here goes the post-arrow infix stub
@@ -578,6 +579,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 
 			ctxt.modules.current = ctxt.modules.source;
+			//auto returned_inward = do_virtual_crossover(sink, new_env3, source);
 			ctxt.env = crossover_environment_and_sync(sink, new_env3, source, return_constraints, true);
 			
 			std::string final_success_fragment = status3.success_fragment;
@@ -742,6 +744,17 @@ assert(false && "disabled support for inferring positional argument mappings");
 			auto i_first_binding = env.find(*i_cxxname->second.begin());
 			assert(i_first_binding != env.end());
 		
+			// collect virtualness
+			bool is_virtual = false;
+			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
+				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
+				++i_binding_name)
+			{
+				auto i_binding = env.find(*i_binding_name);
+				
+				is_virtual |= i_binding->second.crossover_by_wrapper;
+			}
+
 			// sanity check -- for all bindings covered by this cxx name,
 			// check that they are valid in the module context we're crossing over *from*
 			// also, skip if they're all marked no-crossover
@@ -755,7 +768,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				no_crossover &= i_binding->second.do_not_crossover;
 				assert(i_binding->second.valid_in_module == old_module);
 			}
-			if (no_crossover) continue;
+			if (!is_virtual && no_crossover) continue;
 			
 			// create a new cxx ident for the binding
 			auto ident = new_ident("xover_" + i_first_binding->first);
@@ -841,7 +854,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 			
 			// output co-objects allocation call, if we have a pointer
-			if (is_a_pointer)
+			if (is_a_pointer && !is_virtual)
 			{
 				m_out << "ensure_co_objects_allocated(REP_ID("
 					<< m_d.name_of_module(old_module) << "), ";
@@ -857,43 +870,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 					<< (i_first_binding->second.is_pointer_to_uninit ? "true" : "false")
 					<< ");" << std::endl;
 			}
-// 			/* Now insert code to ensure co-objects are allocated. We might pass
-// 			 * over the same cxxname multiple times. If we've seen it before,
-// 			 * we *might* still be interested -- if it wasn't a pointer then, but
-// 			 * is now. This is for unspecified_wordsize_type et al. */
-// 			auto found = seen_cxxnames.find(i_binding->second.cxx_name);
-// 			if (found == seen_cxxnames.end()
-// 			 || found->second == false)
-// 			{
-// 				bool was_a_pointer_last_time = 
-// 					found != seen_cxxnames.end() && found->second;
-// 				bool is_a_pointer_this_time = 
-// 					(precise_to_type &&
-// 					 precise_to_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type);
-// 				seen_cxxnames[i_binding->second.cxx_name] =
-// 					was_a_pointer_last_time || is_a_pointer_this_time;
-// 				
-// 				// if this is the first time we've seen this cxxname,
-// 				// or if it's now a pointer, 
-// 				// we make the co-objects alloc call
-// 				if (found == seen_cxxnames.end() || (
-// 					!was_a_pointer_last_time && is_a_pointer_this_time))
-// 				{
-// 					m_out << "ensure_co_objects_allocated(REP_ID("
-// 						<< m_d.name_of_module(old_module) << "), ";
-// 					// make sure we invoke the pointer specialization
-// 					if (is_a_pointer_this_time) m_out <<
-// 						"ensure_is_a_pointer(";
-// 					m_out << i_binding->second.cxx_name;
-// 					if (is_a_pointer_this_time) m_out << ")";
-// 					m_out << ", REP_ID("
-// 						<< m_d.name_of_module(new_module)
-// 						<<  "));" << std::endl;
-// 				}
-// 			}
 			
-			
-			// output its initialization
+			// output initialization
 			m_out << "auto " << ident << " = ";
 			/* IF (and only if) we are going to override this guy, 
 			 * hack its static type to be more precise than void*. 
@@ -941,7 +919,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				false,
 				boost::shared_ptr<dwarf::spec::type_die>(), // no precise from type
 				precise_to_type, // defaults to "no precise to type", but may have been set above
-				(is_a_pointer ? std::string("((void*)0)") : *collected_cxx_typeof), // from typeof
+				((is_a_pointer && !is_virtual) ? std::string("((void*)0)") : *collected_cxx_typeof), // from typeof
 				boost::optional<std::string>(), // NO precise to typeof, 
 				   // BUT maybe we could start threading a context-demanded type through? 
 				   // It's not clear how we'd get this here -- scan future uses of each xover'd binding?
@@ -984,9 +962,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 			 * at the same time. This might be a problem when we do propagation of
 			 * unique_corresponding_type... although val corresps may be expressed
 			 * in terms of typedefs, so perhaps not. */
-			if (is_a_pointer) m_out << "ensure_is_a_pointer(";
+			if (is_a_pointer && !is_virtual) m_out << "ensure_is_a_pointer(";
 			m_out <<i_cxxname->first;
-			if (is_a_pointer) m_out << ")";
+			if (is_a_pointer && !is_virtual) m_out << ")";
 			close_value_conversion();
 			if (will_override) m_out << ")";
 			m_out << ";" << std::endl;
@@ -1052,6 +1030,60 @@ assert(false && "disabled support for inferring positional argument mappings");
 		
 		return new_env;
 	}
+	
+// 	environment
+// 	do_virtual_crossover(
+// 		module_ptr old_module_context,
+// 		const environment& env,
+// 		module_ptr new_module_context
+// 	)
+// 	{
+// 		/* Here we explicitly invoke any virtual correspondences required by
+// 		 * bindings in the environment. */
+// 		
+// 		auto bindings_by_cxxname = group_bindings_by_cxxname(env);
+// 		for (auto i_cxxname = bindings_by_cxxname.begin(); 
+// 			i_cxxname != bindings_by_cxxname.end();
+// 			++i_cxxname)
+// 		{
+// 			auto i_first_binding = env.find(*i_cxxname->second.begin());
+// 			assert(i_first_binding != env.end());
+// 		
+// 			bool is_virtual = false;
+// 			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
+// 				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
+// 				++i_binding_name)
+// 			{
+// 				auto i_binding = env.find(*i_binding_name);
+// 				
+// 				is_virtual |= i_binding->second.crossover_by_wrapper;
+// 			}
+// 			
+// 			if (!is_virtual) continue;
+// 			
+// 			environment out_env;
+// 			auto ident = new_ident("vxover_" + i_first_binding->first);
+// 			m_out << "auto " << ident << " = ";
+// 			
+// 			open_value_conversion(
+// 				link_derivation::iface_pair ifaces,
+// 				//int rule_tag,
+// 				*i_first_binding,
+// 				direction_is_out,
+// 				is_indirect,
+// 				boost::shared_ptr<dwarf::spec::type_die> from_type, // most precise
+// 				boost::shared_ptr<dwarf::spec::type_die> to_type, 
+// 				boost::optional<std::string> from_typeof /* = boost::optional<std::string>()*/, // mid-precise
+// 				boost::optional<std::string> to_typeof/* = boost::optional<std::string>()*/,
+// 				module_ptr from_module/* = module_ptr()*/,
+// 				module_ptr to_module/* = module_ptr()*/)
+// 			out_env.insert(make_pair(i_first_binding->first, (bound_var_info) {
+// 			
+// 			}));
+// 				
+// 
+// 		}
+// 	}
 
 	std::map<string, std::set<string> > 
 	wrapper_file::group_bindings_by_cxxname(const environment& env)
@@ -1314,6 +1346,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 	}
 	
+	string wrapper_file::basic_name_for_argnum(int argnum)
+	{
+		std::ostringstream s; s << wrapper_arg_name_prefix << argnum;
+		return s.str();
+	}
+	
 	wrapper_file::environment 
 	wrapper_file::initial_environment(
 		antlr::tree::Tree *pattern,
@@ -1395,6 +1433,19 @@ assert(false && "disabled support for inferring positional argument mappings");
 				RAISE(memberNameExpr, "does not name a visible function"); 
 			auto caller_subprogram = boost::dynamic_pointer_cast<subprogram_die>(caller);
 			
+			struct virtual_value_construct
+			{
+				antlr::tree::Tree *expr;
+				optional<string> overall_cake_name;
+				string virtual_typename;
+				vector<string> idents;
+				vector<string> cxxnames;
+				vector<string> cake_basic_names;
+				vector<optional<string> > cake_friendly_names;
+			};
+			
+			vector<virtual_value_construct> virtual_value_constructs;
+			
 			int argnum = 0;
 			auto i_caller_arg = caller_subprogram->formal_parameter_children_begin();
 			//int dummycount = 0;
@@ -1434,7 +1485,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 						arg_is_outparam = true;
 					}
 				}
-
+				
 				ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
 				{
 					INIT;
@@ -1446,8 +1497,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					 * __cake_arg name will be generated. Otherwise, *two* names will be
 					 * generated. */
 					boost::optional<std::string> friendly_name;
-					std::ostringstream s; s << wrapper_arg_name_prefix << argnum;
-					std::string basic_name = s.str();
+					string basic_name = basic_name_for_argnum(argnum);
 					
 					antlr::tree::Tree *interpretation_ast = 0;
 					
@@ -1460,19 +1510,82 @@ assert(false && "disabled support for inferring positional argument mappings");
 						case CAKE_TOKEN(NAME_AND_INTERPRETATION): {
 							// could match anything, so bind name and continue
 							INIT;
-							BIND3(valuePattern, definiteMemberName, DEFINITE_MEMBER_NAME);
-							definite_member_name mn = read_definite_member_name(definiteMemberName);
-							if (mn.size() != 1) RAISE(definiteMemberName, "may not be compound");
-							friendly_name = mn.at(0);
-
+							BIND2(valuePattern, memberName);
+							if (GET_TYPE(memberName) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
+							{
+								definite_member_name mn = read_definite_member_name(memberName);
+								if (mn.size() != 1) RAISE(memberName, "may not be compound");
+								friendly_name = mn.at(0);
+							}
+							else assert(GET_TYPE(memberName) == CAKE_TOKEN(ANY_VALUE));
+							
 							if (GET_CHILD_COUNT(valuePattern) > 1)
 							{
 								BIND2(valuePattern, interpretation); assert(interpretation);
 								interpretation_ast = interpretation;
+								assert(GET_TYPE(interpretation) == CAKE_TOKEN(KEYWORD_AS)
+								    || GET_TYPE(interpretation) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
+									|| GET_TYPE(interpretation) == CAKE_TOKEN(KEYWORD_IN_AS)
+									|| GET_TYPE(interpretation) == CAKE_TOKEN(KEYWORD_OUT_AS));
+								// is there a "VALUE_CONSTRUCT" here?
+								// If so, we will suppress or remove some items from the env here
+								if (GET_CHILD_COUNT(interpretation) > 1)
+								{
+									INIT;
+									BIND3(interpretation, type_interpreted_to, IDENT);
+									BIND3(interpretation, value_construct, VALUE_CONSTRUCT);
+									virtual_value_constructs.push_back((virtual_value_construct) {
+										/* .expr = */ value_construct,
+										/* .overall_cake_name = */ friendly_name,
+										/*.virtual_typename = */ unescape_ident(CCP(GET_TEXT(type_interpreted_to)))
+									});
+									FOR_ALL_CHILDREN(value_construct)
+									{
+										auto ident = unescape_ident(CCP(GET_TEXT(n)));
+										virtual_value_constructs.back().idents.push_back(
+											ident);
+										/* To turn an ident into a basic name, we search
+										 * for a fp with this ident, and use its "__cake_arg<num>"
+										 * name. */
+										int found_argnum = 0;
+										string basic_name;
+										subprogram_die::formal_parameter_iterator i_search_fp;
+										for (i_search_fp = caller_subprogram->formal_parameter_children_begin();
+											i_search_fp != caller_subprogram->formal_parameter_children_end();
+											++i_search_fp, ++found_argnum)
+										{
+											if ((*i_search_fp)->get_name()
+											 && *(*i_search_fp)->get_name() == ident)
+											{
+												basic_name = basic_name_for_argnum(found_argnum);
+												break;
+											}
+										}
+										if (i_search_fp == caller_subprogram->formal_parameter_children_end())
+										{
+											RAISE(n, "does not match any argument");
+										}
+										
+										virtual_value_constructs.back().cxxnames.push_back(
+											basic_name);
+										virtual_value_constructs.back().cake_basic_names.push_back(
+											basic_name);
+										virtual_value_constructs.back().cake_friendly_names.push_back(
+											friendly_name);
+									}
+									/* The names used inside the VALUE_CONSTRUCT come from
+									 * the subprogram. We map them to 
+									 * - the cxxnames that will be emitted for them;
+									 * - the (non-friendly) Cake names that will be emitted for them;
+									 * This will allow us to emit the virtual structure
+									 * *and* suppress the Cake names from the environment.
+									 * Actually, we work by removing unfriendly names. */
+								}
 							}
 							break;
 						} break;
 						case CAKE_TOKEN(KEYWORD_CONST):
+						case CAKE_TOKEN(ANY_VALUE):
 						case CAKE_TOKEN(INDEFINITE_MEMBER_NAME): {
 							// we will bind a basic name but not a friendly one
 						} break;
@@ -1606,7 +1719,111 @@ assert(false && "disabled support for inferring positional argument mappings");
 				++argnum;
 				if (i_caller_arg != caller_subprogram->formal_parameter_children_end()) ++i_caller_arg;
 			} // end FOR_REMAINING_CHILDREN(eventPattern
+			
+			cerr << "/* Initial environment before virtualisation: " << endl;
+			for (auto i_el = out_env->begin(); i_el != out_env->end(); ++i_el)
+			{
+				cerr << "\t" << i_el->first << " is now " << i_el->second.cxx_name << " ("
+					<< (i_el->second.local_tagstring ? " local: " + *i_el->second.local_tagstring : "")
+					<< (i_el->second.remote_tagstring ? " remote: " + *i_el->second.remote_tagstring : "")
+					<< (i_el->second.indirect_local_tagstring_in ? " local indirect in: " + *i_el->second.indirect_local_tagstring_in : "")
+					<< (i_el->second.indirect_remote_tagstring_in ? " remote indirect in: " + *i_el->second.indirect_remote_tagstring_in : "")
+					<< (i_el->second.indirect_local_tagstring_out ? " local indirect out: " + *i_el->second.indirect_local_tagstring_out : "")
+					<< (i_el->second.indirect_remote_tagstring_out ? " remote indirect out: " + *i_el->second.indirect_remote_tagstring_out : "")
+					<< ")" << std::endl;
+			}
+			cerr << "*/" << endl;
+			
+			/* Now process the virtual value constructs. */
+			for (auto i_virt = virtual_value_constructs.begin(); 
+				i_virt != virtual_value_constructs.end(); 
+				++i_virt)
+			{
+// 				antlr::tree::Tree *expr;
+// 				optional<string> overall_cake_name;
+// 				string virtual_typename;
+// 				vector<string> idents;
+// 				vector<string> cxxnames;
+// 				vector<string> cake_basic_names;
+// 				vector<optional<string> > cake_friendly_names;
+
+				// fix up the overall name from the environment, if there
+				assert(i_virt->overall_cake_name);
+				
+				//{
+					auto virtual_fq_typename =  ns_prefix + "::" 
+						+ m_d.name_of_module(source_module) + "::" + i_virt->virtual_typename;
+					auto found = out_env->find(*i_virt->overall_cake_name);
+					assert(found != out_env->end());
+					// To what should the overall Cake name now refer? 
+					// To the new object, of course!
+					found->second.cxx_name = " __cake_" + *i_virt->overall_cake_name;
+					found->second.cxx_typeof = "(*((" + virtual_fq_typename + "*)(void*)0))";
+					// Set as "do not crossover" --
+					// We will manage its crossover
+					found->second.do_not_crossover = true;
+					found->second.crossover_by_wrapper = true;
+				//}
+				
+				// begin declaration of virtual struct
+				m_out << virtual_fq_typename << " __cake_" << *i_virt->overall_cake_name 
+					<< " = " /* "(" << virtual_fq_typename << ") " */ " {" << endl;
+				m_out.inc_level();
+				
+				// for each param
+				vector<string>::iterator i_cxxname
+				 = i_virt->cxxnames.begin();
+				vector<string>::iterator i_cake_basic_name
+				 = i_virt->cake_basic_names.begin();
+				vector<optional<string> >::iterator i_cake_friendly_name
+				 = i_virt->cake_friendly_names.begin();
+				/* IMPORTANT: we must visit the idents in the same order that we did
+				 * when creating the struct, i.e. in syntax order. */
+				for (auto i_ident = i_virt->idents.begin();
+					i_ident != i_virt->idents.end();
+					++i_ident, ++i_cxxname, ++i_cake_basic_name, ++i_cake_friendly_name)
+				{
+					// we don't erase the basic name, because the event pattern test
+					// will want to use it. But we set it as do-not-crossover
+					//assert(out_env->find(*i_cake_basic_name) != out_env->end());
+					auto found_binding = out_env->find(*i_cake_basic_name);
+					//out_env->erase(*i_cake_basic_name);
+					found_binding->second.do_not_crossover = true;
+					
+					//if (*i_cake_friendly_name) out_env->erase(**i_cake_friendly_name);
+					
+					// output an initialization line for this member
+					if (i_ident != i_virt->idents.begin()) m_out << ", ";
+					m_out << endl;
+					m_out << "/* ." << *i_ident << " = */"; 
+					//         ^--uncomment when C99-style initializers come to c++
+					// if this binding is indirect, dereference it.
+					// FIXME: support nulls 
+					if (found_binding->second.indirect_local_tagstring_in
+					 || found_binding->second.indirect_remote_tagstring_in) m_out << "*";
+					 m_out << *i_cake_basic_name;
+				}
+				
+				m_out.dec_level();
+				m_out << endl << "};" << endl;
+			}
+			
 		} // end ALIAS3(pattern, eventPattern, EVENT_PATTERN)
+		
+		/* Write a comment to the output file, describing the initial environment. */
+		cerr << "/* Initial environment: " << endl;
+		for (auto i_el = out_env->begin(); i_el != out_env->end(); ++i_el)
+		{
+			cerr << "\t" << i_el->first << " is now " << i_el->second.cxx_name << " ("
+				<< (i_el->second.local_tagstring ? " local: " + *i_el->second.local_tagstring : "")
+				<< (i_el->second.remote_tagstring ? " remote: " + *i_el->second.remote_tagstring : "")
+				<< (i_el->second.indirect_local_tagstring_in ? " local indirect in: " + *i_el->second.indirect_local_tagstring_in : "")
+				<< (i_el->second.indirect_remote_tagstring_in ? " remote indirect in: " + *i_el->second.indirect_remote_tagstring_in : "")
+				<< (i_el->second.indirect_local_tagstring_out ? " local indirect out: " + *i_el->second.indirect_local_tagstring_out : "")
+				<< (i_el->second.indirect_remote_tagstring_out ? " remote indirect out: " + *i_el->second.indirect_remote_tagstring_out : "")
+				<< ")" << std::endl;
+		}
+		cerr << "*/" << endl;
 		
 		return env;
 	} // end 
@@ -1647,9 +1864,18 @@ assert(false && "disabled support for inferring positional argument mappings");
 							// Assert that binding has *already* happened,
 							// when we created the initial environment.
 							INIT;
-							BIND3(valuePattern, definiteMemberName, DEFINITE_MEMBER_NAME);
-							definite_member_name mn = read_definite_member_name(definiteMemberName);
-							bound_name = mn.at(0);
+							BIND2(valuePattern, memberName);
+							if (GET_TYPE(memberName) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
+							{
+								definite_member_name mn = read_definite_member_name(memberName);
+								bound_name = mn.at(0);
+							}
+							else
+							{
+								assert(GET_TYPE(memberName) == CAKE_TOKEN(ANY_VALUE)
+								||     GET_TYPE(memberName) == CAKE_TOKEN(INDEFINITE_MEMBER_NAME));
+								bound_name = basic_name_for_argnum(argnum);
+							}
 							assert(ctxt.env.find(bound_name) != ctxt.env.end());
 						} break;
 						case CAKE_TOKEN(INDEFINITE_MEMBER_NAME): {
