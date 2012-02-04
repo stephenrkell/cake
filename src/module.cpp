@@ -954,6 +954,29 @@ namespace cake
 		return create_reference_type_with_target(t);
 	}
 	
+	shared_ptr<spec::pointer_type_die>
+	module_described_by_dwarf::ensure_pointer_type_with_target(
+		shared_ptr<spec::type_die> t
+	)
+	{
+		auto gchildren_seq =  get_ds().toplevel()->grandchildren_sequence();
+		for (auto i_gchild = gchildren_seq->begin(); i_gchild != gchildren_seq->end();
+			++i_gchild)
+		{
+			if ((*i_gchild)->get_tag() == DW_TAG_pointer_type)
+			{
+				cerr << "Found: " << **i_gchild << endl;
+				auto ptrtype = dynamic_pointer_cast<spec::pointer_type_die>(*i_gchild);
+				assert(ptrtype);
+				if (ptrtype->get_type() && ptrtype->get_type() == t)
+				{
+					return ptrtype;
+				}
+			}
+		}
+		return create_pointer_type_with_target(t);
+	}
+	
 	shared_ptr<spec::reference_type_die>
 	module_described_by_dwarf::create_reference_type_with_target(
 		shared_ptr<spec::type_die> t
@@ -970,6 +993,24 @@ namespace cake
 			);
 		dynamic_pointer_cast<encap::reference_type_die>(created)->set_type(t);
 		return dynamic_pointer_cast<spec::reference_type_die>(created);
+	}
+	
+	shared_ptr<spec::pointer_type_die>
+	module_described_by_dwarf::create_pointer_type_with_target(
+		shared_ptr<spec::type_die> t
+	)
+	{
+		auto cu = t->enclosing_compile_unit();
+		shared_ptr<encap::basic_die> encap_cu = dynamic_pointer_cast<encap::basic_die>(cu);
+		auto created =
+			dwarf::encap::factory::for_spec(
+				dwarf::spec::DEFAULT_DWARF_SPEC
+			).create_die(DW_TAG_pointer_type,
+				encap_cu,
+				opt<string>() 
+			);
+		dynamic_pointer_cast<encap::pointer_type_die>(created)->set_type(t);
+		return dynamic_pointer_cast<spec::pointer_type_die>(created);
 	}
 	
 	shared_ptr<type_die> module_described_by_dwarf::create_dwarf_type(antlr::tree::Tree *t)

@@ -108,6 +108,69 @@ namespace cake
             << rule_tag // RuleTag
             << ">" << endl;
 	}	
+	
+	/* In the virtual case, we might want to emit a reference type as the return type. */
+	void virtual_value_conversion::emit_header(optional<string> return_typename, 
+		bool emit_struct_keyword/* = true */, bool emit_template_prefix/* = true */,
+		bool emit_return_typename/* = true*/)
+	{
+		if (return_typename && treat_target_type_as_user_allocated())
+		{
+			this->structural_value_conversion::emit_header(*return_typename + "&",
+				emit_struct_keyword, emit_template_prefix, emit_return_typename
+				);
+		} else this->structural_value_conversion::emit_header(return_typename,
+				emit_struct_keyword, emit_template_prefix, emit_return_typename
+				);
+	}
+	
+	/* Same job, but for emit_signature. */
+	void virtual_value_conversion::emit_signature(bool emit_return_type/* = true*/, 
+		bool emit_default_argument /* = true */) 
+	{
+		m_out << (emit_return_type ? (treat_target_type_as_user_allocated() ? to_typename + "&" : to_typename ) : "") 
+			<< " operator()(const " << from_typename << "& __cake_from, " 
+			<< to_typename << "*__cake_p_to"
+			<< (emit_default_argument ? " = 0" : "")
+			<< ") const";
+	}
+	
+	bool virtual_value_conversion::treat_target_type_as_user_allocated()
+	{
+		if (explicit_field_corresps.size() == 0
+		 && sink_infix_stub
+		 && GET_CHILD_COUNT(sink_infix_stub) > 0
+		 && GET_TYPE(GET_CHILD(sink_infix_stub, 0)) == CAKE_TOKEN(INVOKE_WITH_ARGS))
+		{
+			// we might be on
+			auto invoke_ast = GET_CHILD(sink_infix_stub, 0);
+			auto invoked_function_ast = GET_CHILD(invoke_ast, 
+				GET_CHILD_COUNT(invoke_ast) - 1);
+			definite_member_name dmn;
+			if (GET_TYPE(invoked_function_ast) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
+			{
+				dmn = read_definite_member_name(invoked_function_ast);
+			}
+			else if (GET_TYPE(invoked_function_ast) == CAKE_TOKEN(IDENT))
+			{
+				dmn = vector<string>(1, unescape_ident(CCP(GET_TEXT(invoked_function_ast))));
+			}
+			else return false;
+			
+			auto found = sink->get_ds().toplevel()->visible_resolve(
+				dmn.begin(), dmn.end());
+			if (!found) return false;
+			auto subprogram = dynamic_pointer_cast<subprogram_die>(found);
+			if (!subprogram) return false;
+			if (!subprogram->get_type()) return false;
+			
+			if (subprogram->get_type()->get_concrete_type()->get_tag() == DW_TAG_pointer_type
+			|| subprogram->get_type()->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
+				return true;
+		}
+		return false;
+	}
+	
 	void value_conversion::emit_signature(bool emit_return_type/* = true*/, 
 		bool emit_default_argument /* = true */) 
 	{
@@ -120,7 +183,7 @@ namespace cake
 	
 	void value_conversion::emit_forward_declaration()
 	{
-        emit_header(false, true);
+        emit_header(/* false */ optional<string>(), true); // FIXME: looks buggy
 		m_out << "{" << endl;
 		m_out.inc_level();
 		emit_signature();
@@ -174,7 +237,7 @@ namespace cake
 	
 	void virtual_value_conversion::emit_body()
 	{
-		m_out << "assert(false);" << endl;
+		//m_out << "assert(false);" << endl;
 		this->structural_value_conversion::emit_body();
 	}
 	
@@ -716,8 +779,17 @@ namespace cake
 	void virtual_value_conversion::emit_target_buffer_declaration()
 	{
 		/* Create or find buffer */
-		m_out << w.get_type_name(sink_data_type) << " *__cake_p_buf = __cake_p_to;" << endl
-			<< "assert (__cake_p_to); /* no temporary buffer option for virtual corresps */" << endl;
+		// if we are user-allocated, we just declare a pointer
+		if (treat_target_type_as_user_allocated())
+		{
+			m_out << w.get_type_name(sink_data_type) << " *__cake_p_buf = __cake_p_to;" << endl
+				<< "// assert (__cake_p_to); /* can be null to begin; sink stub will provide value... */" << endl;
+		}
+		else
+		{
+			m_out << w.get_type_name(sink_data_type) << " *__cake_p_buf = __cake_p_to;" << endl
+				<< "assert (__cake_p_to); /* no temporary buffer option for this virtual corresp */" << endl;
+		}
 	}
 	
 	void primitive_value_conversion::emit_initial_declarations()

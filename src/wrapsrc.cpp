@@ -740,14 +740,17 @@ assert(false && "disabled support for inferring positional argument mappings");
 		
 			// assert -- at least one binding exists
 			assert(i_cxxname->second.begin() != i_cxxname->second.end());
+
+			string cur_cxxname = i_cxxname->first;
 			
 			auto i_first_binding = env.find(*i_cxxname->second.begin());
 			assert(i_first_binding != env.end());
+			binding representative_binding = *i_first_binding;
 		
 			// collect virtualness
 			bool is_virtual = false;
-			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
-				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
+			for (auto i_binding_name = bindings_by_cxxname[cur_cxxname].begin();
+				i_binding_name != bindings_by_cxxname[cur_cxxname].end();
 				++i_binding_name)
 			{
 				auto i_binding = env.find(*i_binding_name);
@@ -759,8 +762,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 			// check that they are valid in the module context we're crossing over *from*
 			// also, skip if they're all marked no-crossover
 			bool no_crossover = true;
-			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
-				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
+			for (auto i_binding_name = bindings_by_cxxname[cur_cxxname].begin();
+				i_binding_name != bindings_by_cxxname[cur_cxxname].end();
 				++i_binding_name)
 			{
 				auto i_binding = env.find(*i_binding_name);
@@ -771,12 +774,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 			if (!is_virtual && no_crossover) continue;
 			
 			// create a new cxx ident for the binding
-			auto ident = new_ident("xover_" + i_first_binding->first);
+			auto ident = new_ident("xover_" + representative_binding.first);
 			
 			// collect constraints, over all aliases
 			std::set<boost::shared_ptr<dwarf::spec::type_die> > all_constraints;
-			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
-				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
+			for (auto i_binding_name = bindings_by_cxxname[cur_cxxname].begin();
+				i_binding_name != bindings_by_cxxname[cur_cxxname].end();
 				++i_binding_name)
 			{
 				auto i_binding = env.find(*i_binding_name);
@@ -819,7 +822,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				}
 				else 
 				{	
-					m_out << "// in crossover environment, " << i_first_binding->first 
+					m_out << "// in crossover environment, " << representative_binding.first 
 						<< " has been constrained to type " 
 						<< compiler.name_for(*i_type)
 						<< std::endl;
@@ -829,8 +832,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 			// collect pointerness
 			bool is_a_pointer = false;
-			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
-				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
+			for (auto i_binding_name = bindings_by_cxxname[cur_cxxname].begin();
+				i_binding_name != bindings_by_cxxname[cur_cxxname].end();
 				++i_binding_name)
 			{
 				auto i_binding = env.find(*i_binding_name);
@@ -842,8 +845,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 			
 			// collect typeof
 			boost::optional<std::string> collected_cxx_typeof;
-			for (auto i_binding_name = bindings_by_cxxname[i_cxxname->first].begin();
-				i_binding_name != bindings_by_cxxname[i_cxxname->first].end();
+			for (auto i_binding_name = bindings_by_cxxname[cur_cxxname].begin();
+				i_binding_name != bindings_by_cxxname[cur_cxxname].end();
 				++i_binding_name)
 			{
 				auto i_binding = env.find(*i_binding_name);
@@ -861,14 +864,61 @@ assert(false && "disabled support for inferring positional argument mappings");
 				// make sure we invoke the pointer specialization
 				/*if (is_a_pointer_this_time)*/ m_out <<
 					"ensure_is_a_pointer(";
-				m_out << i_cxxname->first; 
+				m_out << cur_cxxname;
 				/*if (is_a_pointer_this_time)*/ m_out << ")";
 				m_out << ", REP_ID("
 					<< m_d.name_of_module(new_module)
 					<<  "), "
 					// is this an output parameter?
-					<< (i_first_binding->second.is_pointer_to_uninit ? "true" : "false")
+					<< (representative_binding.second.is_pointer_to_uninit ? "true" : "false")
 					<< ");" << std::endl;
+			}
+			
+			shared_ptr<type_die> saved_precise_to_type = precise_to_type;
+			if (is_a_pointer && is_virtual && precise_to_type)
+			{
+				// ditch the precise to-type -- this allows us to get a non-pointer
+				// out of the value_convert and then fix things up by taking its address.
+				precise_to_type = shared_ptr<type_die>();
+			}
+
+			string cxxname_to_use = cur_cxxname;
+			// collect replacements 
+			for (auto i_cakename = bindings_by_cxxname[cur_cxxname].begin();
+					i_cakename != bindings_by_cxxname[cur_cxxname].end();
+					++i_cakename)
+			{
+				// if we are xovering a vxover *back* to a virtual d.t. inst, fix this up
+				string cakename_to_use = *i_cakename;
+				if (!env[*i_cakename].cxx_name.compare(0, std::min(env[*i_cakename].cxx_name.length(),
+				                                         sizeof "vxover_replace_with_" - 1),
+				                                                "vxover_replace_with_"))
+				{
+					std::istringstream in(env[*i_cakename].cxx_name.substr(sizeof "vxover_replace_with_" - 1,
+						   string::npos));
+					unsigned len;
+					in >> len;
+					char und;
+					in >> und;
+					string remainder;
+					in >> remainder;
+					
+					string replacement = remainder.substr(0, len);
+					m_out << "// REPLACE: " << env[*i_cakename].cxx_name 
+						<< " with " 
+						<< replacement << endl;
+						
+					// This means that 
+					// - any binding using the current cxxname (namely cur_cxxname)
+					//   ... should now use "replacement".
+					// We *would* just overwrite the cxx_name and cxx_typeof
+					// but env is const. So copy i_first_binding above, and use that
+					representative_binding.second.cxx_name = replacement;
+					representative_binding.second.cxx_typeof = replacement;
+					representative_binding.second.do_not_crossover = false;
+					cxxname_to_use = replacement;
+					collected_cxx_typeof = replacement;
+				}
 			}
 			
 			// output initialization
@@ -880,32 +930,32 @@ assert(false && "disabled support for inferring positional argument mappings");
 			 * because if we have an output-only rule, 
 			 * we will try to take __typeof( *the-pointer-we're-making-here ) later on. */
 			bool will_override = 
-				(direction_is_out && (i_first_binding->second.indirect_local_tagstring_out
-					|| i_first_binding->second.indirect_remote_tagstring_out))
-			||  (!direction_is_out && (i_first_binding->second.indirect_local_tagstring_in
-					|| i_first_binding->second.indirect_remote_tagstring_in
-					|| i_first_binding->second.indirect_local_tagstring_out
-					|| i_first_binding->second.indirect_remote_tagstring_out
+				(direction_is_out && (representative_binding.second.indirect_local_tagstring_out
+					|| representative_binding.second.indirect_remote_tagstring_out))
+			||  (!direction_is_out && (representative_binding.second.indirect_local_tagstring_in
+					|| representative_binding.second.indirect_remote_tagstring_in
+					|| representative_binding.second.indirect_local_tagstring_out
+					|| representative_binding.second.indirect_remote_tagstring_out
 					));
-			auto ifaces = link_derivation::sorted(new_module, i_first_binding->second.valid_in_module);
+			auto ifaces = link_derivation::sorted(new_module, representative_binding.second.valid_in_module);
 			bool old_module_is_first = (old_module == ifaces.first);
 			if (will_override)
 			{
 				m_out << "reinterpret_cast< ";
 				// the "more precise type" is the corresponding type
-				// ... to that of *i_cxxname->first
+				// ... to that of *cur_cxxname
 				// ... when flowing from the old module to the new module
 				// ... using the indirect tagstrings we have for 
 				m_out << "::cake::corresponding_type_to_"
 					<< (old_module_is_first ? "first" : "second")
 					<< "<" << m_d.component_pair_typename(ifaces) << ", "
-					<< "__typeof(*" << i_cxxname->first << "), "
+					<< "__typeof(*" << cur_cxxname << "), "
 					<< (old_module_is_first ? /* DirectionIsFromFirstToSecond */ "true"
 					                        : /* DirectionIsFromSecondToFirst */ "true")
 					<< ">::"
-					<< make_tagstring(direction_is_out ? i_first_binding->second.indirect_local_tagstring_out : i_first_binding->second.indirect_local_tagstring_in)
+					<< make_tagstring(direction_is_out ? representative_binding.second.indirect_local_tagstring_out : representative_binding.second.indirect_local_tagstring_in)
 					<< "_to_"
-					<< make_tagstring(direction_is_out ? i_first_binding->second.indirect_remote_tagstring_out : i_first_binding->second.indirect_remote_tagstring_in)
+					<< make_tagstring(direction_is_out ? representative_binding.second.indirect_remote_tagstring_out : representative_binding.second.indirect_remote_tagstring_in)
 					<< "_in_" << (old_module_is_first ? "second" : "first")
 					<< " *";
 				m_out << ">(";
@@ -914,7 +964,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			open_value_conversion(
 				ifaces,
 				//rule_tag, // defaults to 0, but may have been set above
-				*i_first_binding, // from_artificial_tagstring is in our binding -- easy
+				representative_binding, // from_artificial_tagstring is in our binding -- easy
 				direction_is_out,
 				false,
 				boost::shared_ptr<dwarf::spec::type_die>(), // no precise from type
@@ -924,7 +974,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				   // BUT maybe we could start threading a context-demanded type through? 
 				   // It's not clear how we'd get this here -- scan future uses of each xover'd binding?
 				   // i.e. we only get it *later* when we try to emit some stub logic that uses this binding
-				i_first_binding->second.valid_in_module, // from_module is in our binding
+				representative_binding.second.valid_in_module, // from_module is in our binding
 				new_module
 			);
 			
@@ -963,15 +1013,16 @@ assert(false && "disabled support for inferring positional argument mappings");
 			 * unique_corresponding_type... although val corresps may be expressed
 			 * in terms of typedefs, so perhaps not. */
 			if (is_a_pointer && !is_virtual) m_out << "ensure_is_a_pointer(";
-			m_out <<i_cxxname->first;
+			m_out << cxxname_to_use;
 			if (is_a_pointer && !is_virtual) m_out << ")";
 			close_value_conversion();
 			if (will_override) m_out << ")";
 			m_out << ";" << std::endl;
 			
-			// for each Cake name, add it to the new environment
-			for (auto i_cakename = bindings_by_cxxname[i_cxxname->first].begin();
-					i_cakename != bindings_by_cxxname[i_cxxname->first].end();
+			// for each Cake name bound to the current cxxname,
+			// add it to the new environment, bound to some new cxxname
+			for (auto i_cakename = bindings_by_cxxname[cur_cxxname].begin();
+					i_cakename != bindings_by_cxxname[cur_cxxname].end();
 					++i_cakename)
 			{
 				new_env[*i_cakename] = (bound_var_info) {
@@ -987,8 +1038,23 @@ assert(false && "disabled support for inferring positional argument mappings");
 					/* indirect local in  */ env[*i_cakename].indirect_remote_tagstring_in,
 					/* indirect local out */ env[*i_cakename].indirect_remote_tagstring_out,
 					/* remote local in    */ env[*i_cakename].indirect_local_tagstring_in,
-					/* remote local out   */ env[*i_cakename].indirect_local_tagstring_out,
+					/* remote local out   */ env[*i_cakename].indirect_local_tagstring_out
 				};
+				// if we are xovering the address of a virtual d.t. inst, fix this up
+				if (is_a_pointer && is_virtual && saved_precise_to_type)
+				{
+					// also create a pointer alias
+					ostringstream s; s << "vxover_replace_with_" << ident.length() << "_" << ident;
+					auto pointer_alias_override = new_ident(s.str());
+					// copy the old binding, just using the plain old ident...
+					new_env[ident] = new_env[*i_cakename];
+					new_env[ident].do_not_crossover = true;
+					// define a new variable holding its address
+					m_out << "auto " << pointer_alias_override << " = &" << ident << ";" << endl;
+					// the new variable should bear the cakename
+					new_env[*i_cakename].cxx_name = pointer_alias_override;
+					new_env[*i_cakename].cxx_typeof = pointer_alias_override;
+				}
 			}
 		}
 		
@@ -997,25 +1063,30 @@ assert(false && "disabled support for inferring positional argument mappings");
 		for (auto i_el = new_env.begin(); i_el != new_env.end(); ++i_el)
 		{
 			auto i_old_el = env.find(i_el->first);
-			assert(i_old_el != env.end());
-			
-			m_out << "\t" << i_el->first << " is now " << i_el->second.cxx_name << " ("
+			bool is_new = (i_old_el == env.end());
+		
+			if (is_new) m_out
+				<< "\tNEW: " << i_el->first << " is " << i_el->second.cxx_name << " (";
+			else 
+			m_out << "\t" << i_el->first << " is now " << i_el->second.cxx_name << " (";
+			m_out 
 				<< (i_el->second.local_tagstring ? " local: " + *i_el->second.local_tagstring : "")
 				<< (i_el->second.remote_tagstring ? " remote: " + *i_el->second.remote_tagstring : "")
 				<< (i_el->second.indirect_local_tagstring_in ? " local indirect in: " + *i_el->second.indirect_local_tagstring_in : "")
 				<< (i_el->second.indirect_remote_tagstring_in ? " remote indirect in: " + *i_el->second.indirect_remote_tagstring_in : "")
 				<< (i_el->second.indirect_local_tagstring_out ? " local indirect out: " + *i_el->second.indirect_local_tagstring_out : "")
 				<< (i_el->second.indirect_remote_tagstring_out ? " remote indirect out: " + *i_el->second.indirect_remote_tagstring_out : "")
-				<< ")" << endl << "\t\t" << " having been " << i_old_el->second.cxx_name << " ("
+				<< ")" << endl;
+			if (!is_new) m_out << "\t\t" << " having been " << i_old_el->second.cxx_name << " ("
 				<< (i_old_el->second.local_tagstring ? " local: " + *i_old_el->second.local_tagstring : "")
 				<< (i_old_el->second.remote_tagstring ? " remote: " + *i_old_el->second.remote_tagstring : "")
 				<< (i_old_el->second.indirect_local_tagstring_in ? " local indirect in: " + *i_old_el->second.indirect_local_tagstring_in : "")
 				<< (i_old_el->second.indirect_remote_tagstring_in ? " remote indirect in: " + *i_old_el->second.indirect_remote_tagstring_in : "")
 				<< (i_old_el->second.indirect_local_tagstring_out ? " local indirect out: " + *i_old_el->second.indirect_local_tagstring_out : "")
 				<< (i_old_el->second.indirect_remote_tagstring_out ? " remote indirect out: " + *i_old_el->second.indirect_remote_tagstring_out : "")
-				<< ")" << std::endl;
+				<< ")" << endl;
 		}
-		m_out << "*/" << std::endl;
+		m_out << "*/" << endl;
 		
 		// do the sync
 		if (/*!direction_is_out && */ !do_not_sync)
@@ -1768,6 +1839,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 				// begin declaration of virtual struct
 				m_out << virtual_fq_typename << " __cake_" << *i_virt->overall_cake_name 
 					<< " = " /* "(" << virtual_fq_typename << ") " */ " {" << endl;
+				definite_member_name virtual_typename_dmn(1, i_virt->virtual_typename);
+				auto virtual_type_die_found = source_module->get_ds().toplevel()->visible_resolve(
+					virtual_typename_dmn.begin(), virtual_typename_dmn.end());
+				assert(virtual_type_die_found);
+				auto virtual_type_die = dynamic_pointer_cast<structure_type_die>(virtual_type_die_found);
+				assert(virtual_type_die);
 				m_out.inc_level();
 				
 				// for each param
@@ -1777,12 +1854,18 @@ assert(false && "disabled support for inferring positional argument mappings");
 				 = i_virt->cake_basic_names.begin();
 				vector<optional<string> >::iterator i_cake_friendly_name
 				 = i_virt->cake_friendly_names.begin();
+				structure_type_die::member_iterator i_memb
+				 = virtual_type_die->member_children_begin();
+				 	
 				/* IMPORTANT: we must visit the idents in the same order that we did
 				 * when creating the struct, i.e. in syntax order. */
 				for (auto i_ident = i_virt->idents.begin();
 					i_ident != i_virt->idents.end();
-					++i_ident, ++i_cxxname, ++i_cake_basic_name, ++i_cake_friendly_name)
+					++i_ident, ++i_cxxname, ++i_cake_basic_name, ++i_cake_friendly_name,
+					++i_memb)
 				{
+					assert(i_memb != virtual_type_die->member_children_end());
+					
 					// we don't erase the basic name, because the event pattern test
 					// will want to use it. But we set it as do-not-crossover
 					//assert(out_env->find(*i_cake_basic_name) != out_env->end());
@@ -1797,11 +1880,40 @@ assert(false && "disabled support for inferring positional argument mappings");
 					m_out << endl;
 					m_out << "/* ." << *i_ident << " = */"; 
 					//         ^--uncomment when C99-style initializers come to c++
+					
+					// insert reinterpret_cast if necessary
+					assert((*i_memb)->get_type());
+					auto member_type_as_reference_type
+					 = dynamic_pointer_cast<reference_type_die>((*i_memb)->get_type());
+					assert(member_type_as_reference_type);
+					cerr << "Member type-of-reference-target: " 
+						<< *member_type_as_reference_type->get_type()->get_concrete_type() << endl;
+					bool do_reinterpret
+					 = (member_type_as_reference_type->get_type()->get_concrete_type()->get_tag()
+						== DW_TAG_pointer_type);
+					if (do_reinterpret)
+					{
+						m_out << "reinterpret_cast< "
+						// HACK: we might not have added this type until after the .o.hpp #includes,
+						// so write out its declarator directly.
+							//<< ns_prefix << "::" << m_d.name_of_module(source_module) << "::"
+							<< get_type_name(member_type_as_reference_type->get_type()) << "&"
+							//	compiler.cxx_declarator_from_type_die(
+							//		member_type_as_reference_type->get_concrete_type(),
+							//		optional<const string &>(),
+							//		true,
+							//		optional<const string &>(),
+							//		false)
+							<< ">(";
+					}
+					
 					// if this binding is indirect, dereference it.
 					// FIXME: support nulls 
 					if (found_binding->second.indirect_local_tagstring_in
 					 || found_binding->second.indirect_remote_tagstring_in) m_out << "*";
 					 m_out << *i_cake_basic_name;
+					 
+					if (do_reinterpret) m_out << ")";
 				}
 				
 				m_out.dec_level();

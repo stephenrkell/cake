@@ -170,6 +170,10 @@ namespace cake
 		ensure_reference_type_with_target(shared_ptr<spec::type_die> t);
 		shared_ptr<spec::reference_type_die>
 		create_reference_type_with_target(shared_ptr<spec::type_die> t);
+		shared_ptr<spec::pointer_type_die>
+		ensure_pointer_type_with_target(shared_ptr<spec::type_die> t);
+		shared_ptr<spec::pointer_type_die>
+		create_pointer_type_with_target(shared_ptr<spec::type_die> t);
 	};
 
 	class elf_module : 	private ifstream_holder, 

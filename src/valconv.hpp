@@ -161,10 +161,10 @@ namespace cake
 	protected:
 		std::string source_fq_namespace() const;
 		std::string sink_fq_namespace() const;
-		void emit_header(boost::optional<std::string> return_typename, 
+		virtual void emit_header(boost::optional<std::string> return_typename, 
 			bool emit_struct_keyword = true, bool emit_template_prefix = true,
 			bool emit_return_typename = true);
-		void emit_signature(bool emit_return_type = true, bool emit_default_argument = true);
+		virtual void emit_signature(bool emit_return_type = true, bool emit_default_argument = true);
 		
 	public:
 		typedef std::pair < boost::shared_ptr<dwarf::spec::type_die>,
@@ -272,6 +272,7 @@ namespace cake
 		
 		// this includes all EXPLICIT corresps only, 
 		// but INCLUDING non-toplevel entries of the form foo.bar <--> blah.blah
+	protected:
 		std::map<definite_member_name, member_mapping_rule> explicit_field_corresps;
 		
 		// this includes all EXPLICIT corresps, projected to TOPLEVEL -- need not be unique
@@ -309,6 +310,12 @@ namespace cake
 		vector<dep> get_dependencies()
 		{ return vector<dep>(); }
 		void emit_target_buffer_declaration();
+		void emit_header(optional<string> return_typename, 
+			bool emit_struct_keyword/* = true */, bool emit_template_prefix/* = true */,
+			bool emit_return_typename/* = true*/);
+		void emit_signature(bool emit_return_type /* = true */, 
+			bool emit_default_argument /* = true */);
+		bool treat_target_type_as_user_allocated();
 	};
 	
 } // end namespace cake

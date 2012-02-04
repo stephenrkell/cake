@@ -2745,11 +2745,19 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 									);
 									dynamic_pointer_cast<encap::member_die>(member)->set_type(
 										dynamic_pointer_cast<spec::type_die>(member_type));
+									cerr << "Set type of member named " << field_name
+										<< " to " << *member_type << endl;
+									cerr << "Referent type is " << *found_type << endl;
+									cerr << "In cxx: " << compiler.cxx_declarator_from_type_die(
+										found_type) << endl;
 
 								}
 							}
 							
-							is_pointer_type->set_type(dynamic_pointer_cast<spec::type_die>(created));
+							
+							//is_pointer_type->set_type(dynamic_pointer_cast<spec::type_die>(created));
+							//has_type->set_type(p_module->ensure_pointer_type_with_target(
+								
 							
 							cerr << "Created opaque structure named " 
 								<< CCP(GET_TEXT(target_type_in_ast))
