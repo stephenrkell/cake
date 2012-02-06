@@ -17,6 +17,15 @@ int main(void)
 
 	printf("About to getstuff(%p, %p, %p)\n", my_buf, &my_off, &my_len);
 	getstuff(my_buf, &my_off, &my_len);
+	printf("Having called getstuff, now my_off == %lu and my_len == %lu\n",
+		my_off, my_len);
+	printf("Buf is: ");
+	int i;
+	for (i = 0; i < BUFLEN; ++i)
+	{
+		if (i % 24 == 0) printf("\n");
+		printf("%02x ", my_buf[i]);
+	}
 	
 	return 0;
 }

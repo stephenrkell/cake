@@ -66,6 +66,13 @@ namespace cake
 		{ return this->super::operator[](k);  }
 	};
 	
+	struct post_emit_status
+	{
+		string result_fragment;
+		string success_fragment;
+		environment new_bindings;
+	};
+	
 	/* All code-generation functions take one of these as an argument. 
 	 * However, which of its members must be present for a given language
 	 * feature to work is given a more fine-grained dynamic treatment. */
@@ -255,6 +262,7 @@ namespace cake
 			antlr::tree::Tree *pre_stub;
 			module_ptr post_context;
 			antlr::tree::Tree *post_stub;
+			antlr::tree::Tree *rule_ast;
 		};
 		
 		struct member_mapping_rule : public member_mapping_rule_base
@@ -276,7 +284,9 @@ namespace cake
 		std::map<definite_member_name, member_mapping_rule> explicit_field_corresps;
 		
 		// this includes all EXPLICIT corresps, projected to TOPLEVEL -- need not be unique
-		std::multimap<std::string, member_mapping_rule*> explicit_toplevel_mappings;
+		typedef std::multimap<std::string, member_mapping_rule*> explicit_toplevel_mappings_t;
+		explicit_toplevel_mappings_t explicit_toplevel_mappings;
+		
 		// FIXME: if we have a group of nontoplevel rules, we should synthesise a 
 		// pseudo-correspondence and just use that. Anything wrong with this?
 		
@@ -284,6 +294,13 @@ namespace cake
 		std::map<std::string, member_mapping_rule> name_matched_mappings;
 		
 		//std::map<std::string, member_mapping_rule> explicit_mappings;
+		
+		// hooks for subclasses to add extra behaviour
+		virtual void post_sink_stub_hook(
+			const environment& env, 
+			const post_emit_status& return_status
+		) {}
+
 	public:
 		structural_value_conversion(wrapper_file& w,
 			srk31::indenting_ostream& out, 
@@ -298,6 +315,11 @@ namespace cake
 	// virtual data types
 	class virtual_value_conversion : public structural_value_conversion
 	{
+	protected:
+		void post_sink_stub_hook(
+					const environment& env, 
+					const post_emit_status& return_status
+				);
 	public:
 		virtual_value_conversion(wrapper_file& w,
 			srk31::indenting_ostream& out, 

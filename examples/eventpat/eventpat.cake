@@ -1,4 +1,10 @@
-exists elf_reloc("client.o") client;
+exists elf_reloc("client.o") client
+{
+	declare 
+	{
+		foo_do_plugh: (_, _, fromp: int) => _;
+	}
+}
 exists elf_reloc("lib.o") lib;
 derive elf_reloc("eventpat.o") eventpat = link [client, lib] 
 {

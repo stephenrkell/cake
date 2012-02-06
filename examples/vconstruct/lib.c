@@ -16,18 +16,22 @@ struct uio *uio_setup(unsigned char *buf,
 	struct uio *target = (struct uio *) malloc(sizeof (struct uio));
 	assert(target);
 	target->buf = buf;
+	printf("Setting resid (of uio at %p) to %lu\n", target, resid);
 	target->resid = resid;
+	printf("Setting off (of uio at %p) to %lu\n", target, off);
 	target->off = off;
 	return target;
 }
 
 unsigned long uio_getresid(struct uio *target)
 {
+	printf("Retrieving resid %lu from uio %p\n", target->resid, target);
 	return target->resid;
 }
 
 unsigned long uio_getoff(struct uio *target)
 {
+	printf("Retrieving offset %lu from uio %p\n", target->off, target);
 	return target->off;
 }
 

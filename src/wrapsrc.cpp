@@ -163,6 +163,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				assert(pattern_args >= 1);
 				FOR_REMAINING_CHILDREN(event_pattern)
 				{
+					if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS)) break;
 					++argnum;
 					if (!ignore_dwarf_args && i_arg == args_end)
 					{
@@ -883,6 +884,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 
 			string cxxname_to_use = cur_cxxname;
+			optional<string> reuse_old_variable;
 			// collect replacements 
 			for (auto i_cakename = bindings_by_cxxname[cur_cxxname].begin();
 					i_cakename != bindings_by_cxxname[cur_cxxname].end();
@@ -907,6 +909,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 					m_out << "// REPLACE: " << env[*i_cakename].cxx_name 
 						<< " with " 
 						<< replacement << endl;
+					// What was the ident we used before the last crossover? 
+					if (!replacement.compare(0, sizeof "xover_" - 1, "xover_"))
+					{
+						reuse_old_variable = "__cake_" + *i_cakename; // replacement.substr(sizeof "xover_" - 1, string::npos);
+						m_out << "// SUPER HACK: revert to previous ident " << *reuse_old_variable << endl;
+					}
 						
 					// This means that 
 					// - any binding using the current cxxname (namely cur_cxxname)
@@ -922,7 +930,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 			
 			// output initialization
-			m_out << "auto " << ident << " = ";
+			if (!reuse_old_variable)
+			{
+				m_out << "auto" << (is_virtual ? "& " : " ") << ident << " = ";
+			}
+			// else we use the "to" argument
 			/* IF (and only if) we are going to override this guy, 
 			 * hack its static type to be more precise than void*. 
 			 * If we are dealing with the outward (i.e. "in" values) case, then we 
@@ -1015,6 +1027,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			if (is_a_pointer && !is_virtual) m_out << "ensure_is_a_pointer(";
 			m_out << cxxname_to_use;
 			if (is_a_pointer && !is_virtual) m_out << ")";
+			if (reuse_old_variable) m_out << ", &" << *reuse_old_variable;
 			close_value_conversion();
 			if (will_override) m_out << ")";
 			m_out << ";" << std::endl;
@@ -1422,7 +1435,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		std::ostringstream s; s << wrapper_arg_name_prefix << argnum;
 		return s.str();
 	}
-	
+		
 	wrapper_file::environment 
 	wrapper_file::initial_environment(
 		antlr::tree::Tree *pattern,
@@ -1432,59 +1445,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		)
 	{
 		environment env, *out_env = &env;
-		
-		/* We need to generate a new wrapper_sig that actually
-		 * contains information about the arguments.
-		 * Recall: this is to solve the problem where our
-		 * pass(gizmo ptr) --> pass(gadget ptr)
-		 * wrapper doesn't know that what's being passed is a gizmo. 
-		 * So it can't insert the conversion.
-		 * Previously we have just been taking our lead from 
-		 * the event pattern, and treating everything as an
-		 * unspecified_wordsize_type. 
-		 * This is okay in some cases
-		 * - where we have an event pattern
-		 * - where prelude-supplied conversions on unspecified_wordsize_type
-		 *     will do the right thing
-		 * but not otherwise:
-		 * - where we don't have an event pattern (bindings formed by name-matching)
-		 * - where prelude-supplied conversions aren't appropriate.
-		 * Effectively we are doing a very primitive form of 
-		 * (imprecise) type inference.
-		 * The killer is the absence of an event pattern -- without this, we have
-		 * no idea how many argument words to read off the stack.
-		 * So we instead make use of the sink pattern
-		 * and of uniqueness within the available value correspondences. */
-		 
-		/* To test this, I need a quick short-cut hack that I can
-		 * remove later, which supplies the information that "g" is
-		 * a "gadget". How to do this?
-		 * 1. Only address trivial function-for-function mappings.
-		 * 2. Assume therefore that the #arguments are equal.
-		 * 3. Require that the arguments are all wordsize (can *check* in the callee)
-		 * 4. Pull exactly this many off the stack.
-		 * 5. Require that
-		 
-		 * NOTE that this will result in bogus compositions
-		 * in cases where a like-named function is name-matched across two modules
-		 * but where the argument lists of these differ in length. */
-		 
-		/* Can we dynamically determine the number of arguments passed
-		 * on the stack? Perhaps by subtracting the stack pointer from
-		 * the frame pointer? I don't think this works.
-		 * Recall the varargs protocol:
-		 * arguments are pushed from right to left 
-		 * so that leftmore arguments end up *nearest* the frame pointer
-		 * and the rightmore arguments just keep on going deeper into the
-		 * calling frame. 
-		 * We *could* use analysis of the previous frame's locals
-		 * to infer which words are definitely *either* pushed 
-		 * *or* working temporaries. This would risk "passing" extra arguments
-		 * but then these might never be used. Can argue this is harmless? Hmm.
-		 * Not if it can introduce e.g. random divide-by-zero errors by running
-		 * inappropriate conversion logic. */
 
-		//m_out << "true"; //CCP(GET_TEXT(corresp_pair.second.source_pattern));
 		// for each position in the pattern, emit a test
 		bool emitted = false;
 		INIT;
@@ -1513,6 +1474,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				vector<string> cxxnames;
 				vector<string> cake_basic_names;
 				vector<optional<string> > cake_friendly_names;
+				vector<bool> indirectnesses;
 			};
 			
 			vector<virtual_value_construct> virtual_value_constructs;
@@ -1556,7 +1518,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 						arg_is_outparam = true;
 					}
 				}
-				
+				if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS)) break;
 				ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
 				{
 					INIT;
@@ -1595,7 +1557,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 								BIND2(valuePattern, interpretation); assert(interpretation);
 								interpretation_ast = interpretation;
 								assert(GET_TYPE(interpretation) == CAKE_TOKEN(KEYWORD_AS)
-								    || GET_TYPE(interpretation) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
+									|| GET_TYPE(interpretation) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
 									|| GET_TYPE(interpretation) == CAKE_TOKEN(KEYWORD_IN_AS)
 									|| GET_TYPE(interpretation) == CAKE_TOKEN(KEYWORD_OUT_AS));
 								// is there a "VALUE_CONSTRUCT" here?
@@ -1605,11 +1567,14 @@ assert(false && "disabled support for inferring positional argument mappings");
 									INIT;
 									BIND3(interpretation, type_interpreted_to, IDENT);
 									BIND3(interpretation, value_construct, VALUE_CONSTRUCT);
-									virtual_value_constructs.push_back((virtual_value_construct) {
-										/* .expr = */ value_construct,
-										/* .overall_cake_name = */ friendly_name,
-										/*.virtual_typename = */ unescape_ident(CCP(GET_TEXT(type_interpreted_to)))
-									});
+									if (GET_CHILD_COUNT(value_construct) > 0)
+									{
+										virtual_value_constructs.push_back((virtual_value_construct) {
+											/* .expr = */ value_construct,
+											/* .overall_cake_name = */ friendly_name,
+											/*.virtual_typename = */ unescape_ident(CCP(GET_TEXT(type_interpreted_to))),
+										});
+									}
 									FOR_ALL_CHILDREN(value_construct)
 									{
 										auto ident = unescape_ident(CCP(GET_TEXT(n)));
@@ -1643,6 +1608,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 											basic_name);
 										virtual_value_constructs.back().cake_friendly_names.push_back(
 											friendly_name);
+										virtual_value_constructs.back().indirectnesses.push_back(
+											arg_is_indirect(*i_search_fp));
 									}
 									/* The names used inside the VALUE_CONSTRUCT come from
 									 * the subprogram. We map them to 
@@ -1674,7 +1641,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 						indirect_local_tagstring_in,
 						indirect_local_tagstring_out
 					);
-
 					
 					/* Now we have assigned local tagstrings, but not remote tagstrings.
 					 * To get the remote tagstring, we scan for uses of 
@@ -1856,13 +1822,15 @@ assert(false && "disabled support for inferring positional argument mappings");
 				 = i_virt->cake_friendly_names.begin();
 				structure_type_die::member_iterator i_memb
 				 = virtual_type_die->member_children_begin();
+				vector<bool>::iterator i_indirect 
+				 = i_virt->indirectnesses.begin();
 				 	
 				/* IMPORTANT: we must visit the idents in the same order that we did
 				 * when creating the struct, i.e. in syntax order. */
 				for (auto i_ident = i_virt->idents.begin();
 					i_ident != i_virt->idents.end();
 					++i_ident, ++i_cxxname, ++i_cake_basic_name, ++i_cake_friendly_name,
-					++i_memb)
+					++i_memb, ++i_indirect)
 				{
 					assert(i_memb != virtual_type_die->member_children_end());
 					
@@ -1909,8 +1877,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 					
 					// if this binding is indirect, dereference it.
 					// FIXME: support nulls 
-					if (found_binding->second.indirect_local_tagstring_in
-					 || found_binding->second.indirect_remote_tagstring_in) m_out << "*";
+					/*if (found_binding->second.indirect_local_tagstring_in
+					 || found_binding->second.indirect_remote_tagstring_in)*/
+					 if (*i_indirect) m_out << "*";
 					 m_out << *i_cake_basic_name;
 					 
 					if (do_reinterpret) m_out << ")";
@@ -1961,6 +1930,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			//int dummycount = 0;
 			FOR_REMAINING_CHILDREN(eventPattern)
 			{
+				if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS)) break;
 				++argnum;
 				ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
 				{
@@ -2842,7 +2812,25 @@ assert(false && "disabled support for inferring positional argument mappings");
 						if (matched_names.begin() == matched_names.end())
 						{
 							// no arguments to name-match
-							goto finished_argument_eval_for_current_ast_node; // naughty
+							// HACK: special case: one unmatched arg is okay
+							auto i_next_fp = i_arg; ++i_next_fp;
+							auto i_caller_fp = ctxt.opt_source->signature->formal_parameter_children_begin();
+							auto count = srk31::count(ctxt.opt_source->signature->formal_parameter_children_begin(),
+								ctxt.opt_source->signature->formal_parameter_children_end());
+							cerr << "Caller argcount is " << count << ", current index: " << i << endl;
+							for (unsigned j = 0; 
+								i_caller_fp != ctxt.opt_source->signature->formal_parameter_children_end() 
+									&& j < i; ++j) ++i_caller_fp;
+							if (i_caller_fp != ctxt.opt_source->signature->formal_parameter_children_end()
+							|| ctxt.opt_source->signature->unspecified_parameters_children_begin()
+							!= ctxt.opt_source->signature->unspecified_parameters_children_end())
+							{
+								matched_names.push_back(make_pair(
+										i_caller_fp, // might be END
+										i_arg));
+							}
+							// no arguments to name-match
+							else goto finished_argument_eval_for_current_ast_node; // naughty goto
 						}
 						if (matched_names.begin()->second != i_arg)
 						{
@@ -2871,7 +2859,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							// what's the binding of the argument in the caller? 
 							{
 								std::ostringstream s;
-								s << wrapper_arg_name_prefix << (i_matched_name - matched_names.begin());
+								s << wrapper_arg_name_prefix << (i + (i_matched_name - matched_names.begin()));
 
 								// emit some stub code to evaluate this argument
 								result = emit_stub_expression_as_statement_list(

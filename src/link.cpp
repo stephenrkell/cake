@@ -589,6 +589,7 @@ namespace cake
 					FOR_REMAINING_CHILDREN(p)
 					{
 						INIT;
+						if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS)) break;
 						ALIAS3(n, annotatedValueBindingPatternHead, 
 							ANNOTATED_VALUE_PATTERN);
 						{
@@ -884,8 +885,12 @@ namespace cake
 								INIT;
 								FOR_ALL_CHILDREN(argsExpr)
 								{
+									if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS)
+									 || GET_TYPE(n) == CAKE_TOKEN(KEYWORD_IN_ARGS)) break;
 									if (i_arg == subprogram_die->formal_parameter_children_end())
 									{
+										cerr << "Expression " << CCP(TO_STRING_TREE(argsExpr))
+											<< ", function " << *subprogram_die << endl;
 										RAISE(stub, "too many args for function");
 									}
 									if ((*i_arg)->get_type())
@@ -2710,6 +2715,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 									ALIAS3(n, named_field, IDENT);
 									string field_name = unescape_ident(CCP(GET_TEXT(named_field)));
 									// look for a parameter of this name, and grab its type
+									shared_ptr<formal_parameter_die> found_fp;
 									shared_ptr<type_die> found_type;
 									for (auto i_child = subprogram->formal_parameter_children_begin();
 										i_child != subprogram->formal_parameter_children_end();
@@ -2724,11 +2730,12 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 													"virtual data types require parameter type information"
 												);
 											}
+											found_fp = *i_child;
 											found_type = (*i_child)->get_type();
 											break;
 										}
 									}
-									if (!found_type)
+									if (!found_fp)
 									{
 										cerr << "Problem with " << *subprogram << endl;
 										RAISE(named_field, "no such field in subprogram");
@@ -2736,7 +2743,10 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 									
 									// now we have a type; add a member
 									auto member_type = p_module->ensure_reference_type_with_target(
-										found_type);
+										arg_is_indirect(found_fp) 
+										? dynamic_pointer_cast<pointer_type_die>(found_type)->get_type()
+										: found_type
+									);
 									auto member = dwarf::encap::factory::for_spec(
 										dwarf::spec::DEFAULT_DWARF_SPEC
 									).create_die(DW_TAG_member,

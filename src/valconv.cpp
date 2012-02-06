@@ -417,7 +417,9 @@ namespace cake
 									/* module_ptr post_context; */
 										source_is_on_left ? w.m_d.module_of_die(sink_data_type) : w.m_d.module_of_die(source_data_type),
 									/* antlr::tree::Tree *post_stub; */
-										source_is_on_left ? rightInfixStub : leftInfixStub
+										source_is_on_left ? rightInfixStub : leftInfixStub,
+									/* rule_ast */
+										refinementRule
 								}));
 					}
 					break;
@@ -455,7 +457,9 @@ namespace cake
 								/* module_ptr post_context; */
 									w.m_d.module_of_die(sink_data_type),
 								/* antlr::tree::Tree *post_stub; */
-									rightInfixStub
+									rightInfixStub,
+								/* rule_ast */
+									refinementRule
 							}));
 
 					}
@@ -494,7 +498,9 @@ namespace cake
 								/* module_ptr post_context; */
 									w.m_d.module_of_die(source_data_type),
 								/* antlr::tree::Tree *post_stub; */
-									leftInfixStub
+									leftInfixStub,
+								/* rule_ast */
+									refinementRule
 							}));
 
 					}
@@ -535,7 +541,9 @@ namespace cake
 								/* module_ptr post_context; */
 									w.m_d.module_of_die(sink_data_type),
 								/* antlr::tree::Tree *post_stub; */
-									rightInfixStub
+									rightInfixStub,
+								/* rule_ast */
+									refinementRule
 							}));
 					}
 					break;
@@ -575,7 +583,9 @@ namespace cake
 								/* module_ptr post_context; */
 									w.m_d.module_of_die(source_data_type),
 								/* antlr::tree::Tree *post_stub; */
-									leftInfixStub
+									leftInfixStub,
+								/* rule_ast */
+									refinementRule
 							}));
 					}
 					break;
@@ -662,6 +672,8 @@ namespace cake
 							/* module_ptr post_context; */ 
 								target_module,
 							/* antlr::tree::Tree *post_stub; */ 
+								0,
+							/* rule_ast */
 								0
 						}));
 				}
@@ -700,6 +712,7 @@ namespace cake
 			assert(pair.first && pair.second);
 			working.insert(pair);
 		}
+		
 		for (auto i_mapping = explicit_toplevel_mappings.begin();
 				i_mapping != explicit_toplevel_mappings.end();
 				++i_mapping)
@@ -1049,7 +1062,9 @@ namespace cake
 		
 		/* 0. Build the list of sink-side (target) fields we are going to write. */
 		multimap<string, member_mapping_rule *> target_fields_to_write;
-		set<string> target_field_selectors;
+		vector<string> target_field_selectors;
+		/* Subtlety: in what order do we emit the logic implied by each field 
+		 * corresp? We want to give the user some control. HMM. */
 		for (auto i_name_matched = name_matched_mappings.begin();
 				i_name_matched != name_matched_mappings.end();
 				++i_name_matched)
@@ -1073,10 +1088,27 @@ namespace cake
 			
 			assert(target_field_selector != "");
 			target_fields_to_write.insert(make_pair(target_field_selector, &i_name_matched->second));
-			target_field_selectors.insert(target_field_selector);
+			target_field_selectors.push_back(target_field_selector);
 		}
-		for (auto i_explicit_toplevel = explicit_toplevel_mappings.begin();
-				i_explicit_toplevel != explicit_toplevel_mappings.end();
+		
+		/* We MUST emit the explicit toplevel mappings in program order. So sort them now. */
+		vector< pair< string, explicit_toplevel_mappings_t::mapped_type > > explicit_toplevel_mappings_vec;
+		cerr << "Vector has " << explicit_toplevel_mappings_vec.size() << " elements." << endl;
+		std::copy(explicit_toplevel_mappings.begin(), explicit_toplevel_mappings.end(),
+			std::back_inserter(explicit_toplevel_mappings_vec));
+		std::sort(explicit_toplevel_mappings_vec.begin(), explicit_toplevel_mappings_vec.end(),
+			[](const explicit_toplevel_mappings_t::value_type& arg1, 
+			   const explicit_toplevel_mappings_t::value_type& arg2)
+			{
+				// order by program order
+				cerr << "Comparing line number " << arg1.second->rule_ast->getLine(arg1.second->rule_ast)
+				 << " with " << arg2.second->rule_ast->getLine(arg2.second->rule_ast) << endl;
+				return arg1.second->rule_ast->getLine(arg1.second->rule_ast)
+				     < arg2.second->rule_ast->getLine(arg2.second->rule_ast);
+			});
+		cerr << "Vector has " << explicit_toplevel_mappings_vec.size() << " elements." << endl;
+		for (auto i_explicit_toplevel = explicit_toplevel_mappings_vec.begin();
+				i_explicit_toplevel != explicit_toplevel_mappings_vec.end();
 				++i_explicit_toplevel)
 		{
 			// assert uniqueness in the multimap for now
@@ -1093,7 +1125,7 @@ namespace cake
 					i_explicit_toplevel->second
 				)
 			);
-			target_field_selectors.insert(selector);
+			target_field_selectors.push_back(selector);
 		}
 		
 		/* 1. Build an environment containing all the source-side fields that these depend on. */
@@ -1228,11 +1260,8 @@ namespace cake
 				m_out.dec_level();
 				m_out << "}" << endl;
 			}
-			/* Didn't I have this single-field-at-a-time approach before?
-			 * Why didn't it work?
-			 */
 		}
-		/* Emit overall sink-side stub. Since we have  */
+		/* Emit overall sink-side stub. */
 		if (sink_infix_stub && GET_CHILD_COUNT(sink_infix_stub) > 0)
 		{
 			// make sure we are in the sink module context now
@@ -1286,11 +1315,26 @@ namespace cake
 				GET_CHILD(sink_infix_stub, 0)
 			);
 			
+			post_sink_stub_hook(ctxt.env, return_status);
+			
 			ctxt.env = saved_env;
 		}
 
 		// output return statement
 		m_out << "return *__cake_p_buf;" << endl;
+	}
+	
+	void 
+	virtual_value_conversion::post_sink_stub_hook(
+		const environment& env, 
+		const post_emit_status& return_status
+	)
+	{
+		if (treat_target_type_as_user_allocated())
+		{
+			m_out << "__cake_p_buf = __cake_p_to = " << return_status.result_fragment
+				<< ";" << endl;
+		}
 	}
 
 }

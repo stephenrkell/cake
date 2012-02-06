@@ -168,10 +168,19 @@ pair_of_mappings(long double);
 			found_co_object = find_co_object(from,
 				FromComponent::rep_id, ToComponent::rep_id,
 				&found_group);
-			assert(found_co_object);
 			
-			if (p_to) *p_to = reinterpret_cast<__typeof(*p_to)>(found_co_object);
-			return reinterpret_cast<__typeof(*p_to)>(found_co_object);
+			if (!found_co_object)
+			{
+				fprintf(stderr, "Warning: assuming object at %p is its own co-object.\n",
+					from);
+				if (p_to) *p_to = reinterpret_cast<__typeof(*p_to)>(from);
+				return reinterpret_cast<__typeof(*p_to)>(from);
+			}
+			else
+			{
+				if (p_to) *p_to = reinterpret_cast<__typeof(*p_to)>(found_co_object);
+				return reinterpret_cast<__typeof(*p_to)>(found_co_object);
+			}
 				/*
 				 * Cake compiler:
 				 * How do we identify source/sink data types

@@ -121,12 +121,13 @@ namespace cake
 	int path_to_node(antlr::tree::Tree *ancestor,
 	antlr::tree::Tree *target, std::deque<int>& out);
 	
-	// HACK: these are somewhat utility functions
 	bool subprogram_returns_void(
 		shared_ptr<spec::subprogram_die> subprogram);
 
 	bool treat_subprogram_as_untyped(
 		shared_ptr<spec::subprogram_die> subprogram);
+		
+	bool arg_is_indirect(shared_ptr<spec::formal_parameter_die> p_fp);
 	
 	boost::regex regex_from_pattern_ast(antlr::tree::Tree *t);
 	

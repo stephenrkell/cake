@@ -6,9 +6,9 @@ exists elf_reloc("client.o") client
 	 * The callee will tell us how much data it wrote. */
 	declare 
 	{
-		getstuff: (dirbuf : void ptr, 
-		           off : long\ unsigned\ int, 
-		           len : long\ unsigned\ int) => _;
+		getstuff: (a_dirbuf : void ptr, 
+		           a_off : long\ unsigned\ int ptr, 
+		           a_len : long\ unsigned\ int ptr) => _;
 	}
 }
 exists elf_reloc("lib.o") lib;
@@ -19,7 +19,7 @@ derive elf_reloc("vconstruct.o") vconstruct = link [client, lib]
 		/* Value construction expressions let us construct a substitute
 		 * value for one or more parameters, and use its correspondences
 		 * to transfer data in and out of the target stub. */
-		getstuff(subst_buf as uio_outbuf(dirbuf, off, len), _, _)
+		getstuff(subst_buf as uio_outbuf(a_dirbuf, a_off, a_len), _, _)
 		                                         --> readstuff(subst_buf);
 		
 		values
@@ -39,12 +39,11 @@ derive elf_reloc("vconstruct.o") vconstruct = link [client, lib]
 			// after crossover. It is never allocated a co-object,
 			// and infact needn't be an object (i.e. it could be,
 			// say, a file descriptor or some other signifier).
-			uio_outbuf         --> (uio_setup(dirbuf, len, off) /* WHAT now? */
-			                        ) uio;
+			uio_outbuf --> (uio_setup(a_dirbuf, a_len, a_off)) uio;
 			
 			uio_outbuf <-- uio
-			{ len <-- (uio_getresid(here)) void;
-			  off <-- (uio_getoff(here)) void;
+			{ a_len <-- (uio_getresid(here)) void;
+			  a_off <-- (uio_getoff(here)) void;
 			  void <-- (uio_free(here)) void;
 			}; // ^-- not quite "len" and "off" here -- "*len" and "*off"
 			   // BUT we don't want assignment... use "out" somehow?

@@ -22,6 +22,8 @@ namespace cake
 	using boost::dynamic_pointer_cast;
 	using namespace dwarf;
 	using dwarf::tool::cxx_compiler;
+	using dwarf::spec::type_die;
+	using dwarf::spec::formal_parameter_die;
 	using srk31::indenting_ostream;
 	
     class wrapper_file
@@ -213,14 +215,10 @@ namespace cake
             // FIXME: also need context about naming environment, to determine 
             // which names are new (to bind) and which denote preexisting values.
 //        	const link_derivation::ev_corresp_entry& corresp_pair);
-        
-		struct post_emit_status
-		{
-			string result_fragment;
-			string success_fragment;
-			environment new_bindings;
-		};
+    public:
+		typedef ::cake::post_emit_status post_emit_status;
 		static const string NO_VALUE;
+	private:
 		
         //std::pair<std::string, std::string>
         //emit_event_corresp_stub(

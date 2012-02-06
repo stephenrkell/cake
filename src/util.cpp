@@ -511,7 +511,6 @@ namespace cake
 		auto newMemberName = make_definite_member_name_expr(
 			vector<string>(1, event_name), true);
 		cloneSourcePattern->setChild(cloneSourcePattern, 1, newMemberName);
-
 		
 		// add an ellipsis to the source args, if one is not there already
 		if (GET_TYPE(GET_CHILD(cloneSourcePattern, GET_CHILD_COUNT(cloneSourcePattern) - 1))
@@ -530,46 +529,36 @@ namespace cake
 		// replace the sink expr with an instantiated version of the pattern
 		// HACK: for now, just support stubs that are a single call expression...
 		// ... and build a call expr (under EVENT_SINK_AS_STUB) 
-		if (GET_TYPE(cloneSinkExpr) == CAKE_TOKEN(EVENT_PATTERN))
+		if (GET_TYPE(cloneSinkExpr) == CAKE_TOKEN(EVENT_PATTERN)) // bidirectional case
 		{
-			// example: 
-			//     (EVENT_PATTERN EVENT_CONTEXT
-			//         (DEFINITE_MEMBER_NAME bar_do_xyzzy)
-			//         (ANNOTATED_VALUE_PATTERN
-			//             (NAME_AND_INTERPRETATION
-			//                 (DEFINITE_MEMBER_NAME blorb)
-			//             )
-			//         )
-			//         (ANNOTATED_VALUE_PATTERN
-			//             (NAME_AND_INTERPRETATION
-			//                 (DEFINITE_MEMBER_NAME frotz)
-			//             )
-			//         )
-			//     )
-			// needs to become
-			// (EVENT_SINK_AS_STUB
-			//    (INVOKE_WITH_ARGS 
-			//        (MULTIVALUE ...)
-			//        (DEFINITE_MEMBER_NAME bar_do_xyzzy)
-			//    
-
 			INIT;
 			BIND3(cloneSinkExpr, context, EVENT_CONTEXT);
 			BIND3(cloneSinkExpr, memberName, DEFINITE_MEMBER_NAME);
+			BIND3(cloneSinkExpr, eventCountPred, EVENT_COUNT_PREDICATE);
+			BIND3(cloneSinkExpr, namesAnnotation, KEYWORD_NAMES);
 			std::vector<antlr::tree::Tree *> args;
 			FOR_REMAINING_CHILDREN(cloneSinkExpr)
 			{
 				INIT;
-				BIND2(n, argExpr);
-				args.push_back(argExpr);
+				if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS)) break;
+				//{
+				//
+				//}
+				ALIAS3(n, valuePattern, ANNOTATED_VALUE_PATTERN);
+				{
+					INIT;
+					BIND2(valuePattern, argExpr); 
+					assert(argExpr);
+					args.push_back(argExpr);
+				}
 			}
-			// because we're a pattern rule, add an ellipsis if not already
+			// because we're a pattern rule, add in_args if not already
 			if (GET_TYPE(args.at(args.size() - 1)) != CAKE_TOKEN(ELLIPSIS))
 			{
 				args.push_back(
 					build_ast(GET_FACTORY(cloneSinkExpr),
-						CAKE_TOKEN(ELLIPSIS),
-						"...",
+						CAKE_TOKEN(KEYWORD_IN_ARGS),
+						"in_args",
 						vector<Tree*>()
 					)
 				);
@@ -1157,7 +1146,18 @@ namespace cake
 			return true;
 		}
 		return false;
-	}			
+	}
+	
+	bool
+	arg_is_indirect(shared_ptr<spec::formal_parameter_die> p_fp)
+	{
+		return
+			p_fp->get_type()
+			&& p_fp->get_type()->get_concrete_type()->get_tag() == DW_TAG_pointer_type
+			&& dynamic_pointer_cast<spec::pointer_type_die>(
+				p_fp->get_type()->get_concrete_type()
+				)->get_type();
+	}
 		
 	std::string solib_constructor = std::string("elf_external_sharedlib");
 	const char *guessed_system_library_path = "/usr/lib:/lib";
