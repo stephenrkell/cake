@@ -830,7 +830,8 @@ namespace cake
 			optional<string>(""),  // no source selector needed
 			make_ast("this", &cakeCParser::stubPrimitiveExpression), // our expression is just "this"
 			GET_CHILD_COUNT(source_infix_stub) ? GET_CHILD(source_infix_stub, 0) : 0, // pass over INFIX_STUB_EXPR
-			GET_CHILD_COUNT(sink_infix_stub) ? GET_CHILD(sink_infix_stub, 0) : 0);
+			GET_CHILD_COUNT(sink_infix_stub) ? GET_CHILD(sink_infix_stub, 0) : 0,
+			true /* force writing to void target */);
 			
 		// output return statement
 		m_out << "return *__cake_p_buf;" << endl;
@@ -843,7 +844,8 @@ namespace cake
 		optional<string> unique_source_field_selector,
 		antlr::tree::Tree *source_expr,
 		antlr::tree::Tree *source_infix,
-		antlr::tree::Tree *sink_infix)
+		antlr::tree::Tree *sink_infix,
+		bool write_void_target)
 	{
 		// Assume our environment already contains all the source fields that the
 		// rule could reference. 
@@ -930,10 +932,16 @@ namespace cake
 		/* Now we can evaluate the pre-stub if there is one. It should use "this" if
 		 * it depends on the field value. */
 		auto extended_env2 = extended_env1; // provisional value
-		if (source_infix && GET_CHILD_COUNT(source_infix) > 0)
+		if (source_infix && 
+			(GET_TYPE(source_infix) != CAKE_TOKEN(INFIX_STUB_EXPR)
+			|| GET_CHILD_COUNT(source_infix) > 0))
 		{
+			if (GET_TYPE(source_infix) == CAKE_TOKEN(INFIX_STUB_EXPR))
+			{
+				source_infix = GET_CHILD(source_infix, 0);
+			}
 			auto status2 = w.emit_stub_expression_as_statement_list(ctxt,
-				GET_CHILD(source_infix, 0));
+				source_infix);
 			extended_env2 = w.merge_environment(extended_env1, status2.new_bindings);
 			if (status2.result_fragment != w.NO_VALUE) extended_env2["__cake_it"] = 
 				(wrapper_file::bound_var_info) {
@@ -1019,10 +1027,17 @@ namespace cake
 
 		/* Now emit the post-stub. */
 		//auto new_env3 = ctxt.env; // provisional value
-		if (sink_infix && GET_CHILD_COUNT(sink_infix) > 0)
+		if (sink_infix && 
+			(GET_TYPE(sink_infix) != CAKE_TOKEN(INFIX_STUB_EXPR)
+			|| GET_CHILD_COUNT(sink_infix) > 0))
 		{
+			// HACK: how did this AST change happen?
+			if (GET_TYPE(sink_infix) == CAKE_TOKEN(INFIX_STUB_EXPR))
+			{
+				sink_infix = GET_CHILD(sink_infix, 0);
+			}
 			auto status3 = w.emit_stub_expression_as_statement_list(ctxt,
-				GET_CHILD(sink_infix, 0));
+				sink_infix);
 			ctxt.env = w.merge_environment(ctxt.env, status3.new_bindings);
 			if (status3.result_fragment != w.NO_VALUE) ctxt.env["__cake_it"] = 
 				(wrapper_file::bound_var_info) {
@@ -1035,7 +1050,7 @@ namespace cake
 
 		/* Now we have an "it": either the output of the stub, if there was one,
 		 * or else the converted field value. */
-		if (!is_void_target)
+		if (!is_void_target || write_void_target)
 		{
 			assert(ctxt.env["__cake_it"].cxx_name != "");
 			m_out << "(*__cake_p_buf)" << target_field_selector << " = " <<

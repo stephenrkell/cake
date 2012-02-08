@@ -831,8 +831,9 @@ namespace cake
 	}
 	
 	void 
-	link_derivation::find_type_expectations_in_stub(module_ptr module,
-		antlr::tree::Tree *stub, 
+	link_derivation::find_type_expectations_in_stub(const wrapper_file::environment& env,
+		module_ptr module,
+		antlr::tree::Tree *ast, 
 		shared_ptr<dwarf::spec::type_die> current_type_expectation,
 		multimap< string, shared_ptr<dwarf::spec::type_die> >& out)
 	{
@@ -841,99 +842,224 @@ namespace cake
 		 * e.g. type info for C function signatures,
 		 * we infer C++ static type requirements for any idents used.
 		 * This might include typedefs, i.e. we don't concretise. */
-		map<int, shared_ptr<dwarf::spec::type_die> > child_type_expectations;
-		antlr::tree::Tree *parent_whose_children_to_walk = stub;
-		switch(GET_TYPE(stub))
+		 
+		// HACK: First, record the lowest ellipsis begin argpos in the environment
+		unsigned lowest_ellipsis_argpos = std::numeric_limits<unsigned>::max();
+		for (auto i_binding = env.begin(); i_binding != env.end(); ++i_binding)
 		{
-			case CAKE_TOKEN(INVOKE_WITH_ARGS):
-				{
-					INIT;
-					BIND3(stub, argsExpr, MULTIVALUE);
-					parent_whose_children_to_walk = argsExpr;
-					BIND2(stub, functionExpr);
-					optional<definite_member_name> function_dmn;
-					switch(GET_TYPE(functionExpr))
-					{
-						case IDENT:
-							function_dmn = definite_member_name(1, CCP(GET_TEXT(functionExpr)));
-							break;
-						case DEFINITE_MEMBER_NAME:
-							{
-								definite_member_name dmn(functionExpr);
-								function_dmn = dmn;
-							}
-							break;
-						default:
-						{
-							cerr << "Warning: saw a functionExpr that wasn't of simple form: "
-								<< CCP(GET_TEXT(functionExpr)) << endl;
-							break;
-						}
-					}
-					if (function_dmn) 
-					{
-						/* Resolve the function name against the module. */
-						auto found = module->get_ds().toplevel()->visible_resolve(
-							function_dmn->begin(), function_dmn->end());
-						if (found)
-						{
-							auto subprogram_die = dynamic_pointer_cast<
-								dwarf::spec::subprogram_die>(found);
-							if (found)
-							{
-								auto i_arg = subprogram_die->formal_parameter_children_begin();
-								INIT;
-								FOR_ALL_CHILDREN(argsExpr)
-								{
-									if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS)
-									 || GET_TYPE(n) == CAKE_TOKEN(KEYWORD_IN_ARGS)) break;
-									if (i_arg == subprogram_die->formal_parameter_children_end())
-									{
-										cerr << "Expression " << CCP(TO_STRING_TREE(argsExpr))
-											<< ", function " << *subprogram_die << endl;
-										RAISE(stub, "too many args for function");
-									}
-									if ((*i_arg)->get_type())
-									{
-										/* We found a type expectation */
-										child_type_expectations[i] = (*i_arg)->get_type();
-									}
-									
-									++i_arg;
-								}
-							}
-							else
-							{
-								RAISE(stub, "invokes nonexistent function");
-								// FIXME: this will need to be tweaked to support function ptrs
-							}
-						}
-					}
-				}
-				goto walk_children;
-			case CAKE_TOKEN(IDENT):
-				if (current_type_expectation) out.insert(make_pair(
-					CCP(GET_TEXT(stub)), current_type_expectation));
-				break; /* idents have no children */
-			default:
-				/* In all other cases, we have no expectation, so we leave
-				 * the child_type_expectations at default values. */
-			walk_children:
+			if (i_binding->second.from_ellipsis)
 			{
-				INIT;
-				FOR_ALL_CHILDREN(parent_whose_children_to_walk)
-				{
-					/* recurse */
-					find_type_expectations_in_stub(
-						module,
-						n, /* child */
-						child_type_expectations[i],
-						out
-					);
-				}
+				std::istringstream cur_s(i_binding->first.substr(string("__cake_arg").length()));
+				unsigned curpos;
+				cur_s >> curpos;
+
+				if (curpos < lowest_ellipsis_argpos) lowest_ellipsis_argpos = curpos;
 			}
-				
-		} // end switch
+		}
+		cerr << "Lowest ellipsis argpos: " << lowest_ellipsis_argpos << endl;
+		
+		/* This node matches the current Cakename --
+		 * except in the case of ellipsis, in which case
+		 * it only potentially matches.  Anyway, find the DWARF expectations
+		 * for this element. */
+		auto dwarf_context = map_ast_context_to_dwarf_element(ast,
+			module,
+			false);
+		auto with_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(dwarf_context); 
+
+		/* New implementation: for each ident / DMN in the stub, we map it to a 
+		 * DWARF context and see if that has a type. */
+		optional<definite_member_name> opt_dmn;
+		string ident;
+		if (GET_TYPE(ast) == CAKE_TOKEN(IDENT)) ident = unescape_ident(CCP(GET_TEXT(ast)));
+		if (GET_TYPE(ast) == CAKE_TOKEN(DEFINITE_MEMBER_NAME)) 
+		{
+			opt_dmn = read_definite_member_name(ast);
+		}
+
+		if (GET_TYPE(ast) == CAKE_TOKEN(IDENT)
+		||  GET_TYPE(ast) == CAKE_TOKEN(DEFINITE_MEMBER_NAME)
+		||  GET_TYPE(ast) == CAKE_TOKEN(ELLIPSIS)
+		||  GET_TYPE(ast) == CAKE_TOKEN(KEYWORD_IN_ARGS))
+		{
+
+			auto dwarf_context = map_ast_context_to_dwarf_element(ast,
+				module,
+				false);
+			auto with_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(dwarf_context); 
+
+			if (with_type)
+			{
+
+				if (GET_TYPE(ast) == CAKE_TOKEN(ELLIPSIS)
+				||  GET_TYPE(ast) == CAKE_TOKEN(KEYWORD_IN_ARGS))
+				{
+					// This means we found an ellipsis in the stub,
+					// and just retrieved the *first* fp in the position of that ellipsis.
+					// It only matches if the current cakename corresponds to an argument
+					// that is going to be mapped to that position.
+					// We might be doing this positionally or by name.
+					// For the by-name case, it means
+					// -- our cakename should be friendly, and
+					//    we look for an fp having that name;
+					// For the positional case, it means
+					// -- our cakename should be nonfriendly, and
+					//    we look for the fp at the same offset within the ellipsis as our nonfriendly name.
+
+					assert(with_type->get_tag() == DW_TAG_formal_parameter);
+					auto subprogram = dynamic_pointer_cast<subprogram_die>(with_type->get_parent());
+					abstract_dieset::iterator tmp_iter(with_type->iterator_here(),
+						abstract_dieset::siblings_policy_sg);
+					subprogram_die::formal_parameter_iterator i_fp
+					 = subprogram->formal_parameter_children_begin();
+					while (i_fp.base().base() != tmp_iter) ++i_fp;
+
+					auto fps_end = subprogram->formal_parameter_children_end();
+
+					for (auto i_binding = env.begin(); i_binding != env.end(); ++i_binding)
+					{
+
+						if (i_binding->second.from_ellipsis
+						&& *i_binding->second.from_ellipsis == -1) // non-positional
+						{
+							// the name-matching case -- look for an arg that matches
+							for (; i_fp != fps_end; ++i_fp)
+							{
+								if ((*i_fp)->get_name() && *(*i_fp)->get_name() == i_binding->first) break;
+							}
+						}
+						else if (i_binding->second.from_ellipsis
+						&& *i_binding->second.from_ellipsis != -1) // positional
+						{
+							// what position does the current cakename fall within the ellipsis?
+							std::istringstream cur_s(i_binding->first.substr(string("__cake_arg").length()));
+							unsigned curpos;
+							cur_s >> curpos;
+
+							unsigned offset = curpos - lowest_ellipsis_argpos;
+
+							for (int j = 0; j < offset; ++j) 
+							{
+								if (i_fp != fps_end) ++i_fp;
+							}
+						}
+						if (i_fp != subprogram->formal_parameter_children_end()
+							&& (*i_fp)->get_type())
+						{
+							out.insert(make_pair(i_binding->first, (*i_fp)->get_type()));
+						}
+					} // next binding
+				}
+				else // not ellipsis
+				{
+					out.insert(make_pair(opt_dmn ? opt_dmn->at(0) : ident, with_type->get_type()));
+				}
+			} // end if with_type
+		} // end if a leaf node
+		else
+		{
+			// recurse
+			INIT;
+			FOR_ALL_CHILDREN(ast)
+			{
+				find_type_expectations_in_stub(env, module, n, current_type_expectation, out);
+			}
+		}
+		
+// 		map<int, shared_ptr<dwarf::spec::type_die> > child_type_expectations;
+// 		antlr::tree::Tree *parent_whose_children_to_walk = stub;
+// 		switch(GET_TYPE(stub))
+// 		{
+// 			case CAKE_TOKEN(INVOKE_WITH_ARGS):
+// 				{
+// 					INIT;
+// 					BIND3(stub, argsExpr, MULTIVALUE);
+// 					parent_whose_children_to_walk = argsExpr;
+// 					BIND2(stub, functionExpr);
+// 					optional<definite_member_name> function_dmn;
+// 					switch(GET_TYPE(functionExpr))
+// 					{
+// 						case IDENT:
+// 							function_dmn = definite_member_name(1, CCP(GET_TEXT(functionExpr)));
+// 							break;
+// 						case DEFINITE_MEMBER_NAME:
+// 							{
+// 								definite_member_name dmn(functionExpr);
+// 								function_dmn = dmn;
+// 							}
+// 							break;
+// 						default:
+// 						{
+// 							cerr << "Warning: saw a functionExpr that wasn't of simple form: "
+// 								<< CCP(GET_TEXT(functionExpr)) << endl;
+// 							break;
+// 						}
+// 					}
+// 					if (function_dmn) 
+// 					{
+// 						/* Resolve the function name against the module. */
+// 						auto found = module->get_ds().toplevel()->visible_resolve(
+// 							function_dmn->begin(), function_dmn->end());
+// 						if (found)
+// 						{
+// 							auto subprogram_die = dynamic_pointer_cast<
+// 								dwarf::spec::subprogram_die>(found);
+// 							if (found)
+// 							{
+// 								auto i_arg = subprogram_die->formal_parameter_children_begin();
+// 								INIT;
+// 								FOR_ALL_CHILDREN(argsExpr)
+// 								{
+// 									if (i_arg == subprogram_die->formal_parameter_children_end())
+// 									{
+// 										cerr << "Expression " << CCP(TO_STRING_TREE(argsExpr))
+// 											<< ", function " << *subprogram_die << endl;
+// 										if (GET_TYPE(n) != CAKE_TOKEN(ELLIPSIS)
+// 											&& GET_TYPE(n) != CAKE_TOKEN(KEYWORD_IN_ARGS))
+// 											RAISE(stub, "too many args for function");
+// 									}
+// 									if (i_arg != subprogram_die->formal_parameter_children_end()
+// 									 && (*i_arg)->get_type())
+// 									{
+// 										/* We found a type expectation */
+// 										child_type_expectations[i] = (*i_arg)->get_type();
+// 									}
+// 									
+// 									if (i_arg != subprogram_die->formal_parameter_children_end()) ++i_arg;
+// 								}
+// 							}
+// 							else
+// 							{
+// 								RAISE(stub, "invokes nonexistent function");
+// 								// FIXME: this will need to be tweaked to support function ptrs
+// 							}
+// 						}
+// 					}
+// 				}
+// 				goto walk_children;
+// 			case CAKE_TOKEN(IDENT):
+// 				if (current_type_expectation) out.insert(make_pair(
+// 					CCP(GET_TEXT(stub)), current_type_expectation));
+// 				break; /* idents have no children */
+// 			default:
+// 				/* In all other cases, we have no expectation, so we leave
+// 				 * the child_type_expectations at default values. */
+// 			walk_children:
+// 			{
+// 				INIT;
+// 				FOR_ALL_CHILDREN(parent_whose_children_to_walk)
+// 				{
+// 					/* recurse */
+// 					find_type_expectations_in_stub(
+// 						module,
+// 						n, /* child */
+// 						child_type_expectations[i],
+// 						out
+// 					);
+// 				}
+// 			}
+// 				
+// 		} // end switch
 	}	
 //     string link_derivation::namespace_name()
 //     {
@@ -971,9 +1097,17 @@ namespace cake
 			// also output any extra definitions we have added to the dieset.
 			// We start with the firss new offset, then add its siblings (only);
 			// these will mainly be typedefs and pointer types
-			for (abstract_dieset::iterator i_die(
+			
+			abstract_dieset::iterator first_added_die(
 				 	(*i)->get_ds().find((*i)->greatest_preexisting_offset() + 1),
 					abstract_dieset::siblings_policy_sg);
+			// special case: if first added DIE is a CU, descend inside it
+			if ((*first_added_die)->get_tag() == DW_TAG_compile_unit)
+			{
+				first_added_die = (*first_added_die)->children_begin();
+			}
+			
+			for (abstract_dieset::iterator i_die = first_added_die;
 					i_die != (*i)->get_ds().end();
 					++i_die)
 			{
@@ -2678,7 +2812,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 						   ||  GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_OUT_AS)
 						   ||  GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_INTERPRET_AS));
 						if (GET_TYPE(GET_CHILD(interp_head, 1))
-							== CAKE_TOKEN(VALUE_CONSTRUCT))
+							== CAKE_TOKEN(VALUE_CONSTRUCT) 
+							&& GET_CHILD_COUNT(GET_CHILD(interp_head, 1)) > 0)
 						{
 							antlr::tree::Tree *val_construct = GET_CHILD(interp_head, 1);
 							
@@ -2847,17 +2982,18 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		/* print debugging info: what type expectations did we find in the stubs? */
 		//if (sink_expr)
 		//{
-			cerr << "stub: " << CCP(TO_STRING_TREE(sink_expr_as_stub))
-				<< " implies type expectations as follows: " << endl;
-			multimap< string, shared_ptr<dwarf::spec::type_die> > out;
-			find_type_expectations_in_stub(sink,
-				sink_expr_as_stub, shared_ptr<dwarf::spec::type_die>(), // FIXME: use return type
-				out);
-			if (out.size() == 0) cerr << "(no type expectations inferred)" << endl;
-			else for (auto i_exp = out.begin(); i_exp != out.end(); ++i_exp)
-			{
-				cerr << i_exp->first << " as " << *i_exp->second << endl;
-			}
+		
+// 			multimap< string, shared_ptr<dwarf::spec::type_die> > out;
+// 			find_type_expectations_in_stub(sink,f
+// 				sink_expr_as_stub, shared_ptr<dwarf::spec::type_die>(), // FIXME: use return type
+// 				out);
+// 			cerr << "stub: " << CCP(TO_STRING_TREE(sink_expr_as_stub))
+// 				<< " implies type expectations as follows: " << endl;
+// 			if (out.size() == 0) cerr << "(no type expectations inferred)" << endl;
+// 			else for (auto i_exp = out.begin(); i_exp != out.end(); ++i_exp)
+// 			{
+// 				cerr << i_exp->first << " as " << *i_exp->second << endl;
+// 			}
 			
 		//}
 	}

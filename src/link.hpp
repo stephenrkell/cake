@@ -33,6 +33,7 @@ namespace cake {
 	
 	class wrapper_file;
 	class value_conversion;
+	class environment;
 	
 	class link_derivation : public derivation
 	{
@@ -230,7 +231,8 @@ namespace cake {
 		void merge_implicit_dwarf_info();
 		
 		void 
-		find_type_expectations_in_stub(module_ptr module,
+		find_type_expectations_in_stub(const environment& env,
+			module_ptr module,
 			antlr::tree::Tree *stub, 
 			shared_ptr<spec::type_die> current_type_expectation,
 			multimap< string, shared_ptr<spec::type_die> >& out);

@@ -53,6 +53,10 @@ namespace cake
 		
 		/** Whether the wrapper will handle crossover. Only meaningful if do_not_crossover. */
 		bool crossover_by_wrapper;
+		
+		/** Whether the binding comes from an ellipsis, and if so, what position
+		 within the ellipsis it corresponds to, or -1 if name-only ellipsis. */
+		optional<int> from_ellipsis;
 	};
 	//typedef std::map<std::string, bound_var_info> environment;
 	struct environment : public map<string, bound_var_info>
@@ -100,8 +104,9 @@ namespace cake
 
 			// we may have an event pattern
 			antlr::tree::Tree *opt_pattern;
-
-			// FIXME: how do we get at the names bound?
+			
+			// our event pattern may have included an ellipsis
+			optional<unsigned> ellipsis_begin_argpos;
 		};
 		optional<source_info_s> opt_source;
 
@@ -245,7 +250,8 @@ namespace cake
 			optional<string> unique_source_field_selector,
 			antlr::tree::Tree *source_expr,
 			antlr::tree::Tree *source_infix,
-			antlr::tree::Tree *sink_infix);
+			antlr::tree::Tree *sink_infix,
+			bool write_void_target = false);
 	};
 	
 	// structural impl

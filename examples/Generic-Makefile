@@ -42,7 +42,7 @@ $(BASENAME): $(BASENAME).o
 # this problem itself? I think the PIPESTATUS fix may already handle this case.
 ifeq ($(DEBUG),)
 cake-generated.mk $(BASENAME)_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
-	bash -c '( $(CAKE) $(BASENAME).cake -o cake-generated.mk 1>&2 2>&3 ) 3>&1 | tee cake.log; test "$${PIPESTATUS[*]}" == "0 0"' || (rm -f cake-generated.mk; false)
+	bash -c '( $(CAKE) $(BASENAME).cake -o cake-generated.mk 1>&2 2>&3 ) 3>&1 | tee cake.log 1>&2; test "$${PIPESTATUS[*]}" == "0 0"' || (rm -f cake-generated.mk; false)
 else
 cake-generated.mk $(BASENAME)_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
 	gdb --eval-command "break main" --eval-command "run $(BASENAME).cake -o $@" $(CAKE) #> "$@"

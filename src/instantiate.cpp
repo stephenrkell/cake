@@ -150,12 +150,23 @@ namespace cake
 		for (auto i_memb = named_with_data_members->member_children_begin(); 
 			i_memb != named_with_data_members->member_children_end(); ++i_memb)
 		{
+			assert((*i_memb)->get_name());
+			if (i_memb != named_with_data_members->member_children_begin()) out << ", " << endl;
+			*output_cxx_file << "\t/* ." << *(*i_memb)->get_name() << " = */ ";
 			if (memb_is_funcptr(i_memb))
 			{
-				assert((*i_memb)->get_name());
-				if (i_memb != named_with_data_members->member_children_begin()) out << ", " << endl;
-				*output_cxx_file << "\t." << *(*i_memb)->get_name() << " = &" 
-					<< symbol_prefix + *(*i_memb)->get_name();
+				*output_cxx_file << "&" << symbol_prefix + *(*i_memb)->get_name();
+			}
+			else
+			{
+				// HACK: since C++ does not have designated initializers, 
+				// we have to make a guess about what the default value of this member
+				// should be.
+				auto conc = (*i_memb)->get_type()->get_concrete_type();
+				if (conc->get_tag() == DW_TAG_base_type
+				||  conc->get_tag() == DW_TAG_pointer_type) *output_cxx_file << "0";
+				else *output_cxx_file << "{}";
+				
 			}
 		}
 		*output_cxx_file << endl << "};" << endl;

@@ -953,12 +953,15 @@ namespace cake
 	)
 	{
 		if (!node) return boost::shared_ptr<dwarf::spec::basic_die>();
-		assert(GET_TYPE(node) == CAKE_TOKEN(IDENT)
+		if (!(GET_TYPE(node) == CAKE_TOKEN(IDENT)
+		|| GET_TYPE(node) == CAKE_TOKEN(DEFINITE_MEMBER_NAME)
+		|| GET_TYPE(node) == CAKE_TOKEN(ELLIPSIS)
+		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_IN_ARGS)
 		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_IN_AS)
 		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_OUT_AS)
 		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
-		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_AS));
-		cerr << "Considering use contexts of ident " << CCP(TO_STRING_TREE(node))
+		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_AS))) return boost::shared_ptr<dwarf::spec::basic_die>();
+		cerr << "Considering use contexts of fragment " << CCP(TO_STRING_TREE(node))
 			<< endl;
 
 		// first we do a depthfirst walk of the tree from the ancestor,
@@ -1040,7 +1043,10 @@ namespace cake
 							}
 							else cerr << "no." << endl;
 						}
-						assert(false);
+						// It might be the function expression itself. 
+						// If so, we return the subprogram it denotes, if it's easy to identify
+						// HACK: For now, don't bother.
+						return boost::shared_ptr<dwarf::spec::basic_die>();
 					}
 				}
 				case CAKE_TOKEN(EVENT_PATTERN): {

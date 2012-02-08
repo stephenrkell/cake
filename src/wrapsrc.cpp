@@ -69,10 +69,10 @@ namespace cake
         }
         m_out << function_name_to_use << '(';
        
-        auto i_arg = args_begin;
-		dwarf::spec::subprogram_die::formal_parameter_iterator i_fp = 
-			unique_called_subprogram ? unique_called_subprogram->formal_parameter_children_begin()
-			: dwarf::spec::subprogram_die::formal_parameter_iterator();
+        //auto i_arg = args_begin;
+		//dwarf::spec::subprogram_die::formal_parameter_iterator i_fp = 
+		//	unique_called_subprogram ? unique_called_subprogram->formal_parameter_children_begin()
+		//	: dwarf::spec::subprogram_die::formal_parameter_iterator();
         
         // actually, iterate over the pattern
         assert(GET_TYPE(event_pattern) == CAKE_TOKEN(EVENT_PATTERN));
@@ -82,7 +82,6 @@ namespace cake
         BIND3(event_pattern, eventCountPredicate, EVENT_COUNT_PREDICATE);
         BIND3(event_pattern, eventParameterNamesAnnotation, KEYWORD_NAMES);
 		int argnum = -1;
-        int pattern_args;
         switch(GET_CHILD_COUNT(event_pattern))
         {
             case 4: // okay, we have no argument list (simple renames only)
@@ -159,85 +158,145 @@ assert(false && "disabled support for inferring positional argument mappings");
 				{ /* FIXME: Check that they're consistent! */ }
 				break;
 			default: { // must be >=5
-				pattern_args = GET_CHILD_COUNT(event_pattern) - 4; /* ^ number of bindings above! */
-				assert(pattern_args >= 1);
+				bool seen_event_pattern_ellipsis = false;
+				std::vector<antlr::tree::Tree *> pattern_args;
+				/* 
+				 * We want to output a signature declaring a number of arguments
+				 * that is the maximum of
+				 * - the event pattern argcount, and
+				 * - the DWARF caller-side arguments.
+				 * Since we now merge info from stubs into caller-side DWARF earlier
+				 * in the process, we don't need to consider callee-side arguments.
+				 */
 				FOR_REMAINING_CHILDREN(event_pattern)
 				{
-					if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS)) break;
-					++argnum;
-					if (!ignore_dwarf_args && i_arg == args_end)
+					if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS))
 					{
-						std::ostringstream msg;
-						msg << "argument pattern has too many arguments for subprogram "
-							<< subprogram;
-						RAISE(event_pattern, msg.str());
+						/* This means our event pattern need not cover our DWARF args. 
+						 * We should keep emitting the DWARF args anyway. */
+						seen_event_pattern_ellipsis = true;
+						break;
 					}
-					ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
+					else pattern_args.push_back(n);
+				}
+				//pattern_args = GET_CHILD_COUNT(event_pattern) - 4; /* ^ number of bindings above! */
+				assert(pattern_args.size() >= 1);
+				
+				unsigned dwarf_args_count = srk31::count(args_begin, args_end);
+				
+				// Just write the arguments.
+				auto i_fp = args_begin;
+				for (unsigned j = 0; j < std::max(dwarf_args_count, (unsigned) pattern_args.size()); ++j)
+				{
+					if (j > 0) m_out << ", ";
+					if (emit_types)
 					{
-						INIT;
-						BIND2(n, valuePattern)
-						switch(GET_TYPE(valuePattern))
+						if (i_fp != args_end
+							&& (*i_fp)->get_type() && !ignore_dwarf_args)
 						{
-							// these are all okay -- we don't care 
-							case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
-								assert(false);
-							case CAKE_TOKEN(NAME_AND_INTERPRETATION):
-							{
-								INIT;
-								BIND2(valuePattern, definiteMemberName);
-								if (GET_TYPE(definiteMemberName) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
-								{
-									definite_member_name mn = 
-										read_definite_member_name(definiteMemberName);
-									if (mn.size() > 1) RAISE(valuePattern, "may not be compound");
-									// output the variable type, or unspecified_wordsize_type
-								} else assert(GET_TYPE(definiteMemberName) == CAKE_TOKEN(ANY_VALUE));
-								// output the variable name, prefixed 
-								//m_out << ' ' << arg_name_prefix << argnum /*<< '_' << mn.at(0)*/;
-								// NO -- now done by FALL THROUGH
-							} // FALL THROUGH
-							case CAKE_TOKEN(ANY_VALUE):
-							case CAKE_TOKEN(INDEFINITE_MEMBER_NAME):
-							case CAKE_TOKEN(METAVAR):
-							case CAKE_TOKEN(KEYWORD_CONST):
-								// output the argument type and a dummy name
-								if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? "::cake::unspecified_wordsize_type" : get_type_name(
-									(*i_arg)->get_type()));
-								m_out << ' ' << arg_name_prefix << argnum /*<< "_dummy" << argnum*/;
-								break;
-							default: RAISE_INTERNAL(valuePattern, "not a value pattern");
-						} // end switch
-					} // end ALIAS3 
-					// advance to the next
-				next:
-					// work out whether we need a comma
-					if (!ignore_dwarf_args) 
-					{	
-						//std::cerr << "advance DWARF caller arg cursor from " << **i_arg;
-						++i_arg; // advance DWARF caller arg cursor
-						//std::cerr << " to ";
-						//if (i_arg != args_end) std::cerr << **i_arg; else std::cerr << "(sentinel)";
-						//std::cerr << std::endl;
-					}
-					if (ignore_dwarf_args && unique_called_subprogram)
-					{
-						++i_fp;
-						// use DWARF callee arg cursor
-						if (i_fp != unique_called_subprogram->formal_parameter_children_end())
-						{
-							m_out << ", ";
+							m_out << get_type_name(	(*i_fp)->get_type());
 						}
+						else m_out << " ::cake::unspecified_wordsize_type";
+
+						m_out << ' ';
 					}
-					else if (ignore_dwarf_args) // && !unique_called_subprogram
-					{
-						if (argnum != pattern_args) m_out << ", ";
-					}
-					else 
-					{
-                		if (i_arg != args_end) m_out << ", ";
-					}
+					m_out << basic_name_for_argnum(j) /*<< "_dummy" << argnum*/;
 					
-				} // end FOR_REMAINING_CHILDREN
+					if (i_fp != args_end) ++i_fp;
+				}
+// 
+// 				FOR_REMAINING_CHILDREN(event_pattern)
+// 				{
+// 					++argnum;
+// 					if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS))
+// 					{
+// 						/* This means our event pattern need not cover our DWARF args. 
+// 						 * We should keep emitting the DWARF args anyway. */
+// 						seen_event_pattern_ellipsis = true;
+// 					}
+// 					if (seen_event_pattern_ellipsis)
+// 					{
+// 						// we just go with default names
+// 						// FIXME: could use DWARF info more here? already use it a bit, below
+// 						goto write_one_arg_with_default_name;
+// 					}
+// 					if (!ignore_dwarf_args && i_arg == args_end)
+// 					{
+// 						std::ostringstream msg;
+// 						msg << "argument pattern has too many arguments for subprogram "
+// 							<< subprogram;
+// 						RAISE(event_pattern, msg.str());
+// 					}
+// 					{ // protect gotos from initialization
+// 						ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
+// 						{
+// 							INIT;
+// 							BIND2(n, valuePattern)
+// 							switch(GET_TYPE(valuePattern))
+// 							{
+// 								// these are all okay -- we don't care 
+// 								case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
+// 									assert(false);
+// 								case CAKE_TOKEN(NAME_AND_INTERPRETATION):
+// 								{
+// 									INIT;
+// 									BIND2(valuePattern, definiteMemberName);
+// 									if (GET_TYPE(definiteMemberName) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
+// 									{
+// 										definite_member_name mn = 
+// 											read_definite_member_name(definiteMemberName);
+// 										if (mn.size() > 1) RAISE(valuePattern, "may not be compound");
+// 										// output the variable type, or unspecified_wordsize_type
+// 									} else assert(GET_TYPE(definiteMemberName) == CAKE_TOKEN(ANY_VALUE));
+// 									// output the variable name, prefixed 
+// 									//m_out << ' ' << arg_name_prefix << argnum /*<< '_' << mn.at(0)*/;
+// 									// NO -- now done by FALL THROUGH
+// 								} // FALL THROUGH
+// 								case CAKE_TOKEN(ANY_VALUE):
+// 								case CAKE_TOKEN(INDEFINITE_MEMBER_NAME):
+// 								case CAKE_TOKEN(METAVAR):
+// 								case CAKE_TOKEN(KEYWORD_CONST):
+// 									goto write_one_arg_with_default_name;
+// 								default: RAISE_INTERNAL(valuePattern, "not a value pattern");
+// 							} // end switch
+// 						} // end ALIAS3 
+// 					} // end protect initialization
+// 					// advance to the next
+// 				write_one_arg_with_default_name:
+// 					// output the argument type and a dummy name
+// 					if (emit_types) m_out << ((ignore_dwarf_args || !(*i_arg)->get_type()) ? "::cake::unspecified_wordsize_type" : get_type_name(
+// 						(*i_arg)->get_type()));
+// 					m_out << ' ' << arg_name_prefix << argnum /*<< "_dummy" << argnum*/;
+// 					// HACK: for initial_environment, make sure we have an fp at this position
+// 				next:
+// 					// work out whether we need a comma
+// 					if (!ignore_dwarf_args) 
+// 					{	
+// 						//std::cerr << "advance DWARF caller arg cursor from " << **i_arg;
+// 						++i_arg; // advance DWARF caller arg cursor
+// 						//std::cerr << " to ";
+// 						//if (i_arg != args_end) std::cerr << **i_arg; else std::cerr << "(sentinel)";
+// 						//std::cerr << std::endl;
+// 					}
+// 					if (ignore_dwarf_args && unique_called_subprogram)
+// 					{
+// 						++i_fp;
+// 						// use DWARF callee arg cursor
+// 						if (i_fp != unique_called_subprogram->formal_parameter_children_end())
+// 						{
+// 							m_out << ", ";
+// 						}
+// 					}
+// 					else if (ignore_dwarf_args) // && !unique_called_subprogram
+// 					{
+// 						if (argnum != pattern_args) m_out << ", ";
+// 					}
+// 					else 
+// 					{
+//                 		if (i_arg != args_end) m_out << ", ";
+// 					}
+// 					
+// 				} // end FOR_REMAINING_CHILDREN
 			}	// end default; fall through!
 			
 // 			break; // no, break!
@@ -327,21 +386,22 @@ assert(false && "disabled support for inferring positional argument mappings");
 // 			break;
 		} // end switch GET_CHILD_COUNT
 			
-		// if we have spare arguments at the end, something's wrong
-		if (!ignore_dwarf_args && i_arg != args_end)
-		{
-			std::ostringstream msg;
-			msg << "event pattern "
-				<< CCP(TO_STRING_TREE(event_pattern))
-				<< " has too few arguments for subprogram: "
-				<< *subprogram
-				<< ": processed " << (argnum + 1) << " arguments, and ";
-			unsigned count = srk31::count(subprogram->formal_parameter_children_begin(),
-				subprogram->formal_parameter_children_end());
-			msg << "subprogram has " << count << " arguments (first uncovered: "
-				<< **i_arg << ").";
-			RAISE(event_pattern, msg.str());
-		}
+// 		// if we have spare DWARF arguments at the end, something's wrong,
+// 		// unless the event pattern has "..."
+// 		if (!ignore_dwarf_args && i_arg != args_end)
+// 		{
+// 			std::ostringstream msg;
+// 			msg << "event pattern "
+// 				<< CCP(TO_STRING_TREE(event_pattern))
+// 				<< " has too few arguments for subprogram: "
+// 				<< *subprogram
+// 				<< ": processed " << (argnum + 1) << " arguments, and ";
+// 			unsigned count = srk31::count(subprogram->formal_parameter_children_begin(),
+// 				subprogram->formal_parameter_children_end());
+// 			msg << "subprogram has " << count << " arguments (first uncovered: "
+// 				<< **i_arg << ").";
+// 			RAISE(event_pattern, msg.str());
+// 		}
 
 		//} // end switch
 		
@@ -500,9 +560,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 			ctxt.modules.current = ctxt.modules.sink;
 			m_out << "// source->sink crossover point" << std::endl;
 			std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> > constraints;
-			if (sink_infix_stub) m_d.find_type_expectations_in_stub(
+			// for each ident, find constraints
+			if (sink_infix_stub) m_d.find_type_expectations_in_stub(ctxt.env, 
 				sink, sink_infix_stub, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
-			m_d.find_type_expectations_in_stub(
+			m_d.find_type_expectations_in_stub(ctxt.env, 
 				sink, action, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
 			//auto returned_outward = do_virtual_crossover(source, new_env1, sink);
 			ctxt.env = crossover_environment_and_sync(source, new_env1, sink, constraints, false);
@@ -558,7 +619,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				 * on things in the env 
 				 * may bring type expectations
 				 * that we should account for now, when converting. */
-				m_d.find_type_expectations_in_stub(
+				m_d.find_type_expectations_in_stub(ctxt.env, 
 					source, return_leg, boost::shared_ptr<dwarf::spec::type_die>(), 
 					return_constraints);
 			}
@@ -1446,6 +1507,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 	{
 		environment env, *out_env = &env;
 
+		cerr << "Creating initial environment for event pattern " 
+			<< CCP(TO_STRING_TREE(pattern))
+			<< endl;
+
 		// for each position in the pattern, emit a test
 		bool emitted = false;
 		INIT;
@@ -1483,6 +1548,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			auto i_caller_arg = caller_subprogram->formal_parameter_children_begin();
 			//int dummycount = 0;
 			bool arg_is_outparam = false;
+			bool add_excess_dwarf_args = false;
 			FOR_REMAINING_CHILDREN(eventPattern)
 			{
 				//boost::shared_ptr<dwarf::spec::type_die> p_arg_type = boost::shared_ptr<dwarf::spec::type_die>();
@@ -1518,7 +1584,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 						arg_is_outparam = true;
 					}
 				}
-				if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS)) break;
+				if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS))
+				{
+					/* This means we need to add any arguments that are in the DWARF 
+					 * signature but not explicitly in the event pattern. */
+					add_excess_dwarf_args = true;
+					break;
+				}
 				ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
 				{
 					INIT;
@@ -1565,10 +1637,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 								if (GET_CHILD_COUNT(interpretation) > 1)
 								{
 									INIT;
-									BIND3(interpretation, type_interpreted_to, IDENT);
+									BIND2(interpretation, type_interpreted_to);
 									BIND3(interpretation, value_construct, VALUE_CONSTRUCT);
 									if (GET_CHILD_COUNT(value_construct) > 0)
 									{
+										assert(GET_TYPE(type_interpreted_to) == CAKE_TOKEN(IDENT));
 										virtual_value_constructs.push_back((virtual_value_construct) {
 											/* .expr = */ value_construct,
 											/* .overall_cake_name = */ friendly_name,
@@ -1756,7 +1829,32 @@ assert(false && "disabled support for inferring positional argument mappings");
 				++argnum;
 				if (i_caller_arg != caller_subprogram->formal_parameter_children_end()) ++i_caller_arg;
 			} // end FOR_REMAINING_CHILDREN(eventPattern
-			
+			if (add_excess_dwarf_args)
+			{
+				int count = 0;
+				
+				while (i_caller_arg != caller_subprogram->formal_parameter_children_end())
+				{
+					auto basic_name = basic_name_for_argnum(argnum);
+					out_env->insert(std::make_pair(basic_name, 
+						(bound_var_info) { basic_name, // use the same name for both
+						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
+						source_module,
+						false,
+						optional<string>(),
+						optional<string>(),
+						optional<string>(),
+						optional<string>(),
+						optional<string>(),
+						optional<string>(),
+						false,
+						false,
+						optional<int>(count++)
+						 })); 
+					++i_caller_arg;
+					++argnum;
+				}
+			}
 			cerr << "/* Initial environment before virtualisation: " << endl;
 			for (auto i_el = out_env->begin(); i_el != out_env->end(); ++i_el)
 			{
@@ -2737,8 +2835,22 @@ assert(false && "disabled support for inferring positional argument mappings");
 			INIT;
 			FOR_ALL_CHILDREN(argsMultiValue)
 			{
-				assert(i_arg != callee_subprogram->formal_parameter_children_end()
-				 && (*i_arg)->get_type());
+				// we might output zero or more arg expressions here -- tricky
+				// don't bother with these checks for now
+// 				if (i_arg == callee_subprogram->formal_parameter_children_end())
+// 				{
+// 					cerr << "Calling function " << *callee_subprogram << endl;
+// 					RAISE(
+// 						argsMultiValue, "too many args for function");
+// 				}
+// 				if (!(*i_arg)->get_type()) 
+// 				{
+// 					cerr << "Calling function " << *callee_subprogram 
+// 						<< ", passing argument " << i << endl;
+// 					RAISE(
+// 						n, "no type information for argument");
+// 				}
+						
 				int args_for_this_ast_node = 1; // will be overridden in in_args handling
 				// for in_args handling:
 				std::vector<
@@ -2813,7 +2925,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 						{
 							// no arguments to name-match
 							// HACK: special case: one unmatched arg is okay
-							auto i_next_fp = i_arg; ++i_next_fp;
+							auto i_next_fp = i_arg; if (i_next_fp != callee_subprogram->formal_parameter_children_end()) ++i_next_fp;
 							auto i_caller_fp = ctxt.opt_source->signature->formal_parameter_children_begin();
 							auto count = srk31::count(ctxt.opt_source->signature->formal_parameter_children_begin(),
 								ctxt.opt_source->signature->formal_parameter_children_end());
@@ -2821,17 +2933,24 @@ assert(false && "disabled support for inferring positional argument mappings");
 							for (unsigned j = 0; 
 								i_caller_fp != ctxt.opt_source->signature->formal_parameter_children_end() 
 									&& j < i; ++j) ++i_caller_fp;
-							if (i_caller_fp != ctxt.opt_source->signature->formal_parameter_children_end()
+							if (i_arg != callee_subprogram->formal_parameter_children_end()
+							&& (i_caller_fp != ctxt.opt_source->signature->formal_parameter_children_end()
 							|| ctxt.opt_source->signature->unspecified_parameters_children_begin()
-							!= ctxt.opt_source->signature->unspecified_parameters_children_end())
+							!= ctxt.opt_source->signature->unspecified_parameters_children_end()))
 							{
 								matched_names.push_back(make_pair(
 										i_caller_fp, // might be END
-										i_arg));
+										i_arg)); // must not be END
+								args_for_this_ast_node = 1;
 							}
 							// no arguments to name-match
-							else goto finished_argument_eval_for_current_ast_node; // naughty goto
-						}
+							else 
+							{
+								args_for_this_ast_node = 0;
+								goto finished_argument_eval_for_current_ast_node; // naughty goto
+							}
+						} else args_for_this_ast_node = matched_names.size();
+						assert(args_for_this_ast_node > 0);
 						if (matched_names.begin()->second != i_arg)
 						{
 							RAISE(n, "name-matching args do not start here");
@@ -2847,8 +2966,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 								RAISE(n, "name-matching args are non-contiguous");
 							}
 						}
-						// override the count of args we're emitting in this AST iteration
-						args_for_this_ast_node = matched_names.size();
 						// start the iterator
 						i_matched_name = matched_names.begin();
 						// now what? well, we simply evaluate them in order. What order?
