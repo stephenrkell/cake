@@ -2,6 +2,7 @@
 #define __CAKE_MODULE_HPP
 
 #include <string>
+#include <set>
 #include <map>
 #include <memory>
 #include <boost/shared_ptr.hpp>
@@ -152,6 +153,7 @@ namespace cake
 			private_offsets_next(m_greatest_preexisting_offset + 1) {}
 		
 	protected:
+		std::set<Dwarf_Off> touched_dies;
 		void updated_dwarf()
 		{
 			m_greatest_preexisting_offset = 

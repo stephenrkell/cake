@@ -72,9 +72,26 @@ namespace cake
 			SELECT_NOT(LR_DOUBLE_ARROW); // we don't want rewrites, only claimGroups
 			process_claimgroup(n);
 		}
-		cerr << "Finished processing claims for module " << filename << endl;
+		cerr << "Finished processing claims for module " << filename << ". Modified DIEs: " << endl;
 		cerr << "*****************************************************" << endl;
-		cerr << get_ds() << endl;
+		for (auto i_off = touched_dies.begin(); i_off != touched_dies.end(); ++i_off)
+		{
+			cerr << **(get_ds().find(*i_off)) << endl;
+		}
+		cerr << "*****************************************************" << endl;
+		cerr << "Finished processing claims for module. New DIEs:" << filename << endl;
+		
+		abstract_dieset::iterator first_added_die(
+				get_ds().find(greatest_preexisting_offset() + 1),
+				abstract_dieset::siblings_policy_sg);
+		for (abstract_dieset::iterator i_die = first_added_die;
+				i_die != get_ds().end();
+				++i_die)
+		{
+			cerr << **i_die << endl;
+		}
+		
+		//cerr << get_ds() << endl;
 		cerr << "*****************************************************" << endl;
 	}
 
@@ -285,6 +302,7 @@ namespace cake
 						auto dmn = read_definite_member_name(memberName);
 						assert(dmn.size() == 1);
 						created->set_name(dmn.at(0));
+						touched_dies.insert(created->get_offset());
 					}
 					else cerr << "Not setting name of this fp" << endl;
 					
@@ -314,6 +332,7 @@ namespace cake
 				fp->set_is_optional(true);
 				fp->set_variable_parameter(true);
 				fp->set_const_value(true);
+				touched_dies.insert(fp->get_offset());
 				cerr << "Added 'out' attributes to fp at 0x" 
 					<< std::hex << fp->get_offset() << std::dec << endl;
 				// now continue the evaluation, on the parameter, in case
@@ -335,6 +354,7 @@ namespace cake
 						: string(CCP(GET_TEXT(falsifiable)));
 				string unescaped_name = unescape_ident(raw_name);
 				fp->set_name(unescaped_name);
+				touched_dies.insert(fp->get_offset());
 				cerr << "Added name '" << unescaped_name
 					<< "' to fp at 0x" 
 					<< std::hex << fp->get_offset() << std::dec << endl;
@@ -351,6 +371,7 @@ namespace cake
 					auto type_ast = GET_CHILD(falsifiable, 0);
 					auto existing_type = ensure_dwarf_type(type_ast);
 					fp->set_type(existing_type);
+					touched_dies.insert(fp->get_offset());
 					return true;
 				}
 			}
@@ -1097,6 +1118,7 @@ namespace cake
 			}
 			// set the type attribute to that type
 			dynamic_pointer_cast<encap::subprogram_die>(p_d)->set_type(p_t);
+			touched_dies.insert(p_d->get_offset());
 			cerr << "Set type attribute of subprogram at 0x" 
 				<< std::hex << p_d->get_offset() << std::dec
 				<< " to reference ";
@@ -1123,6 +1145,7 @@ namespace cake
 				cerr << "Return type was a guess made by Cake, so removing it." << endl;
 				dynamic_pointer_cast<encap::subprogram_die>(p_d)->set_type(
 					shared_ptr<spec::type_die>());
+				touched_dies.insert(p_d->get_offset());
 				return true;
 			}
 			else

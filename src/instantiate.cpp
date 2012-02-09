@@ -92,13 +92,14 @@ namespace cake
 		 * we should use the same namespacing conventions we use in
 		 * link.cpp. */ 
 		*output_cxx_file << "namespace cake { namespace " 
-			<< r.module_inverse_tbl[*input_modules.begin()] << "{" << endl;
+			<< r.module_inverse_tbl[*input_modules.begin()] << " {" << endl;
 		*output_cxx_file << "#include \"" << (*input_modules.begin())->get_filename() << ".hpp"
 			<< "\"" << endl << "} }" << endl;
 		// now open our own namespace
 		*output_cxx_file << "namespace cake { namespace " 
 			<< r.module_inverse_tbl[output_module->shared_from_this()] << " "
 			<< "{" << endl;
+		*output_cxx_file << "using namespace ::cake::" << r.module_inverse_tbl[*input_modules.begin()] << ";" << endl;
 		// instantiate each function pointer in the named data type
 		definite_member_name mn(1, objtype);
 		auto named = (*input_modules.begin())->get_ds().toplevel()->visible_resolve(
@@ -151,7 +152,7 @@ namespace cake
 			i_memb != named_with_data_members->member_children_end(); ++i_memb)
 		{
 			assert((*i_memb)->get_name());
-			if (i_memb != named_with_data_members->member_children_begin()) out << ", " << endl;
+			if (i_memb != named_with_data_members->member_children_begin()) *output_cxx_file << ", " << endl;
 			*output_cxx_file << "\t/* ." << *(*i_memb)->get_name() << " = */ ";
 			if (memb_is_funcptr(i_memb))
 			{

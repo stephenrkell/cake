@@ -9,7 +9,7 @@ LDFLAGS += -L/usr/local/lib -Wl,-R/usr/local/lib -L$(shell dirname $(CAKE))/../l
 LDLIBS += -lunwind -lunwind-ptrace -lunwind-$(shell uname -m)
 
 SRC := $(wildcard *.c)
-OBJS := $(patsubst %.c,%.o,$(SRC))
+OBJS ?= $(patsubst %.c,%.o,$(SRC))
 $(warning OBJS are $(OBJS))
 BASENAME := $(shell basename $(shell readlink -f $(shell pwd)))
 
