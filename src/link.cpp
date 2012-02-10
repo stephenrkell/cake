@@ -205,11 +205,20 @@ namespace cake
 				i_pair != all_iface_pairs.end();
 				++i_pair)
 		{
+			cerr << "Considering interface pair (" << i_pair->first->get_filename()
+				<< ", " << i_pair->second->get_filename() << ")" << endl;
 			// FIXME: this code is SLOW!
 			for (auto i_val_corresp = this->val_corresps.equal_range(*i_pair).first;
 					i_val_corresp != this->val_corresps.equal_range(*i_pair).second;
 					++i_val_corresp)
 			{
+				assert(i_val_corresp->second->source == i_pair->first || 
+					i_val_corresp->second->source == i_pair->second);
+				assert(module_of_die(i_val_corresp->second->source_data_type) == i_pair->first || 
+					module_of_die(i_val_corresp->second->source_data_type) == i_pair->second);
+				assert(module_of_die(i_val_corresp->second->sink_data_type) == i_pair->first || 
+					module_of_die(i_val_corresp->second->sink_data_type) == i_pair->second);
+			
 				// get the dependencies of this rule
 				auto deps_vec = i_val_corresp->second->get_dependencies();
 				
@@ -239,21 +248,57 @@ namespace cake
 							continue;
 						}
 
+						auto first_fq_name = compiler.fq_name_for(i_dep->first);
+						auto second_fq_name = compiler.fq_name_for(i_dep->second);
 						cerr << "Found unsatisfied dependency: from "
-							<< compiler.fq_name_for(i_dep->first)
-							<< " to " << compiler.fq_name_for(i_dep->second)
+							<< first_fq_name
+							<< " to " << second_fq_name
 							<< " required by rule "
-							<< &*i_val_corresp // FIXME: operator<<
+							<< *i_val_corresp->second
 							<< endl;
+						// If the two types do not have the same name, print a
+						// bit more info.
+						if (first_fq_name != second_fq_name)
+						{
+							cerr << "Depending rule has source data type as follows." << endl;
+							
+							auto i_source_start = i_val_corresp->second->source_data_type->iterator_here();
+							for (auto i_dfs = i_source_start;
+								i_dfs != i_val_corresp->second->source_data_type->get_ds().end()
+								&& (i_dfs == i_source_start ||
+								 		i_dfs.base().path_from_root.size() > 
+											i_source_start.base().path_from_root.size());
+								++i_dfs)
+							{
+								cerr << **i_dfs;
+							}
+
+							cerr << " and sink data type as follows." << endl;
+							auto i_sink_start = i_val_corresp->second->sink_data_type->iterator_here();
+							for (auto i_dfs = i_sink_start;
+								i_dfs != i_val_corresp->second->sink_data_type->get_ds().end()
+								&& (i_dfs == i_sink_start ||
+								 		i_dfs.base().path_from_root.size() > 
+											i_sink_start.base().path_from_root.size());
+								++i_dfs)
+							{
+								cerr << **i_dfs;
+							}
+						}
+						
 						auto source_data_type = i_dep->first;
 						auto sink_data_type = i_dep->second;
 						//assert(false);
 						auto source_name_parts = compiler.fq_name_parts_for(source_data_type);
 						auto sink_name_parts = compiler.fq_name_parts_for(sink_data_type);
-						add_value_corresp(module_of_die(source_data_type), 
+						auto source_module = module_of_die(source_data_type);
+						assert(source_module == i_pair->first || source_module == i_pair->second);
+						auto sink_module = module_of_die(sink_data_type);
+						assert(sink_module == i_pair->first || sink_module == i_pair->second);
+						add_value_corresp(source_module, 
 							source_data_type,
 							0,
-							module_of_die(sink_data_type),
+							sink_module,
 							sink_data_type,
 							0,
 							0,
@@ -305,7 +350,8 @@ namespace cake
 				unsigned candidates_count = srk31::count(candidates.first, candidates.second);
 				cerr << "For data type " 
 					<< (i_key->source_type->get_name() ? *i_key->source_type->get_name() : "(anonymous)")
-					<< " at 0x" << std::hex << i_key->source_type->get_offset()  << std::dec
+					<< " at 0x" << std::hex << i_key->source_type->get_offset() << std::dec
+					<< " in module " << module_of_die(i_key->source_type)->get_filename()
 				//<< *i_key->source_type 
 					<< " there are " << candidates_count << " candidate init rules." << endl;
 				
@@ -322,10 +368,13 @@ namespace cake
 							init_rules_value_t>
 						> found_init;
 					
+					unsigned count = 0;
 					for (auto i_candidate = candidates.first;
 						i_candidate != candidates.second;
 						++i_candidate)
 					{
+						cerr << "candidate " << ++count << " is val_corresp at " << i_candidate->second.get()
+							<< " with " << *i_candidate->second << endl;
 						
 						// we want a unique init rule in here
 						if (i_candidate->second->init_only)
@@ -352,6 +401,75 @@ namespace cake
 							{
 								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
 									"multiple non-init rules declared for the same concrete types");
+								else found_init = *i_candidate;
+							}
+						}
+					}
+					
+					// if we still don't have it,
+					// prefer skipped rules
+					if (!found_init) 
+					{
+						for (auto i_candidate = candidates.first;
+							i_candidate != candidates.second;
+							++i_candidate)
+						{
+							if (dynamic_pointer_cast<skipped_value_conversion>(i_candidate->second))
+							{
+								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
+									"multiple rep-compatible and C++-assignable rules for the same concrete types");
+								else found_init = *i_candidate;
+							}
+						}
+					}
+					
+					// if we still don't have it,
+					// prefer reinterpret rules
+					if (!found_init) 
+					{
+						for (auto i_candidate = candidates.first;
+							i_candidate != candidates.second;
+							++i_candidate)
+						{
+							if (dynamic_pointer_cast<reinterpret_value_conversion>(i_candidate->second))
+							{
+								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
+									"multiple rep-compatible (non-C++-assignable) rules for the same concrete types");
+								else found_init = *i_candidate;
+							}
+						}
+					}
+
+					// if we still don't have it, prefer rules between like-named types
+					if (!found_init) 
+					{
+						for (auto i_candidate = candidates.first;
+							i_candidate != candidates.second;
+							++i_candidate)
+						{
+							if (i_candidate->second->sink_data_type->get_name()
+								&& i_candidate->second->source_data_type->get_name()
+								&& *i_candidate->second->sink_data_type->get_name()
+								== *i_candidate->second->source_data_type->get_name())
+							{
+								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
+									"multiple primitive rules for the same concrete types");
+								else found_init = *i_candidate;
+							}
+						}
+					}
+										
+					// if we still don't have it, prefer primitive rules
+					if (!found_init) 
+					{
+						for (auto i_candidate = candidates.first;
+							i_candidate != candidates.second;
+							++i_candidate)
+						{
+							if (dynamic_pointer_cast<primitive_value_conversion>(i_candidate->second))
+							{
+								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
+									"multiple primitive rules for the same concrete types");
 								else found_init = *i_candidate;
 							}
 						}
@@ -655,10 +773,10 @@ namespace cake
 				} // end if name matches
 				else 
 				{
-					cerr << "Pattern " << CCP(TO_STRING_TREE(p)) << " did not match function "
-						//<< (subprogram->get_name() ? *subprogram->get_name() : "(no name)")
-						<< *subprogram
-						<< endl;
+// 					cerr << "Pattern " << CCP(TO_STRING_TREE(p)) << " did not match function "
+// 						//<< (subprogram->get_name() ? *subprogram->get_name() : "(no name)")
+// 						<< *subprogram
+// 						<< endl;
 					if (!opt_dmn || opt_dmn->size() != 1)
 					{
 						cerr << "Warning: encountered function name ";
@@ -2894,7 +3012,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 										<< " to " << *member_type << endl;
 									cerr << "Referent type is " << *found_type << endl;
 									cerr << "In cxx: " << compiler.cxx_declarator_from_type_die(
-										found_type) << endl;
+										found_type).first << endl;
 
 								}
 							}
@@ -3023,11 +3141,13 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			source->get_ds().toplevel()->visible_resolve(
 			source_mn.begin(), source_mn.end()));
 		if (!source_data_type_opt) RAISE(corresp, "could not resolve source data type");
+		assert(module_of_die(source_data_type_opt) == source);
 		auto sink_mn = read_definite_member_name(sink_data_type_mn);
 		auto sink_data_type_opt = dynamic_pointer_cast<dwarf::spec::type_die>(
 			sink->get_ds().toplevel()->visible_resolve(
 			sink_mn.begin(), sink_mn.end()));
 		if (!sink_data_type_opt) RAISE(corresp, "could not resolve sink data type");
+		assert(module_of_die(sink_data_type_opt) == sink);
 		
 		// we should never have corresps between pointer types
 		assert(source_data_type_opt->get_concrete_type()->get_tag() != DW_TAG_pointer_type);
@@ -3138,7 +3258,9 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		auto key = sorted(make_pair(source, sink));
 		assert(all_iface_pairs.find(key) != all_iface_pairs.end());
 		assert(source_data_type);
+		assert(module_of_die(source_data_type) == source);
 		assert(sink_data_type);
+		assert(module_of_die(sink_data_type) == sink);
 //     	val_corresps.insert(make_pair(key,
 
 		auto basic = (struct basic_value_conversion){ /* .source = */ source,
@@ -3488,8 +3610,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		// FIXME: below....
 		for (; r_iter != r_end; r_iter++)
 		{        
-			cerr << "Found a required subprogram!" << endl;
-			cerr << **r_iter;
+			// cerr << "Found a required subprogram!" << endl;
+			// cerr << **r_iter;
 			
 			for (; p_iter != p_end; p_iter++) 
 			{
@@ -3573,12 +3695,18 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			}
 			else
 			{
+				auto p_ds = &p_typedef->get_ds();
+				assert(module_of_die(p_typedef) == module);
+				auto concrete = p_typedef->get_concrete_type();
+				assert(concrete);
+				auto p_concrete_ps = &concrete->get_ds();
+				assert(module_of_die(p_typedef->get_concrete_type()) == module);
 				synonymy.insert(make_pair(
 					*p_typedef->ident_path_from_cu(), 
 					p_typedef->get_concrete_type()));
-				cerr << "synonymy within " << module->filename << ": "
-					<< definite_member_name(*p_typedef->ident_path_from_cu())
-					<< " ----> " << *p_typedef->get_concrete_type() << endl;
+				//cerr << "synonymy within " << module->filename << ": "
+				//	<< definite_member_name(*p_typedef->ident_path_from_cu())
+				//	<< " ----> " << *p_typedef->get_concrete_type() << endl;
 			}
 		}
 	}
@@ -3634,6 +3762,9 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		multimap<vector<string>, found_type> found_types;
 		std::set<vector<string> > keys;
 		
+		multimap<vector<string>, shared_ptr<type_die> > first_found_types;
+		multimap<vector<string>, shared_ptr<type_die> > second_found_types;
+		
 		map<vector<string>, shared_ptr<dwarf::spec::type_die> > first_synonymy;
 		extract_type_synonymy(ifaces.first, first_synonymy);
 		map<vector<string>, shared_ptr<dwarf::spec::type_die> > second_synonymy;		
@@ -3657,7 +3788,10 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				if (!opt_path) continue;
 
 				found_types.insert(make_pair(*opt_path, (found_type){ i_mod, p_type }));
+				assert(module_of_die(*i_die) == i_mod);
 				keys.insert(*opt_path);
+				((i_mod == ifaces.first) ? first_found_types : second_found_types).insert(make_pair(
+					*opt_path, p_type));
 			}
 		}
 		

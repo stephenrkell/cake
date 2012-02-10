@@ -3102,7 +3102,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				auto declarator = compiler.cxx_declarator_from_type_die((*i_fp)->get_type(),
 					optional<const string&>(), true,
 					get_type_name_prefix((*i_fp)->get_type()) + "::", false);
-				m_out << declarator;
+				m_out << declarator.first;
 				m_out << ">(";
 			}
 			
