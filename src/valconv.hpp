@@ -194,6 +194,12 @@ namespace cake
 		                                 boost::shared_ptr<dwarf::spec::type_die>
 										>
 								> get_dependencies();
+		
+		static vector<shared_ptr<value_conversion> >
+		dep_is_satisfied(
+			link_derivation::val_corresp_iterator begin,
+			link_derivation::val_corresp_iterator end,
+			const value_conversion::dep& m_dep);
 	};
 		
 	// null impl

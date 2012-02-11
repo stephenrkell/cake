@@ -128,6 +128,9 @@ namespace cake
 		shared_ptr<spec::subprogram_die> subprogram);
 		
 	bool arg_is_indirect(shared_ptr<spec::formal_parameter_die> p_fp);
+
+	bool
+	data_types_are_identical(shared_ptr<type_die> arg1, shared_ptr<type_die> arg2);
 	
 	boost::regex regex_from_pattern_ast(antlr::tree::Tree *t);
 	

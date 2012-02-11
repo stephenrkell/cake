@@ -55,41 +55,7 @@ namespace cake
 			+ namespace_name() + "::" + r.module_inverse_tbl[ifaces.second]
 			+ "::marker>";
 	}
-	
-	struct satisfies_dep
-	{
-		value_conversion::dep m_dep;
-		satisfies_dep(const value_conversion::dep& dep) : m_dep(dep) {}
-		
-		bool operator ()(const pair< link_derivation::iface_pair, 
-				shared_ptr<value_conversion> > candidate) const
-		{
-// 			if (candidate.second->source_data_type->get_name() &&
-// 				*candidate.second->source_data_type->get_name() == "int"
-// 				&& candidate.second->sink_data_type->get_name() &&
-// 				*candidate.second->sink_data_type->get_name() == "int"
-// 				&& m_dep.first->get_name() == m_dep.second->get_name()
-// 				&& m_dep.first->get_name() && *m_dep.first->get_name() == "int")
-// 			{
-// 				bool retval = candidate.second->source_data_type == m_dep.first
-// 				 && candidate.second->sink_data_type == m_dep.second;
-// 				cerr << "Would have returned " << boolalpha << retval << endl;
-// 				cerr << "candidate source data type: " << *candidate.second->source_data_type
-// 					<< " @" << &*candidate.second->source_data_type << endl;
-// 				cerr << "candidate sink data type: " << *candidate.second->sink_data_type
-// 					<< " @" << &*candidate.second->sink_data_type << endl;
-// 				cerr << "m_dep.first: " << *m_dep.first
-// 					<< " @" << &*m_dep.first << endl;
-// 				cerr << "m_dep.second: " << *m_dep.second
-// 					<< " @" << &*m_dep.second << endl;
-// 				
-// 				assert(false);
-// 			}			
-			return candidate.second->source_data_type == m_dep.first
-			 && candidate.second->sink_data_type == m_dep.second;
-		}
-	};
-		
+			
 	link_derivation::link_derivation(cake::request& r, antlr::tree::Tree *t,
 		const string& id,
 		const string& output_module_filename) 
@@ -115,6 +81,7 @@ namespace cake
 		INIT;
 		BIND3(t, identList, IDENT_LIST);
 		BIND3(t, linkRefinement, PAIRWISE_BLOCK_LIST);
+		this->ast = t;
 		this->refinement_ast = linkRefinement;
 		
 		{
@@ -225,12 +192,14 @@ namespace cake
 				// check that they are satisfied
 				for (auto i_dep = deps_vec.begin(); i_dep != deps_vec.end(); ++i_dep)
 				{
-					auto found = std::find_if(
+					auto satisfying_candidates = value_conversion::dep_is_satisfied(
 						this->val_corresps.equal_range(*i_pair).first,
 						this->val_corresps.equal_range(*i_pair).second,
-						satisfies_dep(*i_dep));
+						*i_dep);
 					// if we found a satisfying corresp, carry on...
-					if (found != this->val_corresps.equal_range(*i_pair).second) continue;
+					if (satisfying_candidates.size() != 0
+					/* != this->val_corresps.equal_range(*i_pair).second*/ ) continue; 
+					// FIXME: need to do anything here? Hmm, no, C++ compiler will choose. 
 					// ... otherwise we need to take action.
 					else 
 					{
@@ -2504,6 +2473,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					}
 					BIND3(correspHead, returnEvent, RETURN_EVENT);
 					
+					unsigned total = 0;
 					if (lr_matched.size() > 0)
 					{
 						for (auto i_match = lr_matched.begin(); i_match != lr_matched.end(); ++i_match)
@@ -2528,6 +2498,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 										returnEvent
 									)
 								);
+								++total;
 							}
 						}
 					
@@ -2555,10 +2526,12 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 										returnEvent
 									)
 								);
+								++total;
 							}
 						}
 					}
-					
+					cerr << "Pattern rule " << CCP(TO_STRING_TREE(correspHead))
+						<< " generated " << total << " non-pattern corresps." << endl;
 					
 				}
 				break;
@@ -3400,12 +3373,20 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			}
 		}
 
+	#define TAG_PAIR(t1, t2) ((t1)<<((sizeof (Dwarf_Half))*8) | (t2))
+		// temporary HACK
+		if (TAG_PAIR(source_data_type->get_concrete_type()->get_tag(), 
+				sink_data_type->get_concrete_type()->get_tag())
+			== TAG_PAIR(DW_TAG_enumeration_type, DW_TAG_enumeration_type))
+		{
+			emit_as_reinterpret = true;
+		}
+
 		// here goes the value conversion logic
 		if (!emit_as_reinterpret)
 		{
 			// -- dispatch to a function based on the DWARF tags of the two types...
 			// ... in *CONCRETE* form
-	#define TAG_PAIR(t1, t2) ((t1)<<((sizeof (Dwarf_Half))*8) | (t2))
 			switch(TAG_PAIR(source_data_type->get_concrete_type()->get_tag(), 
 				sink_data_type->get_concrete_type()->get_tag()))
 			{
@@ -3459,6 +3440,10 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 						));
 					}
 				} break;
+				case TAG_PAIR(DW_TAG_enumeration_type, DW_TAG_enumeration_type): {
+					// FIXME: just emit a reinterpret for now -- see above
+					assert(false);
+				}
 				default:
 					cerr << "Warning: didn't know how to generate conversion between "
 						<< *source_data_type << " and " << *sink_data_type << endl;
@@ -3767,7 +3752,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		
 		map<vector<string>, shared_ptr<dwarf::spec::type_die> > first_synonymy;
 		extract_type_synonymy(ifaces.first, first_synonymy);
-		map<vector<string>, shared_ptr<dwarf::spec::type_die> > second_synonymy;		
+		map<vector<string>, shared_ptr<dwarf::spec::type_die> > second_synonymy;
 		extract_type_synonymy(ifaces.second, second_synonymy);
 		
 		// traverse whole dieset depth-first, remembering DIEs that 
@@ -3783,15 +3768,44 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			{
 				auto p_type = dynamic_pointer_cast<dwarf::spec::type_die>(*i_die);
 				if (!p_type) continue;
+				
+				// skip declaration-only types
+				if (p_type->get_declaration() && *p_type->get_declaration()) continue;
 
 				auto opt_path = p_type->ident_path_from_cu();
 				if (!opt_path) continue;
 
-				found_types.insert(make_pair(*opt_path, (found_type){ i_mod, p_type }));
-				assert(module_of_die(*i_die) == i_mod);
-				keys.insert(*opt_path);
-				((i_mod == ifaces.first) ? first_found_types : second_found_types).insert(make_pair(
-					*opt_path, p_type));
+				// deduplication...
+				auto already_found = found_types.equal_range(*opt_path);
+				// have we found any types in this module already?
+				auto i_found =  already_found.first;
+				bool have_already_found = false;
+				for (; i_found != already_found.second; ++i_found)
+				{
+					if (i_found->second.module == i_mod)
+					{
+						// check for rep-compatibility
+						if (compiler.cxx_is_complete_type(i_found->second.t)
+						&&  compiler.cxx_is_complete_type(p_type)
+						&&  !i_found->second.t->get_concrete_type()->is_rep_compatible(p_type->get_concrete_type()))
+						{
+							cerr << "First type: " << *p_type->get_concrete_type() << endl;
+							cerr << "Second type: " << *i_found->second.t->get_concrete_type() << endl;
+							cerr << "Both aliased as: " << definite_member_name(*opt_path) << endl;
+							RAISE(this->ast, 
+								"contains rep-incompatible toplevel-visible types with the same fq names");
+						}
+						else have_already_found = true;
+					}
+				}
+				if (i_found == already_found.second && !have_already_found) 
+				{
+					found_types.insert(make_pair(*opt_path, (found_type){ i_mod, p_type }));
+					assert(module_of_die(*i_die) == i_mod);
+					keys.insert(*opt_path);
+					((i_mod == ifaces.first) ? first_found_types : second_found_types).insert(make_pair(
+						*opt_path, p_type));
+				}
 			}
 		}
 		
@@ -3815,30 +3829,38 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		// (i.e. exactly two <vector, found_type> pairs for a given vector,
 		//  i.e. exactly two types were found having a given name-vector)
 		// and where the module of each is different.
+		
 		for (auto i_k = keys.begin(); i_k != keys.end(); ++i_k)
 		{
 			auto iter_pair = found_types.equal_range(*i_k);
-			if (
-				srk31::count(iter_pair.first, iter_pair.second) == 2 // exactly two
-			&&  // different modules
-			(iter_pair.second--, iter_pair.first->second.module != iter_pair.second->second.module)
-			&& // must be concrete, non-array, non-subroutine types!
-			iter_pair.first->second.t->get_concrete_type() && 
+			
+			auto count_matched = srk31::count(iter_pair.first, iter_pair.second);
+			bool exactly_two_matched = (count_matched == 2);
+			
+			bool different_modules = (iter_pair.second--,
+				iter_pair.first->second.module != iter_pair.second->second.module);
+			
+			// must be concrete, non-array, non-subroutine types!
+			bool correspondable_types = (iter_pair.first->second.t->get_concrete_type() && 
 				iter_pair.second->second.t->get_concrete_type() &&
 				iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_array_type &&
 				iter_pair.second->second.t->get_concrete_type()->get_tag() != DW_TAG_array_type &&
 				iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_subroutine_type &&
-				iter_pair.second->second.t->get_concrete_type()->get_tag() != DW_TAG_subroutine_type
-			&& // must not have been matched before!
-				seen_concrete_types.find(iter_pair.first->second.t->get_concrete_type())
+				iter_pair.second->second.t->get_concrete_type()->get_tag() != DW_TAG_subroutine_type);
+			
+			// must not have been matched before!
+			bool not_dwarf_types_matched_before
+			 = (seen_concrete_types.find(iter_pair.first->second.t->get_concrete_type())
 					== seen_concrete_types.end()
 			&& seen_concrete_types.find(iter_pair.second->second.t->get_concrete_type()) 
-					== seen_concrete_types.end()
-			&& // if base types, pair must not be equivalent to any seen before! 
-			   // (else template specializations will collide)
-			   // NOTE: this is because DWARF info often includes "char" and "signed char"
-			   // and these are distinct in DWARF-land but not in C++-land
-				(
+					== seen_concrete_types.end());
+			
+			// if base types, pair must not be equivalent to any seen before! 
+			// (else template specializations will collide)
+			// NOTE: this is because DWARF info often includes "char" and "signed char"
+			// and these are distinct in DWARF-land but not in C++-land
+			bool not_base_types_matched_before
+			= (
 					iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_base_type
 					|| seen_first_base_type_pairs.find(make_pair(
 						dwarf::tool::cxx_compiler::base_type(
@@ -3869,168 +3891,215 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 								iter_pair.second->second.t->get_concrete_type()))
 					))
 					== seen_base_base_pairs.end()
-				)
-			&& // don't match built-in types, because they don't appear in our dwarfhpp headers
-				!compiler.is_builtin(iter_pair.first->second.t->get_concrete_type())
-				&& !compiler.is_builtin(iter_pair.second->second.t->get_concrete_type())
-			)
+				);
+			// don't match built-in types, because they don't appear in our dwarfhpp headers
+			bool neither_is_builtin
+			 = (!compiler.is_builtin(iter_pair.first->second.t->get_concrete_type())
+				&& !compiler.is_builtin(iter_pair.second->second.t->get_concrete_type()));
+
+			ostringstream namestream;
+			namestream << definite_member_name(*i_k);
+			string friendly_name = namestream.str(); 
+				
+			if (exactly_two_matched
+			 && different_modules)
 			{
-				cerr << "data type " << definite_member_name(*i_k)
-					<< " exists in both modules" << endl;
-				seen_concrete_types.insert(iter_pair.first->second.t->get_concrete_type());
-				seen_concrete_types.insert(iter_pair.second->second.t->get_concrete_type());
-				if (iter_pair.first->second.t->get_tag() == DW_TAG_base_type)
-					seen_first_base_type_pairs.insert(
-						make_pair(
-							dwarf::tool::cxx_compiler::base_type(
-								dynamic_pointer_cast<dwarf::spec::base_type_die>(
-									iter_pair.first->second.t->get_concrete_type())),
-								iter_pair.second->second.t->get_concrete_type())
-							);
-				if (iter_pair.second->second.t->get_tag() == DW_TAG_base_type)
-					seen_second_base_type_pairs.insert(
-						make_pair(
-							iter_pair.first->second.t->get_concrete_type(),
-							dwarf::tool::cxx_compiler::base_type(
-								dynamic_pointer_cast<dwarf::spec::base_type_die>(
-									iter_pair.second->second.t->get_concrete_type()))));
-				if (iter_pair.first->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type &&
-				  iter_pair.second->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type)
+				cerr << "data type " << friendly_name
+					<< " exists in both modules ";
+				
+				if (correspondable_types)
 				{
-					cerr << "remembering a base-base pair " 
-						<< definite_member_name(*i_k) << "; size was " 
-						<< seen_base_base_pairs.size();
-				 	seen_base_base_pairs.insert(make_pair(
-						dwarf::tool::cxx_compiler::base_type(
-							dynamic_pointer_cast<dwarf::spec::base_type_die>(
-								iter_pair.first->second.t->get_concrete_type())),
-						dwarf::tool::cxx_compiler::base_type(
-							dynamic_pointer_cast<dwarf::spec::base_type_die>(
-								iter_pair.second->second.t->get_concrete_type()))
-					));
-					cerr << "; now " << seen_base_base_pairs.size() << endl;
+					cerr << " and is correspondable";
+					if (not_dwarf_types_matched_before)
+					{
+						cerr << " and has not been matched already as a DWARF type";
+					
+						if (not_base_types_matched_before)
+						{
+							cerr << " and has not been matched already as a base type";
+							if (neither_is_builtin)
+							{
+								cerr << " and is not builtin, so adding a correspondence." << endl;
+								seen_concrete_types.insert(iter_pair.first->second.t->get_concrete_type());
+								seen_concrete_types.insert(iter_pair.second->second.t->get_concrete_type());
+								if (iter_pair.first->second.t->get_tag() == DW_TAG_base_type)
+									seen_first_base_type_pairs.insert(
+										make_pair(
+											dwarf::tool::cxx_compiler::base_type(
+												dynamic_pointer_cast<dwarf::spec::base_type_die>(
+													iter_pair.first->second.t->get_concrete_type())),
+												iter_pair.second->second.t->get_concrete_type())
+											);
+								if (iter_pair.second->second.t->get_tag() == DW_TAG_base_type)
+									seen_second_base_type_pairs.insert(
+										make_pair(
+											iter_pair.first->second.t->get_concrete_type(),
+											dwarf::tool::cxx_compiler::base_type(
+												dynamic_pointer_cast<dwarf::spec::base_type_die>(
+													iter_pair.second->second.t->get_concrete_type()))));
+								if (iter_pair.first->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type &&
+								  iter_pair.second->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type)
+								{
+									cerr << "remembering a base-base pair " 
+										<< definite_member_name(*i_k) << "; size was " 
+										<< seen_base_base_pairs.size();
+				 					seen_base_base_pairs.insert(make_pair(
+										dwarf::tool::cxx_compiler::base_type(
+											dynamic_pointer_cast<dwarf::spec::base_type_die>(
+												iter_pair.first->second.t->get_concrete_type())),
+										dwarf::tool::cxx_compiler::base_type(
+											dynamic_pointer_cast<dwarf::spec::base_type_die>(
+												iter_pair.second->second.t->get_concrete_type()))
+									));
+									cerr << "; now " << seen_base_base_pairs.size() << endl;
+								}
+
+								// iter_pair points to a pair of like-named types in differing modules
+								// add value correspondences in *both* directions
+								// *** FIXME: ONLY IF not already present already...
+								// i.e. the user might have supplied their own
+
+								// We always add corresps between concrete types,
+								// i.e. dereferencing synonyms -- BUT this can
+								// introduce conflicts/ambiguities, so need to refine this later.
+								// ALSO, concrete types don't always have 
+								// ident paths from CU! i.e. can be anonymous. So
+								// instead of using ident_path_from_cu -- FIXME: what?
+
+								// two-iteration for loop
+								for (pair<module_ptr, module_ptr> source_sink_pair = 
+										make_pair(ifaces.first, ifaces.second), orig_source_sink_pair = source_sink_pair;
+										source_sink_pair != pair<module_ptr, module_ptr>();
+										source_sink_pair =
+											(source_sink_pair == orig_source_sink_pair) 
+												? make_pair(ifaces.second, ifaces.first) : make_pair(module_ptr(), module_ptr()))
+								{
+									// each of these maps a set of synonyms mapping to their concrete type
+									map<vector<string>, shared_ptr<dwarf::spec::type_die> > &
+										source_synonymy = (source_sink_pair.first == ifaces.first) ? first_synonymy : second_synonymy;
+									map<vector<string>, shared_ptr<dwarf::spec::type_die> > &
+										sink_synonymy = (source_sink_pair.second == ifaces.first) ? first_synonymy : second_synonymy;
+
+
+									bool source_is_synonym = false;
+									shared_ptr<dwarf::spec::basic_die> source_found;
+									bool sink_is_synonym = false;
+									shared_ptr<dwarf::spec::basic_die> sink_found;
+									/* If the s... data type is a synonym, we will set s..._type
+									 * to the *concrete* type and set the flag. 
+									 * Otherwise we will try to get the data type DIE by name lookup. */
+									auto source_type = (source_synonymy.find(*i_k) != source_synonymy.end()) ?
+											(source_is_synonym = true, source_synonymy[*i_k]) : /*, // *i_k, // */ 
+											dynamic_pointer_cast<dwarf::spec::type_die>(
+												source_found = source_sink_pair.first->get_ds().toplevel()->visible_resolve(
+													i_k->begin(), i_k->end()));
+									auto sink_type = (sink_synonymy.find(*i_k) != sink_synonymy.end()) ?
+											(sink_is_synonym = true, sink_synonymy[*i_k]) : /*, // *i_k, // */ 
+											dynamic_pointer_cast<dwarf::spec::type_die>(
+												sink_found = source_sink_pair.second->get_ds().toplevel()->visible_resolve(
+													i_k->begin(), i_k->end()));
+									const char *matched_name = i_k->at(0).c_str();
+
+				// 					cerr << "Two-cycle for loop: source module @" << &*source_sink_pair.first << endl;
+				// 					cerr << "Two-cycle for loop: sink module @" << &*source_sink_pair.second << endl;
+				// 					cerr << "Two-cycle for loop: source synonymy @" << &source_synonymy << endl;
+				// 					cerr << "Two-cycle for loop: sink synonymy @" << &sink_synonymy << endl;
+
+									// this happens if name lookup fails 
+									// (e.g. not visible (?))
+									// or doesn't yield a type
+									if (!source_type || !sink_type)
+									{
+										shared_ptr<dwarf::spec::basic_die> source_synonym;
+										shared_ptr<dwarf::spec::basic_die> sink_synonym;
+										if (source_is_synonym) source_synonym = source_synonymy[*i_k];
+										if (sink_is_synonym) sink_synonym = sink_synonymy[*i_k];
+
+										cerr << "Skipping correspondence for matched data type named " 
+										<< definite_member_name(*i_k)
+										<< " because (FIXME) the type is probably incomplete"
+										<< " where source " << *i_k 
+										<< (source_is_synonym ? " was found to be a synonym " : " was not resolved to a type ")
+										<< ((!source_is_synonym && source_found) ? " but was resolved to a non-type" : "")
+										<< " and sink " << *i_k 
+										<< (sink_is_synonym ? " was found to be a synonym " : " was not resolved to a type ")
+										<< ((!sink_is_synonym && sink_found) ? " but was resolved to a non-type" : "")
+										<< endl;
+										if (source_synonym) cerr << "source synonym: " << source_synonym
+											<< endl;
+										if (sink_synonym) cerr << "sink synonym: " << sink_synonym
+											<< endl;
+										assert(definite_member_name(*i_k).at(0) != "int");
+										continue;
+									}	
+
+									// if no previous value correspondence exists between these 
+									// name-matched types.....
+									if (!find_value_correspondence(source_sink_pair.first, 
+											source_type, 
+											source_sink_pair.second, 
+											sink_type))
+									{
+										cerr << "Adding name-matched value corresp from"
+											//<< " source module @" << source_sink_pair.first.get()
+											<< " source data type " 
+											//<< *source_type 
+											<< (source_type->get_name() ? *source_type->get_name() : "(anonymous)" )
+											<< " at " << std::hex << source_type->get_offset() << std::dec
+											<< " to" 
+											//<< " sink module @" << source_sink_pair.second.get()
+											<< " sink data type " 
+											<< (sink_type->get_name() ? *sink_type->get_name() : "(anonymous)" )
+											<< " at " << std::hex << sink_type->get_offset() << std::dec
+											//<< *sink_type 
+											<< endl;
+
+										add_value_corresp(
+											source_sink_pair.first,
+											source_type,
+											0,
+											source_sink_pair.second,
+											sink_type,
+											0,
+											0, // refinement
+											true, // source_is_on_left -- irrelevant as we have no refinement
+											make_simple_corresp_expression(*i_k) // corresp
+										);
+									} // end if not already exist
+									else cerr << "Skipping correspondence for matched data type named " 
+										<< definite_member_name(*i_k)
+										<< " because type synonyms processed earlier already defined a correspondence"
+										<< endl;
+								} // end two-cycle for loop
+							}
+							else
+							{
+								cerr << " but one or other is builtin." << endl;
+							}
+						}
+						else
+						{
+							cerr << " but has been matched before as a base type." << endl;
+						}
+					}
+					else
+					{
+						cerr << " but has been matched before as a DWARF type." << endl;
+					}
 				}
-					
-				// iter_pair points to a pair of like-named types in differing modules
-				// add value correspondences in *both* directions
-				// *** FIXME: ONLY IF not already present already...
-				// i.e. the user might have supplied their own
-				
-				// We always add corresps between concrete types,
-				// i.e. dereferencing synonyms -- BUT this can
-				// introduce conflicts/ambiguities, so need to refine this later.
-				// ALSO, concrete types don't always have 
-				// ident paths from CU! i.e. can be anonymous. So
-				// instead of using ident_path_from_cu -- FIXME: what?
-				
-				// two-iteration for loop
-				for (pair<module_ptr, module_ptr> source_sink_pair = 
-						make_pair(ifaces.first, ifaces.second), orig_source_sink_pair = source_sink_pair;
-						source_sink_pair != pair<module_ptr, module_ptr>();
-						source_sink_pair =
-							(source_sink_pair == orig_source_sink_pair) 
-								? make_pair(ifaces.second, ifaces.first) : make_pair(module_ptr(), module_ptr()))
+				else
 				{
-					// each of these maps a set of synonyms mapping to their concrete type
-					map<vector<string>, shared_ptr<dwarf::spec::type_die> > &
-						source_synonymy = (source_sink_pair.first == ifaces.first) ? first_synonymy : second_synonymy;
-					map<vector<string>, shared_ptr<dwarf::spec::type_die> > &
-						sink_synonymy = (source_sink_pair.second == ifaces.first) ? first_synonymy : second_synonymy;
-					
-
-					bool source_is_synonym = false;
-					shared_ptr<dwarf::spec::basic_die> source_found;
-					bool sink_is_synonym = false;
-					shared_ptr<dwarf::spec::basic_die> sink_found;
-					/* If the s... data type is a synonym, we will set s..._type
-					 * to the *concrete* type and set the flag. 
-					 * Otherwise we will try to get the data type DIE by name lookup. */
-					auto source_type = (source_synonymy.find(*i_k) != source_synonymy.end()) ?
-							(source_is_synonym = true, source_synonymy[*i_k]) : /*, // *i_k, // */ 
-							dynamic_pointer_cast<dwarf::spec::type_die>(
-								source_found = source_sink_pair.first->get_ds().toplevel()->visible_resolve(
-									i_k->begin(), i_k->end()));
-					auto sink_type = (sink_synonymy.find(*i_k) != sink_synonymy.end()) ?
-							(sink_is_synonym = true, sink_synonymy[*i_k]) : /*, // *i_k, // */ 
-							dynamic_pointer_cast<dwarf::spec::type_die>(
-								sink_found = source_sink_pair.second->get_ds().toplevel()->visible_resolve(
-									i_k->begin(), i_k->end()));
-					const char *matched_name = i_k->at(0).c_str();
-					
-// 					cerr << "Two-cycle for loop: source module @" << &*source_sink_pair.first << endl;
-// 					cerr << "Two-cycle for loop: sink module @" << &*source_sink_pair.second << endl;
-// 					cerr << "Two-cycle for loop: source synonymy @" << &source_synonymy << endl;
-// 					cerr << "Two-cycle for loop: sink synonymy @" << &sink_synonymy << endl;
-					
-					// this happens if name lookup fails 
-					// (e.g. not visible (?))
-					// or doesn't yield a type
-					if (!source_type || !sink_type)
-					{
-						shared_ptr<dwarf::spec::basic_die> source_synonym;
-						shared_ptr<dwarf::spec::basic_die> sink_synonym;
-						if (source_is_synonym) source_synonym = source_synonymy[*i_k];
-						if (sink_is_synonym) sink_synonym = sink_synonymy[*i_k];
-
-						cerr << "Skipping correspondence for matched data type named " 
-						<< definite_member_name(*i_k)
-						<< " because (FIXME) the type is probably incomplete"
-						<< " where source " << *i_k 
-						<< (source_is_synonym ? " was found to be a synonym " : " was not resolved to a type ")
-						<< ((!source_is_synonym && source_found) ? " but was resolved to a non-type" : "")
-						<< " and sink " << *i_k 
-						<< (sink_is_synonym ? " was found to be a synonym " : " was not resolved to a type ")
-						<< ((!sink_is_synonym && sink_found) ? " but was resolved to a non-type" : "")
-						<< endl;
-						if (source_synonym) cerr << "source synonym: " << source_synonym
-							<< endl;
-						if (sink_synonym) cerr << "sink synonym: " << sink_synonym
-							<< endl;
-						assert(definite_member_name(*i_k).at(0) != "int");
-						continue;
-					}	
-													
-					// if no previous value correspondence exists between these 
-					// name-matched types.....
-					if (!find_value_correspondence(source_sink_pair.first, 
-							source_type, 
-							source_sink_pair.second, 
-							sink_type))
-					{
-						cerr << "Adding name-matched value corresp from"
-							//<< " source module @" << source_sink_pair.first.get()
-							<< " source data type " 
-							//<< *source_type 
-							<< (source_type->get_name() ? *source_type->get_name() : "(anonymous)" )
-							<< " at " << std::hex << source_type->get_offset() << std::dec
-							<< " to" 
-							//<< " sink module @" << source_sink_pair.second.get()
-							<< " sink data type " 
-							<< (sink_type->get_name() ? *sink_type->get_name() : "(anonymous)" )
-							<< " at " << std::hex << sink_type->get_offset() << std::dec
-							//<< *sink_type 
-							<< endl;
-	
-						add_value_corresp(
-							source_sink_pair.first,
-							source_type,
-							0,
-							source_sink_pair.second,
-							sink_type,
-							0,
-							0, // refinement
-							true, // source_is_on_left -- irrelevant as we have no refinement
-							make_simple_corresp_expression(*i_k) // corresp
-						);
-					} // end if not already exist
-					else cerr << "Skipping correspondence for matched data type named " 
-						<< definite_member_name(*i_k)
-						<< " because type synonyms processed earlier already defined a correspondence"
-						<< endl;
-				} // end two-cycle for loop
+					cerr << " but is not of correspondable DWARF types." << endl;
+				}
 			}
-			else cerr << "data type " << definite_member_name(*i_k)
-					<< " exists only in one module" << endl;
+			else
+			{
+				cerr << "data type " << friendly_name
+						<< " exists only in one (really: " << count_matched << ") module (of {" 
+						<< ifaces.first->get_filename()
+						<< ", " << ifaces.second->get_filename() 
+						<< "})" << endl;
+			}
 		}
 	}
 

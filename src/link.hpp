@@ -257,6 +257,7 @@ namespace cake {
 		typedef unsigned long module_tag_t;
 		
 	private:
+		antlr::tree::Tree *ast;
 		antlr::tree::Tree *refinement_ast;
 		
     	// correspondences
@@ -355,6 +356,9 @@ namespace cake {
 			val_corresp_map_t::iterator
 		> val_corresps_for_iface_pair(iface_pair ifaces)
 		{ return val_corresps.equal_range(ifaces); }
+		
+		// this is for *value corresp deps*
+		typedef val_corresp_map_t::iterator val_corresp_iterator;
 		
 		typedef link_derivation::val_corresp_map_t::value_type ent;
 				void write_makerules(std::ostream& out);	

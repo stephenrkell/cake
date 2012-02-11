@@ -51,9 +51,11 @@ namespace cake
 	{
 		s << "{ " << c.source->get_filename() << " :: " 
 			<< (c.source_data_type->get_name() ? *c.source_data_type->get_name() : "<anonymous>")
+			<< " @0x" << std::hex << c.source_data_type->get_offset() << std::dec
 			<< " to "
 			<< c.sink->get_filename() << " :: " 
 			<< (c.sink_data_type->get_name() ? *c.sink_data_type->get_name() : "<anonymous>")
+			<< " @0x" << std::hex << c.sink_data_type->get_offset() << std::dec
 			<< ", " << (c.source_is_on_left ? "left to right" : "right to left")
 			<< ", " << (c.init_only ? "initialization" : "update")
 			<< " }";
@@ -221,12 +223,108 @@ namespace cake
 	}
 	
 	
-	vector< pair < shared_ptr<type_die>, shared_ptr<type_die> > > 
+	vector< pair < shared_ptr<type_die>, shared_ptr<type_die> > >
 	value_conversion::get_dependencies()
 	{
 		return vector< pair < shared_ptr<type_die>, shared_ptr<type_die> > >();
 	}
-	
+	vector<shared_ptr<value_conversion> >
+	value_conversion::dep_is_satisfied(
+		link_derivation::val_corresp_iterator begin,
+		link_derivation::val_corresp_iterator end,
+		const value_conversion::dep& m_dep)
+	{
+		vector<shared_ptr<value_conversion> > working_concrete;
+		vector<shared_ptr<value_conversion> > working_half_exact;
+		vector<shared_ptr<value_conversion> > working_exact;
+		for (auto i_candidate = begin; i_candidate != end; ++i_candidate)
+		{
+			auto& candidate = *i_candidate;
+			
+			cerr << "Is dependency on a conversion from " << m_dep.first->summary()
+				<< " to " << m_dep.second->summary()
+				<< " satisfied by " << *candidate.second << "? ";
+
+			bool first_dieset_match
+			 = (&candidate.second->source_data_type->get_ds() == &m_dep.first->get_ds());
+			bool second_dieset_match
+			 = (&candidate.second->sink_data_type->get_ds() == &m_dep.second->get_ds());
+
+			bool first_exact = data_types_are_identical(
+				candidate.second->source_data_type, 
+				m_dep.first
+				);
+			bool second_exact = data_types_are_identical(
+			 	candidate.second->sink_data_type,
+				m_dep.second
+			);
+			bool exact_match = first_exact && second_exact;
+			bool first_concrete_match = data_types_are_identical(
+				candidate.second->source_data_type->get_concrete_type(), 
+				m_dep.first->get_concrete_type()
+				);
+			bool second_concrete_match = data_types_are_identical(
+				candidate.second->sink_data_type->get_concrete_type(),
+				m_dep.second->get_concrete_type()
+			);
+			bool concrete_match = first_concrete_match && second_concrete_match;
+			
+			if (!first_dieset_match || !second_dieset_match)
+			{
+				cerr << "no (wrong diesets:";
+				if (!first_dieset_match) cerr << " first" ;
+				if (!second_dieset_match) cerr << " second";
+				cerr << ")" << endl;
+				continue;
+			}
+			if (!concrete_match) 
+			{
+				cerr << "no (no concrete match:";
+				if (!first_concrete_match) cerr << " first[candidate: "
+					<< (candidate.second->source_data_type->get_concrete_type()->ident_path_from_root() ? 
+					   definite_member_name(*candidate.second->source_data_type->get_concrete_type()->ident_path_from_root())
+					   : definite_member_name())
+					<< ", dep: "
+					<< (m_dep.first->get_concrete_type()->ident_path_from_root() ?
+					   definite_member_name(*m_dep.second->get_concrete_type()->ident_path_from_root())
+					   : definite_member_name())
+					<< "]";
+				if (!second_concrete_match) cerr << " second[candidate: "
+					<< (candidate.second->sink_data_type->get_concrete_type()->ident_path_from_root() ? 
+					   definite_member_name(*candidate.second->sink_data_type->get_concrete_type()->ident_path_from_root())
+					   : definite_member_name())
+					<< ", dep: "
+					<< (m_dep.second->get_concrete_type()->ident_path_from_root() ?
+					   definite_member_name(*m_dep.second->get_concrete_type()->ident_path_from_root())
+					   : definite_member_name())
+					<< "]";
+				cerr << ")" << endl;
+				continue;
+			}
+			
+			// if we got two half-exacts, should have exact
+			assert(!(first_exact && second_exact) || exact_match);
+			
+			
+			cerr << (concrete_match ? (string("yes, " + 
+				(exact_match) ? "exactly"
+			 :  (first_exact) ? "half-exactly (first)"
+			 :  (second_exact) ? "half-exactly (second)"
+			 :                   "concrete only")) : "no") << endl;
+			 
+			if (exact_match) working_exact.push_back(candidate.second);
+			else if (first_exact || second_exact) working_half_exact.push_back(candidate.second);
+			else if (concrete_match) working_concrete.push_back(candidate.second);
+		}
+		
+		shared_ptr < srk31::conjoining_sequence< vector<shared_ptr<value_conversion> >::iterator > > p_out_seq
+		 = boost::make_shared< srk31::conjoining_sequence< vector<shared_ptr<value_conversion> >::iterator > >();
+		p_out_seq->append(working_exact.begin(), working_exact.end())
+		.append(working_half_exact.begin(), working_half_exact.end())
+		.append(working_concrete.begin(), working_concrete.end());
+		return vector< shared_ptr<value_conversion> >(p_out_seq->begin(), p_out_seq->end());
+	}
+
 	void reinterpret_value_conversion::emit_body()
 	{
 		m_out << "if (__cake_p_to) *__cake_p_to = *reinterpret_cast<const " 
@@ -311,12 +409,12 @@ namespace cake
 							<< " and sink " 
 							<< *(arg.second->sink_data_type)
 							<< endl; */
-						return (arg.second->sink_data_type->iterator_here()
-									== found_target_field_type->iterator_here()
+						return (data_types_are_identical(arg.second->sink_data_type,
+									found_target_field_type)
 							) && 
 							(!found_source_field_type || 
-								arg.second->source_data_type->iterator_here()
-									== found_source_field_type->iterator_here()); 
+								data_types_are_identical(arg.second->source_data_type,
+									found_source_field_type)); 
 					}
 				) != value_corresps.second)
 		||      (found_target_field_type->get_concrete_type()
@@ -329,8 +427,11 @@ namespace cake
 			))
 		{
 			cerr << "Exception refers to target field " << *found_target_field
-				<< " and ";
-			if (unique_source_field) cerr << " and source field " << *found_source_field;
+				<< " of type " << *found_target_field_type
+				<< ", concrete type " << *found_target_field_type->get_concrete_type();
+			if (unique_source_field) cerr << " and source field " << *found_source_field
+				<< " of type " << *found_source_field_type
+				<< ", concrete type " << *found_source_field_type->get_concrete_type();
 			else cerr << " with no unique source";
 			cerr << endl;
 			
@@ -829,8 +930,8 @@ namespace cake
 			"",  // no target selector needed
 			optional<string>(""),  // no source selector needed
 			make_ast("this", &cakeCParser::stubPrimitiveExpression), // our expression is just "this"
-			GET_CHILD_COUNT(source_infix_stub) ? GET_CHILD(source_infix_stub, 0) : 0, // pass over INFIX_STUB_EXPR
-			GET_CHILD_COUNT(sink_infix_stub) ? GET_CHILD(sink_infix_stub, 0) : 0,
+			(source_infix_stub && GET_CHILD_COUNT(source_infix_stub)) ? GET_CHILD(source_infix_stub, 0) : 0, // pass over INFIX_STUB_EXPR
+			(sink_infix_stub && GET_CHILD_COUNT(sink_infix_stub)) ? GET_CHILD(sink_infix_stub, 0) : 0,
 			true /* force writing to void target */);
 			
 		// output return statement

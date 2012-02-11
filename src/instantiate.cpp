@@ -218,6 +218,7 @@ namespace cake
 					).create_die(DW_TAG_subprogram,
 						dynamic_pointer_cast<encap::basic_die>(created_cu),
 						symbol_prefix + *(*i_memb)->get_name()));
+				created_subprogram->set_declaration(true);
 				for (auto i_fp = subt->formal_parameter_children_begin();
 					i_fp != subt->formal_parameter_children_end(); ++i_fp)
 				{
@@ -239,8 +240,8 @@ namespace cake
 			&& "post-creation size");
 		
 		// sanity check
-		cerr << "Copied the following data to the dieset of module " 
-			<< r.module_inverse_tbl[this->output_module] << ":" << endl;
+		cerr << "Contents following instantiation of module " 
+			<< r.module_inverse_tbl[this->output_module] << " (@" << output_module.get() << "):" << endl;
 		cerr << output_module->get_ds();
 	}
 }
