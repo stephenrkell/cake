@@ -858,7 +858,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 			/* Work out the target type expectations, using constraints */
 			boost::shared_ptr<dwarf::spec::type_die> precise_to_type;
-			
+
 			// get the constraints defined for this Cake name
 			//auto iter_pair = constraints.equal_range(i_binding->first);
 			for (auto i_type = all_constraints.begin(); i_type != all_constraints.end(); ++i_type)
@@ -872,13 +872,20 @@ assert(false && "disabled support for inferring positional argument mappings");
 				 * FIXME: for now, we don't handle the artificial cases. */
 				if (precise_to_type)
 				{
-					if (precise_to_type->iterator_here() == (*i_type)->iterator_here())
+					if (data_types_are_identical(precise_to_type, *i_type)
+					||  /* ... or both pointers */ 
+					   (precise_to_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type
+					 && (*i_type)->get_concrete_type()->get_tag() == DW_TAG_pointer_type))
 					{
 						// okay, same DIE, so continue
 						continue;
 					}
 					else
 					{
+						cerr << "Precise to-type: " << *precise_to_type  << endl;
+						cerr << "Concrete: " << *precise_to_type->get_concrete_type() << endl;
+						cerr << "Constrained to-type: " << **i_type << endl;
+						cerr << "Concrete: " << *(*i_type)->get_concrete_type() << endl;
 						assert(false);
 					}
 				}
@@ -2593,11 +2600,31 @@ assert(false && "disabled support for inferring positional argument mappings");
 						"true", environment() };
 
 			case CAKE_TOKEN(KEYWORD_SUCCESS):
+				return (post_emit_status) { "((void)0)", "true", environment() };
 
 			case CAKE_TOKEN(KEYWORD_OUT):
+				/* We should have processed "out" as part of the enclosing function expr. */
+				assert(false);
 
 			case CAKE_TOKEN(MEMBER_SELECT):
-			case CAKE_TOKEN(INDIRECT_MEMBER_SELECT):
+			case CAKE_TOKEN(INDIRECT_MEMBER_SELECT): {
+				// FIXME: these should have dynamic semantics, but instead they have
+				// C++-static-typed semantics for now.
+				auto resultL = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 0));
+				assert(GET_TYPE(GET_CHILD(expr, 1)) == CAKE_TOKEN(IDENT));
+				ident = new_ident("temp");
+
+				m_out << "auto " << ident << " = "
+					<< resultL.result_fragment 
+					<< " " << CCP(TO_STRING(expr)) << " "
+					<< unescape_ident(CCP(GET_TEXT(GET_CHILD(expr, 1)))) << ";" << std::endl;
+				return (post_emit_status) { ident, 
+					resultL.success_fragment, 
+						// no *new* failures added, so delegate failure
+					environment() };
+			}
 			case CAKE_TOKEN(ELLIPSIS): /* ellipsis is 'access associated' */
 			case CAKE_TOKEN(ARRAY_SUBSCRIPT):
 
@@ -2694,6 +2721,29 @@ assert(false && "disabled support for inferring positional argument mappings");
 			case CAKE_TOKEN(CONDITIONAL): // $cond $caseTrue $caseFalse 
 			
 			case CAKE_TOKEN(KEYWORD_FN):
+				assert(false);
+				
+			case CAKE_TOKEN(KEYWORD_LET): {
+				INIT;
+				BIND3(expr, boundName, IDENT);
+				BIND2(expr, subExpr);
+				auto result = emit_stub_expression_as_statement_list(
+					ctxt,
+					subExpr
+				);
+				return (post_emit_status){ 
+					result.result_fragment,
+					result.success_fragment,
+					(environment) { 
+						make_pair(unescape_ident(CCP(GET_TEXT(boundName))), (bound_var_info){
+							result.result_fragment,
+							result.result_fragment, 
+							ctxt.modules.current,
+							false
+						})
+					}
+				};
+			}
 			
 			sequencing_ops: //__attribute__((unused))
 			case CAKE_TOKEN(SEMICOLON): {
@@ -2710,11 +2760,60 @@ assert(false && "disabled support for inferring positional argument mappings");
 				);
 				return result2;
 			} break;
-			case CAKE_TOKEN(ANDALSO_THEN):
-			case CAKE_TOKEN(ORELSE_THEN):
+			case CAKE_TOKEN(ANDALSO_THEN): {
 				// these are the only place where we add to the environment, since
 				// "let" expressions are no use in other contexts
-				assert(false);
+				auto result1 = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 0)
+				);
+				// we need to merge any added bindings
+				ctxt.env = merge_environment(ctxt.env, result1.new_bindings);
+				// we heed the success, because we're ;&
+				auto failure_label = new_ident("andalso_short_label");
+				m_out << "if (!(" << result1.success_fragment << ")) goto " 
+					<< failure_label << ";" << endl;
+
+				auto result2 = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 1)
+				);
+				//ctxt.env = merge_environment(ctxt.env, result2.new_bindings);
+				
+				m_out << failure_label << ":" << endl;
+				
+				return (post_emit_status){
+					/* result fragment */ "((" + result1.success_fragment + ") ? (" + result2.result_fragment + ") : (" + result1.result_fragment + "))",
+					/* success fragment */ "((" + result1.success_fragment + ") && (" + result2.success_fragment + "))",
+					/* new bindings */ result2.new_bindings
+				};
+			}
+			case CAKE_TOKEN(ORELSE_THEN): {
+				auto result1 = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 0)
+				);
+				// we need to merge any added bindings
+				ctxt.env = merge_environment(ctxt.env, result1.new_bindings);
+				// we heed the success, because we're ;&
+				auto early_success_label = new_ident("orelse_short_label");
+				m_out << "if (" << result1.success_fragment << ") goto " 
+					<< early_success_label << ";" << endl;
+
+				auto result2 = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 1)
+				);
+				//ctxt.env = merge_environment(ctxt.env, result2.new_bindings);
+				
+				m_out << early_success_label << ":" << endl;
+				
+				return (post_emit_status){
+					/* result fragment */ "((" + result1.success_fragment + ") ? (" + result1.result_fragment + ") : (" + result2.result_fragment + "))",
+					/* success fragment */ "((" + result1.success_fragment + ") || (" + result2.success_fragment + "))",
+					/* new bindings */ result2.new_bindings
+				};
+			}
 			case CAKE_TOKEN(KEYWORD_IN_ARGS):
 				// ACTUALLY this might happen, if we use in_args in its standalone sense
 				// of a pseudo-structure
@@ -2732,7 +2831,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				return (post_emit_status){ident, "true", environment()};
 			}
 			default:
-				cerr << "Don't know how to emit expresion: " << CCP(TO_STRING_TREE(expr)) << endl;
+				cerr << "Don't know how to emit expression: " << CCP(TO_STRING_TREE(expr)) << endl;
 				assert(false);
 		}
 		assert(false);
@@ -2799,9 +2898,48 @@ assert(false && "disabled support for inferring positional argument mappings");
 			// cerr << ctxt.modules.current->get_ds() << endl;
 			RAISE(functionNameTree, "does not name a visible function");
 		}
-
 		auto callee_subprogram
 		 = boost::dynamic_pointer_cast<subprogram_die>(callee);
+
+		/* Scan the argument expressions for any that are "out".
+		 * Declare the output object for those arguments now. */
+		environment new_bindings;
+		auto current_fp = callee_subprogram->formal_parameter_children_begin();
+		unsigned current_argnum = 0;
+		map<unsigned, string> output_parameter_idents;
+		{
+			INIT;
+			FOR_ALL_CHILDREN(argsMultiValue)
+			{
+				INIT;
+				ALIAS2(n, argExpr);
+				string ident = new_ident("outarg");
+				if (current_fp == callee_subprogram->formal_parameter_children_end()) RAISE(
+					n, "output parameters must be described by DWARF information");
+				optional< pair<string, string> > decl_and_cakename = is_out_arg_expr(
+					argExpr,
+					*current_fp,
+					ident
+				);
+				if (!decl_and_cakename) continue;
+				
+				// now we're definitely an optional arg expr 
+				m_out << decl_and_cakename->first << endl;
+				new_bindings.insert(make_pair(decl_and_cakename->second, (bound_var_info) {
+					ident,
+					ident,
+					ctxt.modules.current,
+					false
+				}));
+				output_parameter_idents[current_argnum] = ident;
+
+				// FIXME: also scan for "out_as" and set tagstrings for the binding
+				
+				if (current_fp != callee_subprogram->formal_parameter_children_end()) ++current_fp;
+				++current_argnum;
+			} // end FOR_ALL_CHILDREN
+		}
+
 		auto callee_return_type
 			= treat_subprogram_as_untyped(callee_subprogram) ?
 			   0 : callee_subprogram->get_type();
@@ -2830,6 +2968,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		post_emit_status result;
 		dwarf::spec::subprogram_die::formal_parameter_iterator i_arg
 		 = callee_subprogram->formal_parameter_children_begin();
+		unsigned argnum = 0;
 		// iterate through multiValue and callee args in lock-step
 		{
 			INIT;
@@ -2862,7 +3001,26 @@ assert(false && "disabled support for inferring positional argument mappings");
 					std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
 								dwarf::spec::subprogram_die::formal_parameter_iterator 
 					> 
-				>::iterator i_matched_name;				
+				>::iterator i_matched_name;
+				
+				/* If we have an output_args object for this,
+				 * then we short-circuit the eval process, because
+				 * we can't easily identify output args from the AST (without scanning for
+				 * KEYWORD_OUT, which might be buried deep). 
+				 * FIXME: this is because the grammar is borked, since
+				 * KEYWORD_OUT can appear almost anywhere in a stub expression. */
+				if (output_parameter_idents.find(argnum) != output_parameter_idents.end())
+				{
+					m_out << "&" << output_parameter_idents[argnum];
+					arg_results.push_back((post_emit_status){
+						"((void)0)",
+						"true",
+						environment()
+					});
+					arg_names_in_callee.push_back((*i_arg)->get_name());
+					goto next_arg_in_callee_sequence;
+				}
+				
 				/* If the stub expression was a KEYWORD_IN_ARGS, then
 				 * the stub code emitted  has yielded multiple outputs 
 				 * and multiple successes. */
@@ -3020,7 +3178,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							m_out << "{" << std::endl;
 							m_out.inc_level();
 					next_arg_in_callee_sequence:
-							++i_arg;
+							++i_arg; ++argnum;
 						} // end do
 						while (--args_for_this_ast_node > 0);
 					finished_argument_eval_for_current_ast_node:
@@ -3169,7 +3327,55 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 		return (post_emit_status){value_ident, success_ident, environment()};
 	}
-
+	
+	optional< pair<string, string> >
+	wrapper_file::is_out_arg_expr(
+		antlr::tree::Tree *argExpr, 
+		shared_ptr<formal_parameter_die> p_fp,
+		const string& ident,
+		bool force_yes /* = false */
+	)
+	{
+		if (!p_fp || !p_fp->get_type() 
+			|| !dynamic_pointer_cast<pointer_type_die>(p_fp->get_type())) RAISE(
+				argExpr, "output params must have pointer type");
+		auto pointer_target_type = dynamic_pointer_cast<pointer_type_die>(p_fp->get_type())
+			->get_type();
+		if (!pointer_target_type) RAISE(argExpr, "cannot output through untyped pointer");
+		switch(GET_TYPE(argExpr))
+		{
+			case CAKE_TOKEN(ARRAY_SUBSCRIPT): {
+				INIT;
+				BIND2(argExpr, subscriptExpr);
+				BIND2(argExpr, outObject);
+				if (GET_TYPE(outObject) != CAKE_TOKEN(KEYWORD_OUT)) return optional<pair<string, string> >();
+				string cakename;
+				{
+					INIT;
+					BIND3(outObject, outObjectName, IDENT);
+					cakename = unescape_ident(CCP(GET_TEXT(outObjectName)));
+				}
+				string decl = compiler.cxx_declarator_from_type_die(pointer_target_type).first
+					+ " " + ident 
+					+ "["
+					+ /* HACK */ unescape_ident(CCP(GET_TEXT(subscriptExpr)))
+					+ "];";
+				return make_pair(decl, cakename);
+			}
+			break;
+			case CAKE_TOKEN(KEYWORD_OUT):
+				return is_out_arg_expr(GET_CHILD(argExpr, 0), p_fp, ident, true);
+			case CAKE_TOKEN(IDENT): {
+				INIT;
+				string decl = compiler.cxx_declarator_from_type_die(pointer_target_type).first
+					+ " " + ident + ";";
+				return make_pair(decl, unescape_ident(CCP(GET_TEXT(argExpr))));
+			}
+			break;
+			default: return optional<pair<string, string> >();
+		}
+	}
+	
 	std::string wrapper_file::constant_expr_eval_and_cxxify(
 		const context& ctxt,
 		antlr::tree::Tree *constant_expr)

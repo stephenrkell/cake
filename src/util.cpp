@@ -1195,7 +1195,29 @@ namespace cake
 		
 		return false;
 	}
-		
+	
+	bool
+	stub_is_sane(antlr::tree::Tree *expr, module_ptr p_mod)
+	{
+		switch(GET_TYPE(expr))
+		{
+			case CAKE_TOKEN(INVOKE_WITH_ARGS): {
+				INIT;
+				BIND3(expr, argsMultiValue, MULTIVALUE);
+				BIND3(expr, functionNameTree, IDENT);
+				auto function_name = vector<string>(1, unescape_ident(CCP(GET_TEXT(functionNameTree))));
+				auto found = p_mod->get_ds().toplevel()->visible_resolve(function_name.begin(),
+					function_name.end());
+				if (found && found->get_tag() == DW_TAG_subprogram) return true;
+				else return false;
+			}
+			case CAKE_TOKEN(EVENT_SINK_AS_STUB): {
+				return stub_is_sane(GET_CHILD(expr, 0), p_mod);
+			}
+			default: assert(false);
+		}
+	}
+	
 	std::string solib_constructor = std::string("elf_external_sharedlib");
 	const char *guessed_system_library_path = "/usr/lib:/lib";
 	const char *guessed_system_library_prefix = "lib";

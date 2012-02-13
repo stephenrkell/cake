@@ -240,7 +240,8 @@ namespace cake {
 		void process_non_ident_pattern_event_corresp(
 			module_ptr left,
 			module_ptr right, 
-			antlr::tree::Tree *n);
+			antlr::tree::Tree *n,
+			bool is_compiler_generated);
 		
 		void expand_patterns_and_process(
 			module_ptr left,
@@ -309,7 +310,8 @@ namespace cake {
 				antlr::tree::Tree *corresp_head,
                 bool free_source = false,
                 bool free_sink = false,
-				bool init_only = false);
+				bool init_only = false,
+				bool is_compiler_generated = false);
         void add_value_corresp(
         	module_ptr source, 
             shared_ptr<spec::type_die> source_data_type,

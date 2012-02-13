@@ -68,6 +68,10 @@ namespace cake
 		{ auto found = this->find(k); assert(found != this->end()); return found->second; }
 		bound_var_info& operator[](const string& k) 
 		{ return this->super::operator[](k);  }
+		environment(std::initializer_list< super::value_type > l)
+		: super(l) {}
+		environment() {}
+		environment(const environment& c) : super(c) {}
 	};
 	
 	struct post_emit_status

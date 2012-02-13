@@ -220,10 +220,10 @@ namespace cake
 		static const string NO_VALUE;
 	private:
 		
-        //std::pair<std::string, std::string>
-        //emit_event_corresp_stub(
+		//std::pair<std::string, std::string>
+		//emit_event_corresp_stub(
 		//	const context& ctxt,
-    	//    antlr::tree::Tree *stub);
+		//    antlr::tree::Tree *stub);
 
 		post_emit_status
 		emit_stub_expression_as_statement_list(
@@ -236,7 +236,15 @@ namespace cake
 			context& ctxt,
 			antlr::tree::Tree *call_expr/*,
 			boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type*/);
-
+		
+		optional< pair<string, string> >
+		is_out_arg_expr(
+			antlr::tree::Tree *argExpr, 
+			shared_ptr<formal_parameter_die> p_fp,
+			const string& ident,
+			bool force_yes = false
+		);
+		
 //		//void 
 //		std::string
 //		//emit_bound_var_rvalue(

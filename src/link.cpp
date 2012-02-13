@@ -2163,7 +2163,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					}
 					else
 					{
-						process_non_ident_pattern_event_corresp(left, right, n);
+						process_non_ident_pattern_event_corresp(left, right, n, false);
 					}
 				}
 				break;
@@ -2342,6 +2342,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					BIND2(correspHead, sinkExpr);
 					BIND3(correspHead, returnEvent, RETURN_EVENT);
 					
+					// for each matching caller, add an event corresp
 					for (auto i_match = matched.begin(); i_match != matched.end(); ++i_match)
 					{
 						// only if not already touched
@@ -2362,7 +2363,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 									sinkInfixStub,
 									sinkExpr,
 									returnEvent
-								)
+								),
+								true // is_compiler_generated
 							);
 						
 						}
@@ -2390,6 +2392,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					}
 					BIND3(correspHead, returnEvent, RETURN_EVENT);
 					
+					// for each match, add an event corresp
 					for (auto i_match = matched.begin(); i_match != matched.end(); ++i_match)
 					{
 						// only if not already touched
@@ -2410,7 +2413,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 									sinkInfixStub,
 									sinkExpr,
 									returnEvent
-								)
+								),
+								true
 							);
 						}
 					}
@@ -2473,6 +2477,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					}
 					BIND3(correspHead, returnEvent, RETURN_EVENT);
 					
+					// in each direction
 					unsigned total = 0;
 					if (lr_matched.size() > 0)
 					{
@@ -2496,7 +2501,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 										rightInfixStub,
 										rightPattern,
 										returnEvent
-									)
+									),
+									true // is_compiler_generated
 								);
 								++total;
 							}
@@ -2524,7 +2530,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 										leftInfixStub,
 										leftPattern,
 										returnEvent
-									)
+									),
+									true // is_compiler_generated
 								);
 								++total;
 							}
@@ -2550,29 +2557,53 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		boost::smatch m;
 
 		/* First we match all event names against the pattern */
+		// DEBUG: print out CUs
+// 		cerr << "Module is at " << module.get() << endl;
+// 		for (auto i_cu = module->get_ds().toplevel()->compile_unit_children_begin();
+// 				i_cu !=  module->get_ds().toplevel()->compile_unit_children_end();
+// 				++i_cu)
+// 		{
+// 			cerr << "Module has a CU: " << *(*i_cu)->get_name() 
+// 				<< " with " << srk31::count((*i_cu)->children_begin(), (*i_cu)->children_end())
+// 					<< " children." << endl;
+// 			
+// 		}
+		
 		auto seq = module->get_ds().toplevel()->visible_grandchildren_sequence();
-		for (auto i_child = seq->begin(); i_child != seq->end(); ++i_child)
+		unsigned seq_count = srk31::count(seq->begin(), seq->end());
+		//cerr << "Module has " << seq_count << " visible grandchildren." << endl;
+		unsigned visible_grandchildren_count = 0;
+		unsigned subprogram_count = 0;
+		for (auto i_child = seq->begin(); i_child != seq->end(); ++i_child, ++visible_grandchildren_count)
 		{
+			//cerr << "Module has a CU (" << *(*i_child)->enclosing_compile_unit()->get_name() 
+			//	<< ")-toplevel " << (*i_child)->summary() << endl;
 			if ((*i_child)->get_tag() == DW_TAG_subprogram)
 			{
+				++subprogram_count;
 				auto subp = dynamic_pointer_cast<subprogram_die>(*i_child);
 				if (subp && subp->get_declaration() && *subp->get_declaration()
 				 && subp->get_name())
 				{
 					auto name = *subp->get_name();
+					cerr << "Does name " << name << " match pattern " << re << "? ";
 					// it's a declared-not-defined function...
 					// ... does it match the pattern?
 					if (boost::regex_match(name, m, re))
 					{
+						cerr << "yes." << endl;
 						cerr << "pattern " << re
 							<< " matched " << *subp
 							<< endl;
 
 						v.push_back(make_pair(subp, m));
 					}
+					else cerr << "no." << endl;
 				}
 			}
 		}
+		//cerr << "Considering pattern " << re << " we saw " << visible_grandchildren_count 
+		//	<< " visible DIEs and " << subprogram_count << " subprograms. " << endl;
 	
 		return v;
 	}
@@ -2580,7 +2611,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 	void link_derivation::process_non_ident_pattern_event_corresp(
 		module_ptr left,
 		module_ptr right, 
-		antlr::tree::Tree *n)
+		antlr::tree::Tree *n,
+		bool is_compiler_generated)
 	{
 		assert(GET_TYPE(n) == CAKE_TOKEN(EVENT_CORRESP));
 		INIT;
@@ -2606,7 +2638,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					BIND3(correspHead, returnEvent, RETURN_EVENT);
 
 					add_event_corresp(left, sourcePattern, sourceInfixStub,
-						right, sinkExpr, sinkInfixStub, returnEvent, correspHead);
+						right, sinkExpr, sinkInfixStub, returnEvent, correspHead,
+						false, false, false, true);
 				}
 				break;
 			case CAKE_TOKEN(RL_DOUBLE_ARROW):
@@ -2626,7 +2659,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					}
 					BIND3(correspHead, returnEvent, RETURN_EVENT);
 					add_event_corresp(right, sourcePattern, sourceInfixStub,
-						left, sinkExpr, sinkInfixStub, returnEvent, correspHead);
+						left, sinkExpr, sinkInfixStub, returnEvent, correspHead,
+						false, false, false, true);
 				}
 				break;
 			case CAKE_TOKEN(BI_DOUBLE_ARROW):
@@ -2653,9 +2687,11 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					}
 					BIND3(correspHead, returnEvent, RETURN_EVENT);
 					add_event_corresp(left, leftPattern, leftInfixStub, 
-						right, rightPattern, rightInfixStub, returnEvent, correspHead);
+						right, rightPattern, rightInfixStub, returnEvent, correspHead,
+						false, false, false, true);
 					add_event_corresp(right, rightPattern, rightInfixStub,
-						left, leftPattern, leftInfixStub, returnEvent, correspHead);
+						left, leftPattern, leftInfixStub, returnEvent, correspHead,
+						false, false, false, true);
 				}
 				break;
 			default: RAISE(correspHead, "expected a long arrow (<--, -->, <-->)");
@@ -3042,7 +3078,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		antlr::tree::Tree *corresp_head,
 		bool free_source,
 		bool free_sink,
-		bool init_only)
+		bool init_only,
+		bool is_compiler_generated)
 	{
 		auto key = sorted(make_pair(source, sink));
 		assert(all_iface_pairs.find(key) != all_iface_pairs.end());
@@ -3067,6 +3104,18 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		ensure_all_artificial_data_types(sink_expr_as_stub, sink, corresp);
 		if (sink_infix_stub) ensure_all_artificial_data_types(sink_infix_stub, sink, corresp);
 		if (return_leg) ensure_all_artificial_data_types(return_leg, source, corresp);
+		
+		// If we're compiler-generated, do a sanity check and discard
+		// if it looks bogus. This is used for pattern rules: the
+		// front-end has created patterns for every matching caller,
+		// regardless of whether the stub will compiler. So we wil
+		// discard those with single-invocation stubs.
+		if (is_compiler_generated && !stub_is_sane(sink_expr_as_stub, sink))
+		{
+			cerr << "Warning: skipping compiler-generated event correspondence with non-sane stub expr "
+				 << CCP(TO_STRING_TREE(sink_expr_as_stub)) << endl;
+			return;
+		}
 		
 		ev_corresps.insert(make_pair(key, corresp));
 		
@@ -4103,7 +4152,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		}
 	}
 
- 	vector<shared_ptr<dwarf::spec::type_die> >
+	vector<shared_ptr<dwarf::spec::type_die> >
 	link_derivation::
 	corresponding_dwarf_types(shared_ptr<dwarf::spec::type_die> type,
 		module_ptr corresp_module,
