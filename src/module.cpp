@@ -399,8 +399,65 @@ namespace cake
 			<< CCP(TO_STRING_TREE(falsifiable))
 			<< ", " << *falsifier 
 			<< ", proceeding to modify module info" << std::endl;
-			
-		bool retval = false;	
+
+		assert(falsifier);
+		assert(falsifiable);
+		bool retval = false;
+
+		// we use the same double-dispatch structure as in eval
+		switch(TAG_AND_TOKEN(falsifier->get_tag(), GET_TYPE(falsifiable)))
+		{
+			case TAG_AND_TOKEN(DW_TAG_typedef, VALUE_DESCRIPTION): {
+//				INIT;
+//				BIND2(falsifiable, valueDescr);
+//				{
+					INIT;
+					BIND2(/*valueDescr*/falsifiable, typeDescr);
+					shared_ptr<encap::typedef_die> is_typedef
+					 = dynamic_pointer_cast<encap::typedef_die>(falsifier);
+					assert(is_typedef);
+					cerr << "Overriding type of typedef " << *is_typedef
+						<< " to be that described by " << CCP(TO_STRING_TREE(falsifiable)) << endl;
+					shared_ptr<type_die> new_target_type = ensure_dwarf_type(typeDescr);
+					assert(new_target_type);
+					for_all_identical_types(shared_from_this(), is_typedef, 
+						[new_target_type](shared_ptr<type_die> t) {
+							auto opt_ident_path = new_target_type->ident_path_from_cu();
+							assert(opt_ident_path);
+							auto ident_path = *opt_ident_path;
+							if (t->get_tag() == DW_TAG_typedef)
+							{
+								cerr << "Overriding target type of typedef " << *t << endl;
+								auto analogous_target = t->enclosing_compile_unit()->resolve(
+										ident_path.begin(), ident_path.end()
+									);
+								if (!analogous_target) 
+								{
+									cerr << "No analogous target in CU " 
+										<< t->enclosing_compile_unit()->summary() << endl;
+									return;
+								}
+								auto analogous_target_type = dynamic_pointer_cast<type_die>(
+									analogous_target);
+								if (!analogous_target_type) cerr << "Skipping analogous " 
+									<< *analogous_target << " which is not a type." << endl;
+								else
+								{
+									dynamic_pointer_cast<encap::typedef_die>(t)->set_type(
+										analogous_target_type
+									);
+									cerr << "Success; typedef is now " << *t << endl;
+								}
+							}
+							else cerr << "Hmm: wasn't a typedef: " << *t << endl;
+						}
+					);
+					retval = true;
+				}
+				break;
+//			}
+			default: assert(false);
+		}
 
 		return retval;
 	}
@@ -557,6 +614,44 @@ namespace cake
 								// we're missing some information.
 								RETURN_VALUE_IS ( (this->*handler)(claim, p_d, 0, p_resolver) );
 							}
+						}
+						case TAG_AND_TOKEN(DW_TAG_typedef, VALUE_DESCRIPTION): {
+							INIT;
+							BIND2(claim, typeDescr);
+							auto found_all = all_existing_dwarf_types(typeDescr);
+							/* If we satisfy one of them, we are okay. */
+							bool success = false;
+							cerr << "Proceeding to test typedef against " << found_all.size()
+								 << " types matching descr." << endl;
+							auto is_typedef = dynamic_pointer_cast<dwarf::spec::typedef_die>(p_d);
+							unsigned count = 0;
+							for (auto i_found = found_all.begin(); i_found != found_all.end();
+								++i_found)
+							{
+								cerr << **i_found << endl;
+								success |= data_types_are_identical(is_typedef->get_type(),
+									dynamic_pointer_cast<type_die>(*i_found));
+// 									
+// 									eval_claim_depthfirst(
+// 									typeDescr,
+// 									p_d,
+// 									p_resolver,
+// 									&module_described_by_dwarf::do_nothing_handler);
+								++count;
+								cerr << "After test " << count << " value is " << success << endl;
+							}
+							if (success) RETURN_VALUE_IS(true);
+							else RETURN_VALUE_IS( (this->*handler)(claim, p_d, 0, p_resolver) );
+						}
+						case TAG_AND_TOKEN(DW_TAG_typedef, KEYWORD_CLASS_OF): {
+							INIT;
+							BIND2(claim, typeDescription);
+							auto is_typedef = dynamic_pointer_cast<spec::typedef_die>(p_d);
+							return eval_claim_depthfirst(
+								typeDescription,
+								p_d,
+								p_resolver,
+								handler);
 						}
 						case TAG_AND_TOKEN(DW_TAG_formal_parameter, DEFINITE_MEMBER_NAME):
 							// HACK
@@ -771,10 +866,20 @@ namespace cake
 	} // end function
 
 	//const Dwarf_Off module_described_by_dwarf::private_offsets_begin = 1<<30; // 1GB of original DWARF information should be enough
-	
-				
+
 	shared_ptr<type_die> module_described_by_dwarf::existing_dwarf_type(antlr::tree::Tree *t)
 	{
+		auto returned = all_existing_dwarf_types(t);
+		if (returned.size() > 0) return returned.at(0);
+		else return shared_ptr<type_die>();
+	}
+	
+	vector< shared_ptr<type_die> > 
+	module_described_by_dwarf::all_existing_dwarf_types(
+		antlr::tree::Tree *t
+	)
+	{
+		vector< shared_ptr<type_die> > retval;
 		/* We descend the type AST looking for a type that matches. */
 		switch(GET_TYPE(t))
 		{
@@ -820,33 +925,33 @@ namespace cake
 								
 								if (bytesize_matched 
 								&& encoding_matched 
-								&& attributes_matched) return dynamic_pointer_cast<type_die>(as_base_type);
+								&& attributes_matched) retval.push_back(
+									dynamic_pointer_cast<type_die>(as_base_type)
+									);
 							}
 						}
 					}
 				}
-				// if we got here, we didn't find it
-				return shared_ptr<type_die>();
 			} break;
 			case CAKE_TOKEN(IDENT): {
 				// we resolve the ident and check it resolves to a type
 				definite_member_name dmn; dmn.push_back(unescape_ident(CCP(GET_TEXT(t))));
-				auto found = this->get_ds().toplevel()->visible_resolve(
+				auto found = this->get_ds().toplevel()->visible_resolve_all(
 					dmn.begin(),
 					dmn.end()
 				);
-				if (found)
+				for (auto i_found = found.begin(); i_found != found.end(); ++i_found)
 				{
-					auto as_type = dynamic_pointer_cast<type_die>(found);
-					return as_type;
-				} else return dynamic_pointer_cast<type_die>(found);
-			}
+					auto as_type = dynamic_pointer_cast<type_die>(*i_found);
+					if (as_type) retval.push_back(as_type);
+				}
+			} break;
 			case CAKE_TOKEN(KEYWORD_OBJECT): {
 				// HMM... structural treatment also, it seems. 
 				// FIXME: this means dwarfidl can't express 
 				// "a structure type, named <like so>, structured <like so...>"
 				assert(false);
-				} break;
+			} break;
 			case CAKE_TOKEN(KEYWORD_PTR): {
 				// find the pointed-to type, then find a pointer type pointing to it
 				antlr::tree::Tree *pointed_to = GET_CHILD(t, 0);
@@ -872,7 +977,8 @@ namespace cake
 								)
 							)
 							{
-								return dynamic_pointer_cast<spec::type_die>(as_pointer_type);
+								auto candidate = dynamic_pointer_cast<spec::type_die>(as_pointer_type);
+								if (candidate) retval.push_back(candidate);
 							}
 						}
 					}
@@ -880,10 +986,10 @@ namespace cake
 				// if we got here, either 
 				// -- we didn't find the pointed-to type (for non-void), so definitely no pointer type; or
 				// -- we found the pointed-to but not the pointer
-				return shared_ptr<spec::type_die>();
+				break;
 			}
 			case CAKE_TOKEN(ARRAY): assert(false);
-			case CAKE_TOKEN(KEYWORD_VOID): return shared_ptr<type_die>(); // void is not reified
+			case CAKE_TOKEN(KEYWORD_VOID): break; // void is not reified
 			case CAKE_TOKEN(KEYWORD_ENUM): assert(false); // for now
 			case CAKE_TOKEN(FUNCTION_ARROW): assert(false); // for now
 			case CAKE_TOKEN(ANY_VALUE):
@@ -899,14 +1005,16 @@ namespace cake
 						assert(as_pointer_type);
 						if (!as_pointer_type->get_type()) 
 						{
-							return dynamic_pointer_cast<spec::type_die>(as_pointer_type);
+							retval.push_back(dynamic_pointer_cast<spec::type_die>(as_pointer_type));
 						}
 					}
 				}
 				assert(false); //return shared_ptr<spec::type_die>();
 			}
 			default: assert(false);
-		}
+		} // end switch
+		
+		return retval;
 	}
 	
 	shared_ptr<type_die> module_described_by_dwarf::ensure_dwarf_type(antlr::tree::Tree *t)

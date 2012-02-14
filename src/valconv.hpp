@@ -73,7 +73,7 @@ namespace cake
 		environment() {}
 		environment(const environment& c) : super(c) {}
 	};
-	
+	std::ostream& operator<<(std::ostream& s, const environment& env);
 	struct post_emit_status
 	{
 		string result_fragment;

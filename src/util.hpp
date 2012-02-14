@@ -131,7 +131,15 @@ namespace cake
 
 	bool
 	data_types_are_identical(shared_ptr<type_die> arg1, shared_ptr<type_die> arg2);
-	
+
+	template <typename Action>
+	void
+	for_all_identical_types(
+		module_ptr p_mod,
+		shared_ptr<type_die> p_t,
+		const Action& action
+	); // defined in module.hpp
+
 	boost::regex regex_from_pattern_ast(antlr::tree::Tree *t);
 	
 	antlr::tree::Tree *

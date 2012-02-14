@@ -25,6 +25,7 @@ namespace cake
 	using dwarf::spec::type_die;
 	using dwarf::spec::basic_die;
 	using boost::shared_ptr;
+	using boost::dynamic_pointer_cast;
 	
 	class definite_member_name;
 	class derivation;
@@ -162,6 +163,9 @@ namespace cake
 		}
 		
 	public:
+		vector< shared_ptr<type_die> > 
+		all_existing_dwarf_types(antlr::tree::Tree *t);
+		
 		shared_ptr<type_die> existing_dwarf_type(antlr::tree::Tree *t);
 		shared_ptr<type_die> create_dwarf_type(antlr::tree::Tree *t);
 		shared_ptr<type_die> ensure_dwarf_type(antlr::tree::Tree *t);
@@ -242,6 +246,36 @@ namespace cake
 			this->module_described_by_dwarf::updated_dwarf();
 		}
 	};
+	
+	// HACK: declared in util.hpp
+	template <typename Action>
+	void
+	for_all_identical_types(
+		module_ptr p_mod,
+		shared_ptr<type_die> p_t,
+		const Action& action
+	)
+	{
+		auto opt_ident_path = p_t->ident_path_from_cu();
+		vector< shared_ptr<type_die> > ts;
+		if (!opt_ident_path) ts.push_back(p_t);
+		else
+		{
+			for (auto i_cu = p_mod->get_ds().toplevel()->compile_unit_children_begin();
+				i_cu != p_mod->get_ds().toplevel()->compile_unit_children_end(); ++i_cu)
+			{
+				auto candidate = (*i_cu)->resolve(opt_ident_path->begin(), opt_ident_path->end());
+				if (dynamic_pointer_cast<type_die>(candidate))
+				{
+					ts.push_back(dynamic_pointer_cast<type_die>(candidate));
+				}
+			}
+		}
+		for (auto i_t = ts.begin(); i_t != ts.end(); ++i_t)
+		{
+			action(*i_t);
+		}
+	}
 }
 
 #endif

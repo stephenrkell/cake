@@ -895,6 +895,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 						<< " has been constrained to type " 
 						<< compiler.name_for(*i_type)
 						<< std::endl;
+					// same again, for our log file
+					cerr << "in crossover environment, " << representative_binding.first 
+						<< " has been constrained to type " 
+						<< compiler.name_for(*i_type)
+						<< std::endl;
+
 					precise_to_type = *i_type;
 				}
 			}
@@ -2514,7 +2520,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 			context& ctxt,
 			antlr::tree::Tree *expr)
 	{
+		cerr << "Emitting a stub expr " << CCP(TO_STRING_TREE(expr)) << ", environment is: " << endl
+			<< ctxt.env;
 		std::string ident;
+		post_emit_status retval;
+#define RETURN_VALUE(v) do { retval = (v); goto out; } while(0)
 		switch(GET_TYPE(expr))
 		{
 			case CAKE_TOKEN(INVOKE_WITH_ARGS): // REMEMBER: algorithms are special
@@ -2526,38 +2536,38 @@ assert(false && "disabled support for inferring positional argument mappings");
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::string_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
-				return (post_emit_status){ident, "true", environment()};
+				RETURN_VALUE(((post_emit_status){ident, "true", environment()}));
 			case CAKE_TOKEN(INT):
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::int_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
-				return (post_emit_status){ident, "true", environment()};
+				RETURN_VALUE(((post_emit_status){ident, "true", environment()}));
 			case CAKE_TOKEN(FLOAT):
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::float_lit(" << CCP(GET_TEXT(expr)) << ");" << std::endl;
-				return (post_emit_status){ident, "true", environment()};
+				RETURN_VALUE(((post_emit_status){ident, "true", environment()}));
 			case CAKE_TOKEN(NAME_AND_INTERPRETATION):
 				// just recurse on the name
 				expr = GET_CHILD(expr, 0);
-				return emit_stub_expression_as_statement_list(ctxt, expr);
+				RETURN_VALUE((emit_stub_expression_as_statement_list(ctxt, expr)));
 			case CAKE_TOKEN(KEYWORD_VOID):
-				return (post_emit_status){NO_VALUE, "true", environment()};
+				RETURN_VALUE(((post_emit_status){NO_VALUE, "true", environment()}));
 			case CAKE_TOKEN(KEYWORD_NULL):
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::null_value();" << std::endl;
-				return (post_emit_status){ident, "true", environment()};
+				RETURN_VALUE(((post_emit_status){ident, "true", environment()}));
 			case CAKE_TOKEN(KEYWORD_TRUE):
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::true_value();" << std::endl;
-				return (post_emit_status){ident, "true", environment()};
+				RETURN_VALUE(((post_emit_status){ident, "true", environment()}));
 			case CAKE_TOKEN(KEYWORD_FALSE):
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << "cake::style_traits<0>::false_value();" << std::endl;
-				return (post_emit_status){ident, "true", environment()};
+				RETURN_VALUE(((post_emit_status){ident, "true", environment()}));
 			case CAKE_TOKEN(DEFINITE_MEMBER_NAME):
 				assert(read_definite_member_name(expr).size() == 1);
 				expr = GET_CHILD(expr, 0);
@@ -2570,37 +2580,33 @@ assert(false && "disabled support for inferring positional argument mappings");
 							<< unescape_ident(CCP(GET_TEXT(expr)))
 							<< " not present in the environment. Environment is: "
 							<< std::endl;
-						for (auto i_el = ctxt.env.begin(); i_el != ctxt.env.end(); ++i_el)
-						{
-							std::cerr << i_el->first << " : " 
-								<<  i_el->second.cxx_name << std::endl;
-						}
+						std::cerr << ctxt.env;
 						assert(false);
 					}
 					assert(ctxt.env[unescape_ident(CCP(GET_TEXT(expr)))].valid_in_module
 						== ctxt.modules.current);
-					return (post_emit_status){ ctxt.env[unescape_ident(CCP(GET_TEXT(expr)))].cxx_name,
-						"true", environment() };
+					RETURN_VALUE(((post_emit_status){ ctxt.env[unescape_ident(CCP(GET_TEXT(expr)))].cxx_name,
+						"true", environment() }));
 				}
 			case CAKE_TOKEN(KEYWORD_THIS):
 				assert(ctxt.env.find("__cake_this") != ctxt.env.end());
-				return (post_emit_status){ ctxt.env["__cake_this"].cxx_name,
-						"true", environment() };
+				RETURN_VALUE(((post_emit_status){ ctxt.env["__cake_this"].cxx_name,
+						"true", environment() }));
 			case CAKE_TOKEN(KEYWORD_THAT):
 				assert(ctxt.env.find("__cake_that") != ctxt.env.end());
-				return (post_emit_status){ ctxt.env["__cake_that"].cxx_name,
-						"true", environment() };
+				RETURN_VALUE(((post_emit_status){ ctxt.env["__cake_that"].cxx_name,
+						"true", environment() }));
 			case CAKE_TOKEN(KEYWORD_HERE):
 				assert(ctxt.env.find("__cake_here") != ctxt.env.end());
-				return (post_emit_status){ ctxt.env["__cake_here"].cxx_name,
-						"true", environment() };
+				RETURN_VALUE(((post_emit_status){ ctxt.env["__cake_here"].cxx_name,
+						"true", environment() }));
 			case CAKE_TOKEN(KEYWORD_THERE):
 				assert(ctxt.env.find("__cake_there") != ctxt.env.end());
-				return (post_emit_status){ ctxt.env["__cake_there"].cxx_name,
-						"true", environment() };
+				RETURN_VALUE(((post_emit_status){ ctxt.env["__cake_there"].cxx_name,
+						"true", environment() }));
 
 			case CAKE_TOKEN(KEYWORD_SUCCESS):
-				return (post_emit_status) { "((void)0)", "true", environment() };
+				RETURN_VALUE(((post_emit_status) { "((void)0)", "true", environment() }));
 
 			case CAKE_TOKEN(KEYWORD_OUT):
 				/* We should have processed "out" as part of the enclosing function expr. */
@@ -2610,20 +2616,20 @@ assert(false && "disabled support for inferring positional argument mappings");
 			case CAKE_TOKEN(INDIRECT_MEMBER_SELECT): {
 				// FIXME: these should have dynamic semantics, but instead they have
 				// C++-static-typed semantics for now.
-				auto resultL = emit_stub_expression_as_statement_list(
+				auto resultR = emit_stub_expression_as_statement_list(
 					ctxt,
-					GET_CHILD(expr, 0));
-				assert(GET_TYPE(GET_CHILD(expr, 1)) == CAKE_TOKEN(IDENT));
+					GET_CHILD(expr, 1));
+				assert(GET_TYPE(GET_CHILD(expr, 0)) == CAKE_TOKEN(IDENT));
 				ident = new_ident("temp");
 
 				m_out << "auto " << ident << " = "
-					<< resultL.result_fragment 
+					<< resultR.result_fragment 
 					<< " " << CCP(TO_STRING(expr)) << " "
-					<< unescape_ident(CCP(GET_TEXT(GET_CHILD(expr, 1)))) << ";" << std::endl;
-				return (post_emit_status) { ident, 
-					resultL.success_fragment, 
+					<< unescape_ident(CCP(GET_TEXT(GET_CHILD(expr, 0)))) << ";" << std::endl;
+				RETURN_VALUE(( (post_emit_status) { ident, 
+					resultR.success_fragment, 
 						// no *new* failures added, so delegate failure
-					environment() };
+					environment() } ));
 			}
 			case CAKE_TOKEN(ELLIPSIS): /* ellipsis is 'access associated' */
 			case CAKE_TOKEN(ARRAY_SUBSCRIPT):
@@ -2639,9 +2645,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 			case CAKE_TOKEN(KEYWORD_AS):
 			case CAKE_TOKEN(KEYWORD_IN_AS):
 			case CAKE_TOKEN(KEYWORD_OUT_AS):
-				return emit_stub_expression_as_statement_list(
+				RETURN_VALUE((emit_stub_expression_as_statement_list(
 					ctxt,
-					GET_CHILD(expr, 2));
+					GET_CHILD(expr, 2))));
 			
 			ambiguous_arity_ops: //__attribute__((unused))
 			// may be unary (address-of) or binary
@@ -2675,9 +2681,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = "
 					<< CCP(TO_STRING(expr)) << result.result_fragment << ";" << std::endl;
-				return (post_emit_status) { ident, 
+				RETURN_VALUE(((post_emit_status) { ident, 
 					result.success_fragment, // no *new* failures added, so delegate failure
-					environment() };
+					environment() }));
 			}
 			
 			binary_al_ops: //__attribute__((unused))
@@ -2708,10 +2714,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 					<< resultL.result_fragment 
 					<< " " << CCP(TO_STRING(expr)) << " "
 					<< resultR.result_fragment << ";" << std::endl;
-				return (post_emit_status) { ident, 
+				RETURN_VALUE(((post_emit_status) { ident, 
 					"(" + resultL.success_fragment + " && " + resultR.success_fragment + ")", 
 						// no *new* failures added, so delegate failure
-					environment() };
+					environment() }));
 			}
 
 			// these have short-circuit semantics
@@ -2731,7 +2737,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					ctxt,
 					subExpr
 				);
-				return (post_emit_status){ 
+				RETURN_VALUE(((post_emit_status){ 
 					result.result_fragment,
 					result.success_fragment,
 					(environment) { 
@@ -2742,7 +2748,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							false
 						})
 					}
-				};
+				}));
 			}
 			
 			sequencing_ops: //__attribute__((unused))
@@ -2752,13 +2758,16 @@ assert(false && "disabled support for inferring positional argument mappings");
 					GET_CHILD(expr, 0)
 				);
 				// we need to merge any added bindings
+				auto saved_env = ctxt.env;
 				ctxt.env = merge_environment(ctxt.env, result1.new_bindings);
 				// we discard the success, because we're semicolon
 				auto result2 = emit_stub_expression_as_statement_list(
 					ctxt,
 					GET_CHILD(expr, 1)
 				);
-				return result2;
+				ctxt.env = saved_env;
+				result2.new_bindings = merge_environment(result2.new_bindings, result1.new_bindings);
+				RETURN_VALUE(result2);
 			} break;
 			case CAKE_TOKEN(ANDALSO_THEN): {
 				// these are the only place where we add to the environment, since
@@ -2768,6 +2777,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					GET_CHILD(expr, 0)
 				);
 				// we need to merge any added bindings
+				auto saved_env = ctxt.env;
 				ctxt.env = merge_environment(ctxt.env, result1.new_bindings);
 				// we heed the success, because we're ;&
 				auto failure_label = new_ident("andalso_short_label");
@@ -2782,11 +2792,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 				
 				m_out << failure_label << ":" << endl;
 				
-				return (post_emit_status){
+				ctxt.env = saved_env;
+				result2.new_bindings = merge_environment(result2.new_bindings, result1.new_bindings);
+				RETURN_VALUE(((post_emit_status){
 					/* result fragment */ "((" + result1.success_fragment + ") ? (" + result2.result_fragment + ") : (" + result1.result_fragment + "))",
 					/* success fragment */ "((" + result1.success_fragment + ") && (" + result2.success_fragment + "))",
 					/* new bindings */ result2.new_bindings
-				};
+				}));
 			}
 			case CAKE_TOKEN(ORELSE_THEN): {
 				auto result1 = emit_stub_expression_as_statement_list(
@@ -2794,25 +2806,55 @@ assert(false && "disabled support for inferring positional argument mappings");
 					GET_CHILD(expr, 0)
 				);
 				// we need to merge any added bindings
+				/* To merge the two new environments, we have some requirements:
+				 * - The right-hand expression might want to use stuff bound by the left-hand.
+				 * - The right-hand expression can be used to make bindings that failed
+				 *   on the right-hand side. 
+				 * We really want full dynamic binding. But without reifying the environment
+				 * at runtime, we permit a simpler version here, to make our implementation simpler.
+				 * The only bindings that will survive from the right-hand expr
+				 * are ones that were attempted in the left-hand expr. 
+				 * Since we don't track which bindings succeeded, we sloppily allow
+				 * rebinding.
+				 */
+				auto saved_env = ctxt.env;
 				ctxt.env = merge_environment(ctxt.env, result1.new_bindings);
-				// we heed the success, because we're ;&
+				// we heed the success, because we're ;|
 				auto early_success_label = new_ident("orelse_short_label");
 				m_out << "if (" << result1.success_fragment << ") goto " 
 					<< early_success_label << ";" << endl;
-
+				cerr << "new bindings from left of ;|: " << result1.new_bindings;
 				auto result2 = emit_stub_expression_as_statement_list(
 					ctxt,
 					GET_CHILD(expr, 1)
 				);
+				cerr << "new bindings from right of ;|: " << result2.new_bindings;
 				//ctxt.env = merge_environment(ctxt.env, result2.new_bindings);
+				// Now, any bindings that were new from the RHS we
+				// output an assignment for.
+				for (auto i_rhs = result2.new_bindings.begin(); i_rhs != result2.new_bindings.end();
+					++i_rhs)
+				{
+					if (result1.new_bindings.find(i_rhs->first) != result1.new_bindings.end())
+					{
+						/* This means that *if* we took the right-hand path, we should
+						 * propagate its value. If we didn't, we are jumping down to the
+						 * label below, so there's no need to output a guard if-test. */
+						cerr << "Merging binding for " << i_rhs->first << endl;
+						m_out << result1.new_bindings[i_rhs->first].cxx_name 
+							<< " = " << i_rhs->second.cxx_name << ";" << endl;
+					}
+					else cerr << "Not merging binding for " << i_rhs->first << endl;
+				}
 				
 				m_out << early_success_label << ":" << endl;
 				
-				return (post_emit_status){
+				ctxt.env = saved_env;
+				RETURN_VALUE(((post_emit_status){
 					/* result fragment */ "((" + result1.success_fragment + ") ? (" + result1.result_fragment + ") : (" + result2.result_fragment + "))",
 					/* success fragment */ "((" + result1.success_fragment + ") || (" + result2.success_fragment + "))",
-					/* new bindings */ result2.new_bindings
-				};
+					/* new bindings */ result1.new_bindings
+				}));
 			}
 			case CAKE_TOKEN(KEYWORD_IN_ARGS):
 				// ACTUALLY this might happen, if we use in_args in its standalone sense
@@ -2828,13 +2870,20 @@ assert(false && "disabled support for inferring positional argument mappings");
 				ident = new_ident("temp");
 				m_out << "auto " << ident << " = ";
 				m_out << constant_expr_eval_and_cxxify(ctxt, expr)  << ";" << std::endl;
-				return (post_emit_status){ident, "true", environment()};
+				RETURN_VALUE(((post_emit_status){ident, "true", environment()}));
 			}
 			default:
 				cerr << "Don't know how to emit expression: " << CCP(TO_STRING_TREE(expr)) << endl;
 				assert(false);
 		}
 		assert(false);
+	out:
+		cerr << "Finished emitting stub expr " << CCP(TO_STRING_TREE(expr)) 
+			<< ", environment is: " << endl << ctxt.env
+			<< "New bindings: " << endl
+			<< retval.new_bindings;
+		return retval;
+
 	}
 	
 	std::vector<
@@ -2900,17 +2949,20 @@ assert(false && "disabled support for inferring positional argument mappings");
 		}
 		auto callee_subprogram
 		 = boost::dynamic_pointer_cast<subprogram_die>(callee);
+		
+		cerr << "callee_subprogram is " << *callee_subprogram << endl;
 
 		/* Scan the argument expressions for any that are "out".
 		 * Declare the output object for those arguments now. */
 		environment new_bindings;
 		auto current_fp = callee_subprogram->formal_parameter_children_begin();
-		unsigned current_argnum = 0;
-		map<unsigned, string> output_parameter_idents;
+		int current_argnum = -1;
+		map<int, string> output_parameter_idents;
 		{
 			INIT;
 			FOR_ALL_CHILDREN(argsMultiValue)
 			{
+				++current_argnum;
 				INIT;
 				ALIAS2(n, argExpr);
 				string ident = new_ident("outarg");
@@ -2936,7 +2988,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 				// FIXME: also scan for "out_as" and set tagstrings for the binding
 				
 				if (current_fp != callee_subprogram->formal_parameter_children_end()) ++current_fp;
-				++current_argnum;
 			} // end FOR_ALL_CHILDREN
 		}
 
@@ -3325,7 +3376,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		//m_out.inc_level();
 		
 
-		return (post_emit_status){value_ident, success_ident, environment()};
+		return (post_emit_status){value_ident, success_ident, new_bindings};
 	}
 	
 	optional< pair<string, string> >
@@ -3337,11 +3388,26 @@ assert(false && "disabled support for inferring positional argument mappings");
 	)
 	{
 		if (!p_fp || !p_fp->get_type() 
-			|| !dynamic_pointer_cast<pointer_type_die>(p_fp->get_type())) RAISE(
+			|| !dynamic_pointer_cast<pointer_type_die>(p_fp->get_type()->get_concrete_type()))
+		{
+			if (!force_yes) return optional< pair<string, string> >();
+			// otherwise it's a problem
+			cerr << "Output parameter ";
+			if (!p_fp) cerr << "(no fp)";
+			else cerr << *p_fp;
+			
+			cerr << " has concrete type: ";
+			if (!p_fp) cerr << "(no fp => no type)";
+			else if (!p_fp->get_type()) cerr << "(no type)";
+			else cerr << *p_fp->get_type()->get_concrete_type();
+			cerr << endl;
+			RAISE(
 				argExpr, "output params must have pointer type");
-		auto pointer_target_type = dynamic_pointer_cast<pointer_type_die>(p_fp->get_type())
-			->get_type();
-		if (!pointer_target_type) RAISE(argExpr, "cannot output through untyped pointer");
+		}
+		shared_ptr<type_die> fp_type = p_fp->get_type();
+		shared_ptr<pointer_type_die> fp_pointer_type = dynamic_pointer_cast<pointer_type_die>(fp_type);
+		shared_ptr<type_die> pointer_target_type
+		 = fp_pointer_type ? fp_pointer_type->get_type()->get_concrete_type() : shared_ptr<type_die>();
 		switch(GET_TYPE(argExpr))
 		{
 			case CAKE_TOKEN(ARRAY_SUBSCRIPT): {
@@ -3367,6 +3433,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 				return is_out_arg_expr(GET_CHILD(argExpr, 0), p_fp, ident, true);
 			case CAKE_TOKEN(IDENT): {
 				INIT;
+				// now we definitely need that pointer
+				if (!pointer_target_type) RAISE(argExpr, "cannot output through untyped pointer");
 				string decl = compiler.cxx_declarator_from_type_die(pointer_target_type).first
 					+ " " + ident + ";";
 				return make_pair(decl, unescape_ident(CCP(GET_TEXT(argExpr))));

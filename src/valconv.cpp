@@ -34,7 +34,14 @@ namespace cake
 	{
 		return derivation.sorted(make_pair(modules.source, modules.sink));
 	}
-	
+	std::ostream& operator<<(std::ostream& s, const environment& env)
+	{	
+		for (auto i_el = env.begin(); i_el != env.end(); ++i_el)
+		{
+			s << i_el->first << " : " <<  i_el->second.cxx_name << std::endl;
+		}
+		return s;
+	}
 	shared_ptr<value_conversion> create_value_conversion(module_ptr source,
             shared_ptr<dwarf::spec::type_die> source_data_type,
             antlr::tree::Tree *source_infix_stub,
@@ -1314,9 +1321,9 @@ namespace cake
 				ctxt, 
 				GET_CHILD(source_infix_stub, 0)
 			);
-			// restore previous environment
-			ctxt.env = saved_env;
-			// FIXME: do stuff with the return status (merge environment, use success?)
+			// restore previous environment + new additions
+			ctxt.env = w.merge_environment(saved_env, return_status.new_bindings);
+			// FIXME: do stuff with the success status?
 		}
 
 		/* 2. For each target field, emit its pre-stub (if any) and extend the environment with the result.
@@ -1383,10 +1390,10 @@ namespace cake
 			// make sure we are in the sink module context now
 			ctxt.modules.current = target_module;
 			// we cross over this env...
-			// there should already be some stuff in there
-			assert(basic_env.size() > 0);
+			// there may or may not be stuff in there (e.g. empty struct)
+			//assert(basic_env.size() > 0);
 			auto crossed_env = w.crossover_environment_and_sync(
-				source_module, basic_env, target_module, 
+				source_module, ctxt.env, target_module, 
 				/* no constraints */ 
 				std::multimap< string, shared_ptr<type_die> >(), false, true);
 		
