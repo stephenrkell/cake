@@ -79,6 +79,17 @@ namespace cake
 		string result_fragment;
 		string success_fragment;
 		environment new_bindings;
+		optional<  // many expressions do not return a multivalue, but if they do...
+			pair<  // it is a pair of
+				string,  // the C++ name of the structure
+				vector<  // and a vector 
+					 pair<  // of pairs
+					 	string,  // describing the C++ field names
+						shared_ptr<type_die>  // and the DWARF types
+					> // of each component value
+				> 
+			> 
+		> multivalue;
 	};
 	
 	/* All code-generation functions take one of these as an argument. 

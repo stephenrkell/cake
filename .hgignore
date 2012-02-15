@@ -75,3 +75,5 @@ cake-generated.mk$
 ^examples/.*_instantiate\.cpp$
 ^examples/run-all-stderr\.log$
 ^examples/run-all-stdout\.log$
+^examples/Results/run-all-stderr\.log$
+^examples/Results/run-all-stdout\.log$

@@ -1091,7 +1091,7 @@ namespace cake
 		auto crossed_env = w.crossover_environment_and_sync(
 			source_module, basic_env, target_module, 
 			/* no constraints */ 
-			std::multimap< string, shared_ptr<type_die> >(), false, true);
+			multimap< string, pair< antlr::tree::Tree *, shared_ptr<type_die> > >(), false, true);
 
 		// always start with crossed-over environment
 		ctxt.env = crossed_env;
@@ -1395,7 +1395,7 @@ namespace cake
 			auto crossed_env = w.crossover_environment_and_sync(
 				source_module, ctxt.env, target_module, 
 				/* no constraints */ 
-				std::multimap< string, shared_ptr<type_die> >(), false, true);
+				std::multimap< string, pair< antlr::tree::Tree *, shared_ptr<type_die> > >(), false, true);
 		
 			// sink-side stubs have "this", "that", "here" and "there". 
 			// NOTE: "this" and "that" mean the same here!? These semantics are

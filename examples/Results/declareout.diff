@@ -1,0 +1,6 @@
+--- /dev/fd/3	2012-01-26 13:08:43.000000000 +0000
++++ /dev/fd/0	2012-02-07 19:19:54.589424865 +0000
+@@ -1,2 +1,2 @@
+-fillme(0, 0x19aa9d0) called
++fillme(0, 0xe3bbc0) called
+ After filling, mybuf contains 1000.

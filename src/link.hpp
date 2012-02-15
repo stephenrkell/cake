@@ -235,7 +235,7 @@ namespace cake {
 			module_ptr module,
 			antlr::tree::Tree *stub, 
 			shared_ptr<spec::type_die> current_type_expectation,
-			multimap< string, shared_ptr<spec::type_die> >& out);
+			multimap< string, pair<antlr::tree::Tree *, shared_ptr<spec::type_die> > >& out);
 		
 		void process_non_ident_pattern_event_corresp(
 			module_ptr left,

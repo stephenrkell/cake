@@ -922,7 +922,7 @@ namespace cake
 		module_ptr module,
 		antlr::tree::Tree *ast, 
 		shared_ptr<dwarf::spec::type_die> current_type_expectation,
-		multimap< string, shared_ptr<dwarf::spec::type_die> >& out)
+		multimap< string, pair< antlr::tree::Tree *, shared_ptr<dwarf::spec::type_die> > >& out)
 	{
 		/* We walk the stub AST structure, resolving names against the module.
 		 * Roughly, where there are static type annotations in the module,
@@ -943,6 +943,7 @@ namespace cake
 				if (curpos < lowest_ellipsis_argpos) lowest_ellipsis_argpos = curpos;
 			}
 		}
+		cerr << "Finding type expectations in stub " << CCP(TO_STRING_TREE(ast)) << endl;
 		cerr << "Lowest ellipsis argpos: " << lowest_ellipsis_argpos << endl;
 		
 		/* This node matches the current Cakename --
@@ -952,6 +953,7 @@ namespace cake
 		auto dwarf_context = map_ast_context_to_dwarf_element(ast,
 			module,
 			false);
+		cerr << "DWARF context is " << (dwarf_context ? dwarf_context->summary() : "(none)") << endl;
 		auto with_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(dwarf_context); 
 
 		/* New implementation: for each ident / DMN in the stub, we map it to a 
@@ -969,18 +971,14 @@ namespace cake
 		||  GET_TYPE(ast) == CAKE_TOKEN(ELLIPSIS)
 		||  GET_TYPE(ast) == CAKE_TOKEN(KEYWORD_IN_ARGS))
 		{
-
-			auto dwarf_context = map_ast_context_to_dwarf_element(ast,
-				module,
-				false);
-			auto with_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(dwarf_context); 
-
+			cerr << "Hit leaf case." << endl;
 			if (with_type)
 			{
 
 				if (GET_TYPE(ast) == CAKE_TOKEN(ELLIPSIS)
 				||  GET_TYPE(ast) == CAKE_TOKEN(KEYWORD_IN_ARGS))
 				{
+					cerr << "Hit ellipsis/in_args case" << endl;
 					// This means we found an ellipsis in the stub,
 					// and just retrieved the *first* fp in the position of that ellipsis.
 					// It only matches if the current cakename corresponds to an argument
@@ -1009,6 +1007,7 @@ namespace cake
 						if (i_binding->second.from_ellipsis
 						&& *i_binding->second.from_ellipsis == -1) // non-positional
 						{
+							cerr << "Cakename " << i_binding->first << " comes from non-positional ellipsis." << endl;
 							// the name-matching case -- look for an arg that matches
 							for (; i_fp != fps_end; ++i_fp)
 							{
@@ -1018,32 +1017,51 @@ namespace cake
 						else if (i_binding->second.from_ellipsis
 						&& *i_binding->second.from_ellipsis != -1) // positional
 						{
+							cerr << "Cakename " << i_binding->first << " comes from positional ellipsis, ";
 							// what position does the current cakename fall within the ellipsis?
 							std::istringstream cur_s(i_binding->first.substr(string("__cake_arg").length()));
 							unsigned curpos;
 							cur_s >> curpos;
 
 							unsigned offset = curpos - lowest_ellipsis_argpos;
+							cerr << "arglist position " << curpos << ", offset " << offset
+								<< " from start of ellipsis." << endl;
 
 							for (int j = 0; j < offset; ++j) 
 							{
 								if (i_fp != fps_end) ++i_fp;
 							}
 						}
+						else
+						{
+							// this is a binding not from an ellipsis, so don't match it here
+							continue;
+						}
 						if (i_fp != subprogram->formal_parameter_children_end()
 							&& (*i_fp)->get_type())
 						{
-							out.insert(make_pair(i_binding->first, (*i_fp)->get_type()));
+							cerr << "Adding an expectation for Cakename " << i_binding->first
+								<< " originating in fp " << (*i_fp)->summary()
+								<< " having type " 
+								<< ((*i_fp)->get_type() ? (*i_fp)->get_type()->summary() : "") 
+								<< endl;
+							out.insert(make_pair(
+								i_binding->first, 
+								make_pair(
+									ast, 
+									(*i_fp)->get_type()
+								)
+							));
 						}
 					} // next binding
 				}
 				else // not ellipsis
 				{
-					out.insert(make_pair(opt_dmn ? opt_dmn->at(0) : ident, with_type->get_type()));
+					out.insert(make_pair(opt_dmn ? opt_dmn->at(0) : ident, make_pair(ast, with_type->get_type())));
 				}
 			} // end if with_type
 		} // end if a leaf node
-		else
+		else // not ident, dmn, ellipsis or in_args
 		{
 			// recurse
 			INIT;
@@ -2639,7 +2657,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 
 					add_event_corresp(left, sourcePattern, sourceInfixStub,
 						right, sinkExpr, sinkInfixStub, returnEvent, correspHead,
-						false, false, false, true);
+						false, false, false, is_compiler_generated);
 				}
 				break;
 			case CAKE_TOKEN(RL_DOUBLE_ARROW):
@@ -2660,7 +2678,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					BIND3(correspHead, returnEvent, RETURN_EVENT);
 					add_event_corresp(right, sourcePattern, sourceInfixStub,
 						left, sinkExpr, sinkInfixStub, returnEvent, correspHead,
-						false, false, false, true);
+						false, false, false, is_compiler_generated);
 				}
 				break;
 			case CAKE_TOKEN(BI_DOUBLE_ARROW):
@@ -2688,10 +2706,10 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					BIND3(correspHead, returnEvent, RETURN_EVENT);
 					add_event_corresp(left, leftPattern, leftInfixStub, 
 						right, rightPattern, rightInfixStub, returnEvent, correspHead,
-						false, false, false, true);
+						false, false, false, is_compiler_generated);
 					add_event_corresp(right, rightPattern, rightInfixStub,
 						left, leftPattern, leftInfixStub, returnEvent, correspHead,
-						false, false, false, true);
+						false, false, false, is_compiler_generated);
 				}
 				break;
 			default: RAISE(correspHead, "expected a long arrow (<--, -->, <-->)");

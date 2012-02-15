@@ -1095,7 +1095,11 @@ namespace cake
 						}
 						else
 						{
-							RAISE_INTERNAL(node, "too many parameters for subprogram");
+							cerr << "With subprogram " << subprogram->summary() << endl;
+							for (auto i_printfp = subprogram->formal_parameter_children_begin();
+							          i_printfp != subprogram->formal_parameter_children_end();
+							          ++i_printfp) cerr << (*i_printfp)->summary() << endl;
+							RAISE(node, "too many parameters for subprogram");
 						}
 					}
 					

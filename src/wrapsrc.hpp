@@ -120,7 +120,7 @@ namespace cake
 			module_ptr old_module_context,
 			const environment& env,
 			module_ptr new_module_context,
-			const std::multimap< std::string, boost::shared_ptr<dwarf::spec::type_die> >& constraints,
+			const multimap< string, pair<antlr::tree::Tree *, shared_ptr<type_die> > >& constraints,
 			bool direction_is_out,
 			bool do_not_sync = false
 			);

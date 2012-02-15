@@ -1,0 +1,8 @@
+--- /dev/fd/3	2012-01-26 13:12:49.000000000 +0000
++++ /dev/fd/0	2012-02-07 19:19:54.301424868 +0000
+@@ -3,4 +3,4 @@
+ Received 42 in return.
+ Frobbing with length 69,105...
+ Received a perimeter of 276420.000000; returning 42 in thousandths
+-Received 0.000000 hundredths in return.
++Received 276420.000000 hundredths in return.
