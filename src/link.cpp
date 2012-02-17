@@ -1473,6 +1473,12 @@ namespace cake
 << endl;
 			//auto all_value_corresps = val_corresps.equal_range(*i_pair);
 			auto all_value_corresp_groups = val_corresp_groups[*i_pair];
+
+			// collect mappings of artificial type names (tags) in each group
+			map< val_corresp_group_key, map<string, vector< val_corresp *> > >
+			all_corresps_by_artificial_names_for_first_type;
+			map< val_corresp_group_key, map<string, vector< val_corresp *> > >
+			all_corresps_by_artificial_names_for_second_type;
 			for (auto i_corresp_group = all_value_corresp_groups.begin();
 				i_corresp_group != all_value_corresp_groups.end();
 				++i_corresp_group)
@@ -1481,8 +1487,10 @@ namespace cake
 				vector<val_corresp *>& vec = i_corresp_group->second;
 				
 				// collect mappings of artificial type names (tags) in this group
-				map<string, vector< val_corresp *> > corresps_by_artificial_names_for_first_type;
-				map<string, vector< val_corresp *> > corresps_by_artificial_names_for_second_type;
+				map<string, vector< val_corresp *> >& corresps_by_artificial_names_for_first_type
+				 = all_corresps_by_artificial_names_for_first_type[k];
+				map<string, vector< val_corresp *> >& corresps_by_artificial_names_for_second_type
+				 = all_corresps_by_artificial_names_for_second_type[k];
 				for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); ++i_p_corresp)
 				{
 					// is this correspondence defined using an artificial source name?
@@ -1506,200 +1514,206 @@ namespace cake
 						}
 						else current_map["__cake_default"].push_back(*i_p_corresp);
 					}
-				}				
-				// first output the correpsonding_type specializations:
+				}
+			}
+			
+			/* Now we iterate over half-keys, first matching against second module, later first. */
+			auto half_keys = val_corresp_supergroup_keys[*i_pair]; //.equal_range(*i_pair);
+			for (auto i_half_key = half_keys.begin();
+			          i_half_key != half_keys.end();
+			          ++i_half_key)
+			{
+				/* This half-key refers *either* to our first module *or* to our second. */
+				bool half_key_is_first = (i_half_key->first == i_pair->first);
+			
+				// the "first" (lhs) type is unknown; we have fixed the second
+				// first output the corresponding_type specializations:
 				// there is a sink-to-source and source-to-sink relationship
-				wrap_file << "// " << wrap_code.get_type_name(
-                             k.source_module == i_pair->first 
-                                ? k.source_data_type
-                                : k.sink_data_type)
-					<< ( (k.source_module == i_pair->first) ? " --> " : " <-- " )
-					<< wrap_code.get_type_name(
-                            k.sink_module == i_pair->second
-                                ? k.sink_data_type
-                                : k.source_data_type)
-					<< endl;
-				wrap_file << 
-				"    template <>"
-<< endl << "    struct corresponding_type_to_second<" 
-<< endl << "        component_pair<" 
-<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
-<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
-                      << wrap_code.get_type_name(
-                             k.source_module == i_pair->second 
-                                ? k.source_data_type
-                                : k.sink_data_type) << ", "
-                      << boolalpha << (k.source_module == i_pair->second) << ">" // DirectionIsFromSecondToFirst
-<< endl << "    {"
-<< endl;
-				wrap_file <<
-		  "         // this group has " << vec.size() << " rules" << endl;
-
-				// sanity check
-				bool emitted_default_to_default = false;
-				for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); ++i_p_corresp)
+				for (int direction_is_first_to_second = false; 
+					direction_is_first_to_second < 2;
+					++direction_is_first_to_second)
 				{
-					// the template argument data type
-					shared_ptr<type_die> outer_type = 
-					(k.source_module == i_pair->second)
-						? (*i_p_corresp)->source_data_type
-						: (*i_p_corresp)->sink_data_type;
-					auto outer_type_synonymy_chain = type_synonymy_chain(outer_type);
-					
-					// the type to be typedef'd in the struct body
-					shared_ptr<type_die> inner_type = 
-					(k.source_module == i_pair->first)
-						? (*i_p_corresp)->source_data_type
-						: (*i_p_corresp)->sink_data_type;
-					auto inner_type_synonymy_chain = type_synonymy_chain(inner_type);
-					
-					cerr << "outer type: " << *outer_type
-						<< ", inner type: " << *inner_type
+					wrap_file << "// " << (half_key_is_first ? wrap_code.get_type_name(i_half_key->second) : "    ...    ")
+						<< ( (direction_is_first_to_second) ? " --> " : " <-- " )
+						<< (half_key_is_first ? "    ...    " : wrap_code.get_type_name(i_half_key->second))
 						<< endl;
-					
-   wrap_file << "         // from corresp at " << *i_p_corresp << " " << **i_p_corresp << ", rule " << CCP(TO_STRING_TREE((*i_p_corresp)->corresp)) << endl;
-   wrap_file << "         // inner type name " << (inner_type->get_name() ? *inner_type->get_name() : "(no name)") 
-   				<< ", outer type name " << (outer_type->get_name() ? *outer_type->get_name() : "(no name)")  << endl;
+						
+					bool half_key_is_source = (half_key_is_first && direction_is_first_to_second)
+					                       || (!half_key_is_first && !direction_is_first_to_second);
 
-					assert(outer_type_synonymy_chain.size() != 0
-					||    inner_type_synonymy_chain.size() != 0
-					||    (*i_p_corresp)->init_only 
-					||    !emitted_default_to_default);
+					// In the template struct corresponding_type_to_second<, the boolean is DirectionIsFromSecondToFirst
+					// In the template struct corresponding_type_to_first< , the boolean is DirectionIsFromFirstToSecond
 
-					if (outer_type_synonymy_chain.size() == 0
-					&&   inner_type_synonymy_chain.size() == 0) emitted_default_to_default = true;
-					
-   wrap_file << "         typedef "
-                       << wrap_code.get_type_name(
-                              (*i_p_corresp)->source == i_pair->first
-                                 ? (*i_p_corresp)->source_data_type
-                                  : (*i_p_corresp)->sink_data_type)
-                       << " "
-                       << ( (*i_p_corresp)->init_only ? "__init_only_" : "" )
-                       << ((outer_type_synonymy_chain.size() == 0) ? "__cake_default" : 
-                              *(*outer_type_synonymy_chain.begin())->get_name())
-                       << "_to_"
-                       << ((inner_type_synonymy_chain.size() == 0) ? "__cake_default" : 
-                              *(*inner_type_synonymy_chain.begin())->get_name())
-                       << "_in_first;" << endl;
-				}
-				for (auto i_tag_in_second = corresps_by_artificial_names_for_second_type.begin();
-				          i_tag_in_second != corresps_by_artificial_names_for_second_type.end();
-				          ++i_tag_in_second)
-				{
-  wrap_file << "         struct rule_tag_in_first_given_second_artificial_name_" << i_tag_in_second->first 
-  	<< " { enum __cake_rule_tags {" << endl;
-					for (auto i_p_corresp = i_tag_in_second->second.begin(); 
-						i_p_corresp != i_tag_in_second->second.end(); ++i_p_corresp)
+					wrap_file << 
+					"    template <>"
+	<< endl << "    struct corresponding_type_to_" << (half_key_is_first ? "first" : "second") << "<" 
+	<< endl << "        component_pair<" 
+	<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
+	<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
+                    	  << wrap_code.get_type_name(i_half_key->second) << ", " // ALWAYS our half-key
+                    	  << boolalpha << ((bool)(direction_is_first_to_second ^ !half_key_is_first)) << ">" 
+						  // if half_key is second, this bool is DirectionIsFromSecondToFirst, i.e. the opposite sense as our flag
+						  // if half_key is first, this bool is DirectionIsFromFirstToSecond, i.e. the same sense as our flag
+						  // so this bool is our flag XORed with !half_key_is_first
+	<< endl << "    {"
+	<< endl;
+	
+					module_ptr the_other_module = 
+						(i_pair->first == i_half_key->first)
+							? i_pair->second
+							: i_pair->first;
+	
+					/* Now gather together all rules from this half-key in this direction. */
+					auto bothways_vec = val_corresp_supergroups[*i_pair].equal_range(*i_half_key);
+					vector< val_corresp * > vec;
+					for (auto i_p_corresp = bothways_vec.first; i_p_corresp != bothways_vec.second;
+						++i_p_corresp)
 					{
-						// COMPLETE HACK: skip init-only rules
-						if ((*i_p_corresp)->init_only) continue;
-
-						// here we want "second_artificial_name"
-						auto first_die = (module_of_die((*i_p_corresp)->source_data_type) == i_pair->first) ?
-							(*i_p_corresp)->source_data_type : (*i_p_corresp)->sink_data_type;
+						// whether this corresp is relevant depends on our half-key and our direction
+						// -- we only match rules whose source/sink (as appropriate, w.r.t. our direction)
+						bool relevant;
+						if (i_p_corresp->second->sink == i_half_key->first)
+						// then it's relevant if its source is the other module
+						relevant = (i_p_corresp->second->source == the_other_module)
+						// and our direction is from the half-key module to the other module
+						         && half_key_is_source;
+						else  //  our half-key module is the source module
+						// else it's relevant if its sink is the other module
+						relevant = (i_p_corresp->second->sink == the_other_module)
+						         && !half_key_is_source;
 						
-						auto artificial_name_for_first_die =
-							(first_die->get_concrete_type() != first_die) 
-							? *first_die->get_name()
-							 : "__cake_default";
-
-						wrap_file << artificial_name_for_first_die << " = " << val_corresp_numbering[(*i_p_corresp)->shared_from_this()];
-						if (i_p_corresp != i_tag_in_second->second.end() - 1) wrap_file << "," << endl;
+						if (relevant)
+						{
+							vec.push_back(i_p_corresp->second);
+						}
 					}
-   wrap_file << "         }; };" << endl;
-				}
-     wrap_file << "    };"
-<< endl;
-				wrap_file << 
-				"    template <>"
-<< endl << "    struct corresponding_type_to_first<" 
-<< endl << "        component_pair<" 
-<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
-<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
-                      << wrap_code.get_type_name(
-                             k.source_module == i_pair->first 
-                                ? k.source_data_type
-                                : k.sink_data_type) << ", "
-                      << boolalpha << (k.source_module == i_pair->first) << ">" // DirectionIsFromFirstToSecond
-<< endl << "    {"
-<< endl;
-				wrap_file <<
-		  "         // this group has " << vec.size() << " rules" << endl;
-				for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); ++i_p_corresp)
-				{
-					// the template argument data type
-					shared_ptr<type_die> outer_type = 
-					(k.source_module == i_pair->second)
-						? (*i_p_corresp)->sink_data_type
-						: (*i_p_corresp)->source_data_type;
-					auto outer_type_synonymy_chain = type_synonymy_chain(outer_type);
-					auto outer_type_artificial_tag
-					 = ((outer_type_synonymy_chain.size() == 0) ? "__cake_default" : 
-						*(*outer_type_synonymy_chain.begin())->get_name());
-					
-					// the type to be typedef'd in the struct body
-					shared_ptr<type_die> inner_type = 
-					(k.source_module == i_pair->first)
-						? (*i_p_corresp)->sink_data_type
-						: (*i_p_corresp)->source_data_type;
-					auto inner_type_synonymy_chain = type_synonymy_chain(inner_type);
-					auto inner_type_artificial_tag
-					 = ((inner_type_synonymy_chain.size() == 0) ? "__cake_default" : 
-						*(*inner_type_synonymy_chain.begin())->get_name());
-						
-   wrap_file << "         // from corresp at " << *i_p_corresp << " " << **i_p_corresp << ", rule " << CCP(TO_STRING_TREE((*i_p_corresp)->corresp)) << endl;
-   wrap_file << "         typedef "
-                       << wrap_code.get_type_name(
-                              (*i_p_corresp)->source == i_pair->second
-                                 ? (*i_p_corresp)->source_data_type
-                                 : (*i_p_corresp)->sink_data_type)
-                       << " "
-                       << ( (*i_p_corresp)->init_only ? "__init_only_" : "" )
-                       << outer_type_artificial_tag
-                       << "_to_"
-                       << inner_type_artificial_tag
-                       << "_in_second;" << endl;
-				}
-				// now go round again, outputting the numbering enum
-				// What should go in it?
-				// For each corresp in the group, 
-				// output an enumerator 
-				// named like the typedef? 
-				// numbered like the correspondence numbering?
-				// Example was:
-				// rule_tag_in_second_given_first_artificial_name___cake_default::__cake_default
-				// i.e a class per typedef name.
-				for (auto i_tag_in_first = corresps_by_artificial_names_for_first_type.begin();
-				          i_tag_in_first != corresps_by_artificial_names_for_first_type.end();
-				          ++i_tag_in_first)
-				{
-  wrap_file << "         struct rule_tag_in_second_given_first_artificial_name_" << i_tag_in_first->first 
-  	<< " { enum __cake_rule_tags {" << endl;
-					for (auto i_p_corresp = i_tag_in_first->second.begin(); 
-						i_p_corresp != i_tag_in_first->second.end(); ++i_p_corresp)
+					auto& corresps_by_artificial_names_for_half_key_type_map
+					= (half_key_is_first) 
+					  ? all_corresps_by_artificial_names_for_first_type
+					  : all_corresps_by_artificial_names_for_second_type;
+					/* Now we have all the relevant rules. Output about them. */
+					wrap_file <<
+			  "         // this supergroup/direction has " << vec.size() << " rules" << endl;
+
+					bool emitted_default_to_default = false;
+					for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); ++i_p_corresp)
 					{
-						// COMPLETE HACK: skip init-only rules
-						if ((*i_p_corresp)->init_only) continue;
-					
-						// here we want "second_artificial_name"
-						auto second_die = (module_of_die((*i_p_corresp)->source_data_type) == i_pair->second) ?
-							(*i_p_corresp)->source_data_type : (*i_p_corresp)->sink_data_type;
-						
-						auto artificial_name_for_second_die =
-							(second_die->get_concrete_type() != second_die) 
-							? *second_die->get_name()
-							 : "__cake_default";
+						// whichever way the half-key is, this should hold
+						module_ptr first_module = (direction_is_first_to_second) 
+							? (*i_p_corresp)->source : (*i_p_corresp)->sink;
+						// depending on the half key...
+						assert((half_key_is_first) ? first_module == i_half_key->first
+						                           : first_module == the_other_module);
+						// 
+						assert((half_key_is_source) 
+							? (((*i_p_corresp)->source == i_half_key->first) && ((*i_p_corresp)->sink == the_other_module))
+							: (((*i_p_corresp)->sink == i_half_key->first)   && ((*i_p_corresp)->source == the_other_module)));
+							
+						// the template argument data type, i.e. always the half-key type
+						shared_ptr<type_die> outer_type = i_half_key->second;
+						//(k.source_module == i_pair->second)
+						//	? (*i_p_corresp)->source_data_type
+						//	: (*i_p_corresp)->sink_data_type;
+						auto outer_type_synonymy_chain = type_synonymy_chain(outer_type);
 
-						wrap_file << artificial_name_for_second_die << " = " << val_corresp_numbering[(*i_p_corresp)->shared_from_this()];
-						if (i_p_corresp != i_tag_in_first->second.end() - 1) wrap_file << "," << endl;
-					}
-   wrap_file << "         }; };" << endl;
-				}
-   
-   wrap_file << "    };"
+						// the type to be typedef'd in the struct body -- the one from the *other* module
+						shared_ptr<type_die> inner_type =   
+						(half_key_is_source)
+							? (*i_p_corresp)->sink_data_type
+							: (*i_p_corresp)->source_data_type;
+						auto inner_type_synonymy_chain = type_synonymy_chain(inner_type);
+
+						cerr << "outer type: " << *outer_type
+							<< ", inner type: " << *inner_type
+							<< endl;
+
+	   wrap_file << "         // from corresp at " << *i_p_corresp << " " << **i_p_corresp << ", rule " << CCP(TO_STRING_TREE((*i_p_corresp)->corresp)) << endl;
+	   wrap_file << "         // inner type name " << (inner_type->get_name() ? *inner_type->get_name() : "(no name)") 
+   					<< ", outer type name " << (outer_type->get_name() ? *outer_type->get_name() : "(no name)")  << endl;
+
+						assert(outer_type_synonymy_chain.size() != 0
+						||    inner_type_synonymy_chain.size() != 0
+						||    (*i_p_corresp)->init_only 
+						||    !emitted_default_to_default);
+
+						if (outer_type_synonymy_chain.size() == 0
+						&&   inner_type_synonymy_chain.size() == 0) emitted_default_to_default = true;
+
+	   wrap_file << "         typedef "
+	   						// target of the typedef is always the inner type
+                    	   << wrap_code.get_type_name(inner_type)
+                            //	  (*i_p_corresp)->source == i_pair->first // 
+                            //    	 ? (*i_p_corresp)->source_data_type
+                            //    	  : (*i_p_corresp)->sink_data_type)
+                    	   << " "
+                    	   << ( (*i_p_corresp)->init_only ? "__init_only_" : "" )
+                    	   << ((outer_type_synonymy_chain.size() == 0) ? "__cake_default" : 
+                            	  *(*outer_type_synonymy_chain.begin())->get_name())
+                    	   << "_to_"
+                    	   << ((inner_type_synonymy_chain.size() == 0) ? "__cake_default" : 
+                            	  *(*inner_type_synonymy_chain.begin())->get_name())
+								  // always the converse of the outer module
+                    	   << "_in_" << (half_key_is_first ? "second" : "first") << ";" << endl;
+					} // end outputting typedefs
+					
+					/* For each full key containing this half key... */
+					// now output the tags enums
+					std::set< val_corresp_group_key>& keys_for_this_supergroup
+					 = val_corresp_group_keys_by_supergroup[*i_pair][*i_half_key];
+					for (auto i_full_key = keys_for_this_supergroup.begin();
+						i_full_key != keys_for_this_supergroup.end();
+						++i_full_key)
+					{
+						if (!(i_full_key->source_module == (half_key_is_source ? i_half_key->first : the_other_module))
+						||  !(i_full_key->sink_module   == (half_key_is_source ? the_other_module : i_half_key->first)))
+						continue;
+					
+						auto& corresps_by_artificial_names_for_half_key_type
+						 = corresps_by_artificial_names_for_half_key_type_map[*i_full_key];
+// 						  (val_corresp_group_key){
+// 							/* source */
+// 								direction_is_first_to_second ? first_module : i_half_key->first,
+// 							/* sink */
+// 								direction_is_first_to_second ? i_half_key->first : first_module,
+// 							/* source data type */
+// 								(*i_p_corresp)->source_data_type,
+// 							/* sink data type */
+// 								(*i_p_corresp)->sink_data_type
+// 						}];
+
+						for (auto i_tag_in_half_key = corresps_by_artificial_names_for_half_key_type.begin();
+				        		  i_tag_in_half_key != corresps_by_artificial_names_for_half_key_type.end();
+				        		  ++i_tag_in_half_key)
+						{
+		  wrap_file << "         struct rule_tag_in_" << (half_key_is_first ? "second" : "first") << "_given_" << (half_key_is_first ? "first" : "second") << "_artificial_name_" << i_tag_in_half_key->first 
+  			<< " { enum __cake_rule_tags {" << endl;
+							for (auto i_p_corresp = i_tag_in_half_key->second.begin(); 
+								i_p_corresp != i_tag_in_half_key->second.end(); ++i_p_corresp)
+							{
+								// COMPLETE HACK: skip init-only rules
+								if ((*i_p_corresp)->init_only) continue;
+
+								// here we want the data type in the half-key module, but not concretised
+								auto half_key_die = (half_key_is_source) ?
+									(*i_p_corresp)->source_data_type : (*i_p_corresp)->sink_data_type;
+
+								auto artificial_name_for_half_key_die =
+									(!data_types_are_identical(half_key_die->get_concrete_type(), half_key_die)) 
+									? *half_key_die->get_name()
+									 : "__cake_default";
+
+								wrap_file << artificial_name_for_half_key_die 
+									<< " = " 
+									<< val_corresp_numbering[(*i_p_corresp)->shared_from_this()];
+								if (i_p_corresp != i_tag_in_half_key->second.end() - 1) wrap_file << "," << endl;
+							}
+   wrap_file << "         }; };" << endl; // ends a tag enum
+						} // end for all tag enums
+					} // end for all groups in this supergroup
+     wrap_file << "    };" // ends a specialization
 << endl;
-			} // end for all value corresps 
+				} // end for direction (first-to-second, second-to-first)
+			} // end for all value corresp supergroups 
 			
 			/* Now emit the table */
 wrap_file    << "\tvoid component_pair<" 
@@ -4321,7 +4335,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			// 1. put it in the group table
 			auto ifaces = sorted(make_pair(p_c->source, p_c->sink));
 			
-			val_corresp_group_tbl_t& group_tbl = val_corresp_groups[ifaces];
+			val_corresp_group_t& group_tbl = val_corresp_groups[ifaces];
 			vector<val_corresp *>& vec = group_tbl[k];
 			vec.push_back(p_c.get());
 			
@@ -4331,9 +4345,14 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			// val_corresp_supergroups is also a table of tables
 			// ifaces -> half_key -> corresps
 			// BUT each corresp can be found under multiple half-keys! Two, to be precise
-			val_corresp_supergroup_tbl_t& supergroup_tbl = val_corresp_supergroups[ifaces];
+			val_corresp_supergroup_t& supergroup_tbl = val_corresp_supergroups[ifaces];
 			supergroup_tbl.insert(make_pair(source_k, p_c.get()));
 			supergroup_tbl.insert(make_pair(sink_k, p_c.get()));
+
+			val_corresp_supergroup_keys[ifaces].insert(source_k);
+			val_corresp_supergroup_keys[ifaces].insert(sink_k);
+			val_corresp_group_keys_by_supergroup[ifaces][source_k].insert(k);
+			val_corresp_group_keys_by_supergroup[ifaces][sink_k].insert(k);
 			
 			// the two counts are now redundant, but sanity-check for now
 			int assigned = counts[k]++;

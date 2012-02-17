@@ -179,6 +179,11 @@ namespace cake {
         // Map from symbol name
         // to list of correspondences
         typedef map<string, ev_corresp_pair_ptr_list> wrappers_map_t;
+		
+		std::set< shared_ptr<type_die> > significant_typedefs;
+		
+		shared_ptr<type_die> 
+		first_significant_type(shared_ptr<type_die> t);
 
 		// we will group value corresps by a four-tuple...
 		struct val_corresp_group_key
@@ -201,24 +206,25 @@ namespace cake {
 				    && sink_data_type < arg.sink_data_type);
 			}
 		};
+		
 		typedef std::map<val_corresp_group_key, vector<val_corresp *> > 
-		val_corresp_group_tbl_t;
+		val_corresp_group_t;
 		
-		typedef pair< module_ptr, shared_ptr<type_die> > val_corresp_supergroup_key;
-		typedef std::multimap< val_corresp_supergroup_key, val_corresp *>
-		val_corresp_supergroup_tbl_t;
-		set< val_corresp_supergroup_key > val_corresp_supergroups;
+		typedef map<iface_pair, val_corresp_group_t> val_corresp_groups_tbl_t;
 		
-		std::set< shared_ptr<type_die> > significant_typedefs;
-		
-		shared_ptr<type_die> 
-		first_significant_type(shared_ptr<type_die> t);
-		
-		typedef map<iface_pair, val_corresp_group_tbl_t> val_corresp_groups_tbl_t;
 		val_corresp_groups_tbl_t val_corresp_groups;
+
+		typedef pair< module_ptr, shared_ptr<type_die> > val_corresp_supergroup_key;
 		
-		typedef map<iface_pair, val_corresp_supergroup_tbl_t> val_corresp_supergroups_tbl_t;
+		typedef std::multimap< val_corresp_supergroup_key, val_corresp *> val_corresp_supergroup_t;
+		
+		typedef map<iface_pair, val_corresp_supergroup_t> val_corresp_supergroups_tbl_t;
+		
 		val_corresp_supergroups_tbl_t val_corresp_supergroups;
+		map<iface_pair, set< val_corresp_supergroup_key > > val_corresp_supergroup_keys;
+		
+		map<iface_pair, map< val_corresp_supergroup_key, set< val_corresp_group_key > > >
+		val_corresp_group_keys_by_supergroup;
 		
 		optional<link_derivation::val_corresp_map_t::iterator>
 		find_value_correspondence(
