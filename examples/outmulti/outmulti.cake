@@ -12,6 +12,6 @@ derive elf_reloc("outmulti.o") outmulti = link [client, lib]
 	{
 		get(s) --> { let (s1, s2, s3) = getme(1000) }--
 			<--
-		{ cb(s1, s2, s3) };
+		{ cb(s, s1, s2, s3) };
 	}
 };

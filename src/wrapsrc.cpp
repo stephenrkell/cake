@@ -522,6 +522,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			context ctxt(*this, 
 				source, sink,
 				initial_environment(pattern, source, exprs, sink));
+			auto saved_initial_environment = ctxt.env;
 			ctxt.opt_source = (context::source_info_s){ callsite_signature, 0 };
 			
 			// emit a condition
@@ -596,7 +597,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 			// the sink action is defined by a stub, so evaluate that 
 			std::cerr << "Event sink stub is: " << CCP(TO_STRING_TREE(stub)) << std::endl;
-			assert(GET_TYPE(stub) == CAKE_TOKEN(INVOKE_WITH_ARGS));
 			status3 = emit_stub_expression_as_statement_list(
 				ctxt, stub/*, cxx_expected_type*/);
 
@@ -651,6 +651,18 @@ assert(false && "disabled support for inferring positional argument mappings");
 			// emit the return leg, if there is one; otherwise, status is the old status
 			if (return_leg && GET_CHILD_COUNT(return_leg) > 0)
 			{
+				// HACK-ish: we might have crossed over some value incorrectly on the way out.
+				// In particular, if a pointer argument is not used on the sink side, 
+				// it will have no type expectations and will be treated as an integer
+				// (unspecified_wordsize_type). 
+				// So, merge the environment with our initial environment
+				// to get the original binding back for these.
+				m_out << "// merging initial environment to avoid so-far-unused pointer args being intified" << endl;
+				ctxt.env = merge_environment(ctxt.env, saved_initial_environment);
+				if (GET_TYPE(return_leg) == CAKE_TOKEN(RETURN_EVENT))
+				{
+					return_leg = GET_CHILD(return_leg, 0);
+				}
 				auto status4 = 
 						emit_stub_expression_as_statement_list(
 						ctxt,
@@ -1394,7 +1406,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				m_out << "// warning: merging environment hides old binding of " 
 					<< i_new->first << std::endl;
 			}
-			new_env.insert(*i_new);
+			new_env[i_new->first] = i_new->second;
 		}
 		
 		return new_env;
@@ -1981,7 +1993,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 						== DW_TAG_pointer_type);
 					if (do_reinterpret)
 					{
-						m_out << "reinterpret_cast< "
+						m_out << "*reinterpret_cast< "
 						// HACK: we might not have added this type until after the .o.hpp #includes,
 						// so write out its declarator directly.
 							//<< ns_prefix << "::" << m_d.name_of_module(source_module) << "::"
@@ -1992,7 +2004,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							//		true,
 							//		optional<const string &>(),
 							//		false)
-							<< ">(";
+							<< "*>(&";
 					}
 					
 					// if this binding is indirect, dereference it.
@@ -2788,11 +2800,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 						 * -- we want to bind a new Cakename to each element. */
 						FOR_ALL_CHILDREN(boundNameOrNames)
 						{
+							if (i_outarg == multivalue_outargs.end()) RAISE(n,
+								"too many idents to bind");
 							assert(GET_TYPE(n) == CAKE_TOKEN(IDENT));
 							string ident_to_bind = unescape_ident(CCP(GET_TEXT(n)));
 							new_bindings.insert(make_pair(ident_to_bind, (bound_var_info){
-									multivalue_cxxname + "." + i_outarg->first,
-									multivalue_cxxname + "." + i_outarg->first,
+									"*" + multivalue_cxxname + "->" + i_outarg->first,
+									"*" + multivalue_cxxname + "->" + i_outarg->first,
 									ctxt.modules.current,
 									false
 								})
@@ -3014,13 +3028,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 		 * Declare the output object for those arguments now. */
 		environment new_bindings;
 		auto current_fp = callee_subprogram->formal_parameter_children_begin();
-		int current_argnum = -1;
+		int current_argnum = 0;
 		map<int, string> output_parameter_idents;
 		{
 			INIT;
 			FOR_ALL_CHILDREN(argsMultiValue)
 			{
-				++current_argnum;
 				INIT;
 				ALIAS2(n, argExpr);
 				string ident = new_ident("outarg");
@@ -3031,10 +3044,32 @@ assert(false && "disabled support for inferring positional argument mappings");
 					*current_fp,
 					ident
 				);
-				if (!decl_and_cakename) continue;
+				if (!decl_and_cakename)
+				{
+					// The user didn't write "out" in their expression for this fp...
+					// ... but it might still be an output arg, if the DWARF says so.
+					if (!arg_is_output_only(*current_fp)) goto continue_loop;
+					/* Otherwise, if we get here, we have to make our own decl
+					 * from the DWARF type of the the fp. We can also make up
+					 * our own Cakename, since the user hasn't given one
+					 * (they have to use "out" to bind one)
+					 * but they might later bind an identifier using the 
+					 * let (ident, ident, ...) syntax. We choose the outarg name
+					 * with the __cake_ prefix. */
+					auto fp_pointer_type = dynamic_pointer_cast<pointer_type_die>(
+								(*current_fp)->get_type()->get_concrete_type()
+							);
+					assert(fp_pointer_type);
+					decl_and_cakename = make_pair(
+						compiler.cxx_declarator_from_type_die(
+							fp_pointer_type->get_type()
+						).first,
+						string("__cake_" + ident)
+					);
+				}
 				
 				// now we're definitely an optional arg expr 
-				m_out << decl_and_cakename->first << endl;
+				m_out << decl_and_cakename->first << " " << ident << ";" << endl;
 				new_bindings.insert(make_pair(decl_and_cakename->second, (bound_var_info) {
 					ident,
 					ident,
@@ -3045,8 +3080,46 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 				// FIXME: also scan for "out_as" and set tagstrings for the binding
 				
+			continue_loop:
+				++current_argnum;
 				if (current_fp != callee_subprogram->formal_parameter_children_end()) ++current_fp;
 			} // end FOR_ALL_CHILDREN
+			/* As later, we might have more DWARF args than in the AST */
+			// FIXME FIXME FIXME: refactor this so that we don't duplicate code
+			while (current_fp != callee_subprogram->formal_parameter_children_end())
+			{
+				string ident = new_ident("outarg");
+				if (arg_is_output_only(*current_fp))
+				{
+					/* Otherwise, if we get here, we have to make our own decl
+					 * from the DWARF type of the the fp. We can also make up
+					 * our own Cakename, since the user hasn't given one
+					 * (they have to use "out" to bind one)
+					 * but they might later bind an identifier using the 
+					 * let (ident, ident, ...) syntax. We choose the outarg name
+					 * with the __cake_ prefix. */
+					auto fp_pointer_type = dynamic_pointer_cast<pointer_type_die>(
+								(*current_fp)->get_type()->get_concrete_type()
+							);
+					assert(fp_pointer_type);
+					optional<pair<string, string> > decl_and_cakename = make_pair(
+						compiler.cxx_declarator_from_type_die(
+							fp_pointer_type->get_type()
+						).first,
+						string("__cake_" + ident)
+					);
+					m_out << decl_and_cakename->first << " " << ident << ";" << endl;
+					new_bindings.insert(make_pair(decl_and_cakename->second, (bound_var_info) {
+						ident,
+						ident,
+						ctxt.modules.current,
+						false
+					}));
+					output_parameter_idents[current_argnum] = ident;
+				}
+			
+				++current_fp; ++current_argnum;
+			}
 		}
 
 		auto callee_return_type
@@ -3070,8 +3143,57 @@ assert(false && "disabled support for inferring positional argument mappings");
 		}
 		//m_out << "do" << std::endl
 		//	<< "{";
+		string raw_result_ident = new_ident("result");
+		string out_obj_ident = new_ident("outobj");
+		// if we have a return value
+		vector< pair< string, shared_ptr<type_die> > > output_arginfo;
+		if (callee_subprogram->get_type() && callee_subprogram->get_type()->get_concrete_type())
+		{
+			output_arginfo.push_back(make_pair("__cake_retval", callee_subprogram->get_type()));
+		}
+		m_out << "// begin multiple-outputs data type for the function call" << endl;
+		auto out_type_tag = new_ident("out_type");
+		{ 
+			int argnum = -1;
+			for (auto i_arg = callee_subprogram->formal_parameter_children_begin();
+				i_arg != callee_subprogram->formal_parameter_children_end();
+				++i_arg)
+			{
+				++argnum;
+				// is this an inout or output parameter?
+				if ((*i_arg)->get_type() &&
+					(*i_arg)->get_type()->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
+				{
+					shared_ptr<pointer_type_die> pt = dynamic_pointer_cast<pointer_type_die>(
+						(*i_arg)->get_type()->get_concrete_type());
+					assert(pt);
+					if (!pt->get_type()) continue; // void ptrs don't count
+					string name;
+					if ((*i_arg)->get_name()) name = *(*i_arg)->get_name();
+					else 
+					{
+						ostringstream s;
+						s << "__cake_outarg" << argnum;
+						name = s.str();
+					}
+					output_arginfo.push_back(make_pair(name, pt->get_type()));
+				}
+			}
+		}
+		// now declare a struct type 
+		m_out << "struct " << out_type_tag << "{" << endl;
+		for (auto i_arginfo = output_arginfo.begin(); i_arginfo != output_arginfo.end(); ++i_arginfo)
+		{
+			// naive code for now
+			m_out << "boost::optional<" << compiler.cxx_declarator_from_type_die(i_arginfo->second).first
+				<< "& > " << i_arginfo->first << ";" << endl;
+		}
+		m_out << "};" << endl;
+		m_out << "boost::optional< " << out_type_tag << " > " << out_obj_ident << ";" << endl;
+		m_out << "// end multiple-outputs alias for the function call" << endl;
 		m_out << "// begin argument expression eval" << std::endl;
 		//m_out.inc_level();
+		int arg_eval_subexpr_count = 0;
 		vector< post_emit_status > arg_results;
 		vector< optional<string> > arg_names_in_callee;
 		map< string, string > arg_results_by_callee_name;
@@ -3289,6 +3411,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							m_out << "if (" << success_ident << ") // okay to proceed with next arg?" 
 								<< std::endl;
 							m_out << "{" << std::endl;
+							++arg_eval_subexpr_count;
 							m_out.inc_level();
 					next_arg_in_callee_sequence:
 							++i_arg; ++argnum;
@@ -3298,6 +3421,32 @@ assert(false && "disabled support for inferring positional argument mappings");
 						break;
 				} // end switch
 			} // end FOR_ALL_CHILDREN
+			
+			/* If we have some output-only args, they may not appear
+			 * in the arglist. Handle this case now. */
+			while (i_arg != callee_subprogram->formal_parameter_children_end()
+			 && arg_is_output_only(*i_arg))
+			{
+				string argname
+				 = (*i_arg)->get_name() 
+					? *(*i_arg)->get_name()
+					: basic_name_for_argnum(argnum);
+				
+				// assert that we stashed an output parameter for this argname
+				assert(output_parameter_idents.find(argnum) != output_parameter_idents.end());
+				
+				auto result = (post_emit_status){
+					"&" + output_parameter_idents[argnum],
+					"true",
+					environment()
+				};
+				arg_results.push_back(result);
+				arg_names_in_callee.push_back((*i_arg)->get_name());
+				arg_results_by_callee_name[argname] = result.result_fragment;
+				
+				++i_arg; ++argnum;
+			}
+			
 		} // end INIT argsMultiValue
 		m_out << "// end argument eval" << std::endl;
 		
@@ -3335,55 +3484,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 		//m_out << "{" << std::endl;
 		//m_out.inc_level();
 
-		string raw_result_ident = new_ident("result");
-		string out_obj_ident = new_ident("outobj");
-		// if we have a return value
-		vector< pair< string, shared_ptr<type_die> > > output_arginfo;
-		if (callee_subprogram->get_type())
+
+		if (callee_subprogram->get_type() && callee_subprogram->get_type()->get_concrete_type())
 		{
 			m_out << "auto " << raw_result_ident << " = ";
-			output_arginfo.push_back(make_pair("__cake_retval", callee_subprogram->get_type()));
 		}
-		m_out << "// begin multiple-outputs data type for the function call" << endl;
-		auto out_type_tag = new_ident("out_type");
-		{ 
-			int argnum = -1;
-			for (auto i_arg = callee_subprogram->formal_parameter_children_begin();
-				i_arg != callee_subprogram->formal_parameter_children_end();
-				++i_arg)
-			{
-				++argnum;
-				// is this an inout or output parameter?
-				if ((*i_arg)->get_type() &&
-					(*i_arg)->get_type()->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
-				{
-					shared_ptr<pointer_type_die> pt = dynamic_pointer_cast<pointer_type_die>(
-						(*i_arg)->get_type()->get_concrete_type());
-					assert(pt);
-					if (!pt->get_type()) continue; // void ptrs don't count
-					string name;
-					if ((*i_arg)->get_name()) name = *(*i_arg)->get_name();
-					else 
-					{
-						ostringstream s;
-						s << "__cake_outarg" << argnum;
-						name = s.str();
-					}
-					output_arginfo.push_back(make_pair(name, pt->get_type()));
-				}
-			}
-		}
-		// now declare a struct type 
-		m_out << "struct " << out_type_tag << "{" << endl;
-		for (auto i_arginfo = output_arginfo.begin(); i_arginfo != output_arginfo.end(); ++i_arginfo)
-		{
-			// naive code for now
-			m_out << compiler.cxx_declarator_from_type_die(i_arginfo->second).first
-				<< "& " << i_arginfo->first << ";" << endl;
-		}
-		m_out << "};" << endl;
-		m_out << "boost::optional< " << out_type_tag << " > " << out_obj_ident << ";" << endl;
-		m_out << "// end multiple-outputs alias for the function call" << endl;
 
 		// emit the function name, as a symbol reference
 		m_out << "cake::" << m_d.namespace_name() << "::";
@@ -3413,12 +3518,19 @@ assert(false && "disabled support for inferring positional argument mappings");
 				 && (*i_fp)->get_type()->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
 			{
 				inserting_cast = true;
-				m_out << "reinterpret_cast< ";
+				// HACK: don't use reinterpret_cast, because sometimes we want this case
+				// to convert unspecified_wordsize_type --> void *,
+				// and we can't do that with reinterpret,
+				// but can do it with C-style casts
+				// (with the help of the "operator void *" we defined).
+//				m_out << "reinterpret_cast< ";
+				m_out << "((";
 				auto declarator = compiler.cxx_declarator_from_type_die((*i_fp)->get_type(),
 					optional<const string&>(), true,
 					get_type_name_prefix((*i_fp)->get_type()) + "::", false);
 				m_out << declarator.first;
-				m_out << ">(";
+//				m_out << ">(";
+				m_out << ")";
 			}
 			
 			m_out << i_result->result_fragment;
@@ -3449,26 +3561,30 @@ assert(false && "disabled support for inferring positional argument mappings");
 		}
 		else m_out << success_ident << " = true;" << std::endl;
 		// now populate the structure
-		vector< pair< string, shared_ptr<type_die> > > out_arginfo;
-		m_out << out_obj_ident << " = (" << out_type_tag << "){ " << endl;
-		for (auto i_arginfo = out_arginfo.begin(); i_arginfo != out_arginfo.end(); ++i_arginfo)
+		if (output_arginfo.begin() != output_arginfo.end())
 		{
-			if (i_arginfo != out_arginfo.begin()) m_out << ", ";
-			// output an lvalue holding the result
-			if (i_arginfo->first == "__cake_result") m_out << raw_result_ident;
-			else
+			m_out << out_obj_ident << " = (" << out_type_tag << "){ " << endl;
+			for (auto i_arginfo = output_arginfo.begin(); i_arginfo != output_arginfo.end(); ++i_arginfo)
 			{
-				assert(arg_results_by_callee_name.find(i_arginfo->first)
-					!= arg_results_by_callee_name.end());
-				m_out << arg_results_by_callee_name[i_arginfo->first];
+				if (i_arginfo != output_arginfo.begin()) m_out << ", ";
+				// output an lvalue holding the result
+				if (i_arginfo->first == "__cake_retval") m_out << raw_result_ident;
+				else
+				{
+					assert(arg_results_by_callee_name.find(i_arginfo->first)
+						!= arg_results_by_callee_name.end());
+					// the "*" here is because output args are always indirected,
+					// but we want to reference their value
+					m_out << "*" << arg_results_by_callee_name[i_arginfo->first];
+				}
 			}
+			m_out << " }";
+			m_out << ";" << endl;
 		}
-		m_out << " }";
-		m_out << ";" << endl;
 		m_out << "// end output/error split for the function call overall" << endl;
 
 		// we opened argcount  extra lexical blocks in the argument eval
-		for (unsigned i = 0; i < arg_results.size(); i++)
+		for (int i = 0; i < arg_eval_subexpr_count; i++)
 		{
 			m_out.dec_level();
 			m_out << "} " /*"else " << success_ident << " = false;"*/ << std::endl;
@@ -3500,7 +3616,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		
 
 		return (post_emit_status){value_ident, success_ident, new_bindings, 
-			make_pair(out_obj_ident, out_arginfo)};
+			make_pair(out_obj_ident, output_arginfo)};
 	}
 	
 	optional< pair<string, string> >
@@ -3531,7 +3647,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 		shared_ptr<type_die> fp_type = p_fp->get_type();
 		shared_ptr<pointer_type_die> fp_pointer_type = dynamic_pointer_cast<pointer_type_die>(fp_type);
 		shared_ptr<type_die> pointer_target_type
-		 = fp_pointer_type ? fp_pointer_type->get_type()->get_concrete_type() : shared_ptr<type_die>();
+		 = (fp_pointer_type && fp_pointer_type->get_type()) 
+		 	? fp_pointer_type->get_type()->get_concrete_type() 
+			: shared_ptr<type_die>();
 		switch(GET_TYPE(argExpr))
 		{
 			case CAKE_TOKEN(ARRAY_SUBSCRIPT): {
@@ -3557,8 +3675,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 				return is_out_arg_expr(GET_CHILD(argExpr, 0), p_fp, ident, true);
 			case CAKE_TOKEN(IDENT): {
 				INIT;
+				// We only know it's an ident at this point; 
+				// only say it's an output arg if we have force_yes
 				// now we definitely need that pointer
-				if (!pointer_target_type) RAISE(argExpr, "cannot output through untyped pointer");
+				if (!force_yes) return optional<pair<string, string> >();
+				if (force_yes && !pointer_target_type) RAISE(argExpr, "cannot output through untyped pointer");
+				// else force_yes && pointer_target_type
 				string decl = compiler.cxx_declarator_from_type_die(pointer_target_type).first
 					+ " " + ident + ";";
 				return make_pair(decl, unescape_ident(CCP(GET_TEXT(argExpr))));

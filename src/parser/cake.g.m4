@@ -298,7 +298,7 @@ valuePattern		: (memberNameExpr '[')=>
                     ;
 
 bindingEOFHack: binding EOF; /* HACK: see stubLangExpressionEOFHack */
-binding 	: bindingPrefix^ stubLangExpression
+binding 	: bindingPrefix^ stubNonSequencingExpression
             ; /*           | bindingPrefix stubLangExpression
               -> ^( KEYWORD_LET bindableIdentSet stubLangExpression )
 			;*/

@@ -1170,6 +1170,14 @@ namespace cake
 	}
 	
 	bool
+	arg_is_output_only(shared_ptr<spec::formal_parameter_die> p_fp)
+	{
+		return p_fp->get_is_optional() && *p_fp->get_is_optional()
+			&& p_fp->get_variable_parameter() && *p_fp->get_variable_parameter()
+			&& p_fp->get_const_value() && *p_fp->get_const_value();
+	}
+	
+	bool
 	data_types_are_identical(shared_ptr<type_die> arg1, shared_ptr<type_die> arg2)
 	{
 		if (arg1 == arg2) return true;

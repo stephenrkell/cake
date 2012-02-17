@@ -204,6 +204,11 @@ namespace cake {
 		typedef std::map<val_corresp_group_key, vector<val_corresp *> > 
 		val_corresp_group_tbl_t;
 		
+		typedef pair< module_ptr, shared_ptr<type_die> > val_corresp_supergroup_key;
+		typedef std::multimap< val_corresp_supergroup_key, val_corresp *>
+		val_corresp_supergroup_tbl_t;
+		set< val_corresp_supergroup_key > val_corresp_supergroups;
+		
 		std::set< shared_ptr<type_die> > significant_typedefs;
 		
 		shared_ptr<type_die> 
@@ -211,6 +216,9 @@ namespace cake {
 		
 		typedef map<iface_pair, val_corresp_group_tbl_t> val_corresp_groups_tbl_t;
 		val_corresp_groups_tbl_t val_corresp_groups;
+		
+		typedef map<iface_pair, val_corresp_supergroup_tbl_t> val_corresp_supergroups_tbl_t;
+		val_corresp_supergroups_tbl_t val_corresp_supergroups;
 		
 		optional<link_derivation::val_corresp_map_t::iterator>
 		find_value_correspondence(

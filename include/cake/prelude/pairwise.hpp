@@ -2,6 +2,7 @@ extern "C" {
 #include "repman.h"
 }
 #include "runtime.hpp"
+#include <boost/optional.hpp>
 #include <boost/type_traits/remove_const.hpp>
 #include <boost/type_traits/remove_reference.hpp>
 #define REP_ID(ident) (ident::marker::rep_id)

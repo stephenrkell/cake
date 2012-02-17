@@ -1263,7 +1263,7 @@ namespace cake
 // 							<< " at offset 0x" << std::hex << (*i_die)->get_offset() << std::dec << endl;
 // 					break;
 // 				}
-				compiler.emit_model<0>(wrap_file, i_die);
+				compiler.dispatch_to_model_emitter(wrap_file, i_die);
 				
 			}
 			
@@ -1529,8 +1529,6 @@ namespace cake
                              k.source_module == i_pair->second 
                                 ? k.source_data_type
                                 : k.sink_data_type) << ", "
-                      //<< ", 0, " // RuleTag
-                      //<< ", " << val_corresp_numbering[i_corresp->second] << ", "
                       << boolalpha << (k.source_module == i_pair->second) << ">" // DirectionIsFromSecondToFirst
 << endl << "    {"
 << endl;
@@ -1623,8 +1621,6 @@ namespace cake
                              k.source_module == i_pair->first 
                                 ? k.source_data_type
                                 : k.sink_data_type) << ", "
-                      //<< "0, " // RuleTag
-					  //<< ", " << val_corresp_numbering[i_corresp->second] << ", "
                       << boolalpha << (k.source_module == i_pair->first) << ">" // DirectionIsFromFirstToSecond
 << endl << "    {"
 << endl;
@@ -3878,20 +3874,22 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		
 		set< shared_ptr<dwarf::spec::type_die> > seen_concrete_types;
 
-		set< pair< // this is any pair involving a base type -- needn't both be base
-			              dwarf::tool::cxx_compiler::base_type,
-			              shared_ptr<dwarf::spec::type_die> 
-			              >
-			    > seen_first_base_type_pairs;
-		set< pair< // this is any pair *involving* a base type -- needn't both be base
-			               shared_ptr<dwarf::spec::type_die> ,
-			               dwarf::tool::cxx_compiler::base_type
-			               >
-			    > seen_second_base_type_pairs;
-		set< pair< dwarf::tool::cxx_compiler::base_type,
-			                 dwarf::tool::cxx_compiler::base_type 
-			               >
-			    > seen_base_base_pairs;
+		typedef set<
+			pair< // this is any pair involving a base type -- needn't both be base
+				dwarf::tool::cxx_compiler::base_type,
+				shared_ptr<dwarf::spec::type_die> 
+			>
+		> base_type_pairset_t;
+		typedef set<
+			pair<
+				dwarf::tool::cxx_compiler::base_type,
+				dwarf::tool::cxx_compiler::base_type
+			>
+		> base_base_pairset_t;
+
+		base_type_pairset_t seen_first_base_type_pairs;
+		base_type_pairset_t seen_second_base_type_pairs;
+		base_base_pairset_t seen_base_base_pairs;
 		// Now look for names that have exactly two entries in the multimap,
 		// (i.e. exactly two <vector, found_type> pairs for a given vector,
 		//  i.e. exactly two types were found having a given name-vector)
@@ -3926,25 +3924,63 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			// (else template specializations will collide)
 			// NOTE: this is because DWARF info often includes "char" and "signed char"
 			// and these are distinct in DWARF-land but not in C++-land
+			
+			bool not_void = iter_pair.first->second.t->get_concrete_type()
+				&& iter_pair.second->second.t->get_concrete_type();
+			if (!not_void)
+			{
+				cerr << "Warning: skipping name-matching types with one or both void: ";
+				if (!iter_pair.first->second.t->get_concrete_type()) 
+				{
+					cerr << iter_pair.first->second.t->summary() << endl;
+				}
+				if (!iter_pair.second->second.t->get_concrete_type()) 
+				{
+					cerr << iter_pair.second->second.t->summary() << endl;
+				}
+				continue;
+			}
+			
+			auto base_type_not_in_set = [](const base_type_pairset_t& s, shared_ptr<type_die> p_t) {
+				using dwarf::tool::cxx_compiler;
+				using dwarf::spec::base_type_die;
+				return p_t->get_concrete_type()->get_tag() != DW_TAG_base_type
+					|| std::find_if(
+							s.begin(), 
+							s.end(),
+							[p_t](const pair<cxx_compiler::base_type, shared_ptr<type_die> >& p) {
+								return 
+									data_types_are_identical(
+										p_t->get_concrete_type(),
+										p.second
+									)
+								&& cxx_compiler::base_type(dynamic_pointer_cast<base_type_die>(p_t))
+									== p.first;
+							}) == s.end();
+			};
+			
+			
 			bool not_base_types_matched_before
 			= (
-					iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_base_type
-					|| seen_first_base_type_pairs.find(make_pair(
-						dwarf::tool::cxx_compiler::base_type(
-							dynamic_pointer_cast<dwarf::spec::base_type_die>(
-								iter_pair.first->second.t->get_concrete_type())),
-							iter_pair.second->second.t->get_concrete_type())) ==
-							seen_first_base_type_pairs.end()
+				base_type_not_in_set(seen_first_base_type_pairs, iter_pair.first->second.t)
+// 					iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_base_type
+// 					|| seen_first_base_type_pairs.find(make_pair(
+// 						dwarf::tool::cxx_compiler::base_type(
+// 							dynamic_pointer_cast<dwarf::spec::base_type_die>(
+// 								iter_pair.first->second.t->get_concrete_type())),
+// 							iter_pair.second->second.t->get_concrete_type())) ==
+// 							seen_first_base_type_pairs.end()
 				)
 			&&
 				(
-					iter_pair.second->second.t->get_concrete_type()->get_tag() != DW_TAG_base_type
-					|| seen_second_base_type_pairs.find(make_pair(
-						iter_pair.first->second.t->get_concrete_type(),
-						dwarf::tool::cxx_compiler::base_type(
-							dynamic_pointer_cast<dwarf::spec::base_type_die>(
-								iter_pair.second->second.t->get_concrete_type()))))
-						== seen_second_base_type_pairs.end()
+					base_type_not_in_set(seen_second_base_type_pairs, iter_pair.second->second.t)
+//					->get_concrete_type()->get_tag() != DW_TAG_base_type
+//					|| seen_second_base_type_pairs.find(make_pair(
+//						dwarf::tool::cxx_compiler::base_type(
+//							dynamic_pointer_cast<dwarf::spec::base_type_die>(
+//								iter_pair.second->second.t->get_concrete_type())),
+//						iter_pair.first->second.t->get_concrete_type()))
+//						== seen_second_base_type_pairs.end()
 				)
 			&& (!(iter_pair.first->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type &&
 				  iter_pair.second->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type)
@@ -4000,10 +4036,10 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 								if (iter_pair.second->second.t->get_tag() == DW_TAG_base_type)
 									seen_second_base_type_pairs.insert(
 										make_pair(
-											iter_pair.first->second.t->get_concrete_type(),
 											dwarf::tool::cxx_compiler::base_type(
 												dynamic_pointer_cast<dwarf::spec::base_type_die>(
-													iter_pair.second->second.t->get_concrete_type()))));
+													iter_pair.second->second.t->get_concrete_type())),
+											iter_pair.first->second.t->get_concrete_type()));
 								if (iter_pair.first->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type &&
 								  iter_pair.second->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type)
 								{
@@ -4279,6 +4315,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				p_c->source_data_type->get_concrete_type(), 
 				p_c->sink_data_type->get_concrete_type() 
 			};
+			auto source_k = make_pair(p_c->source, p_c->source_data_type->get_concrete_type());
+			auto sink_k = make_pair(p_c->sink, p_c->sink_data_type->get_concrete_type());
 			
 			// 1. put it in the group table
 			auto ifaces = sorted(make_pair(p_c->source, p_c->sink));
@@ -4286,6 +4324,16 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			val_corresp_group_tbl_t& group_tbl = val_corresp_groups[ifaces];
 			vector<val_corresp *>& vec = group_tbl[k];
 			vec.push_back(p_c.get());
+			
+			// 1a. put it in the supergroup table, twice
+			// val_corresp_groups is a table of tables
+			// ifaces -> key -> corresps
+			// val_corresp_supergroups is also a table of tables
+			// ifaces -> half_key -> corresps
+			// BUT each corresp can be found under multiple half-keys! Two, to be precise
+			val_corresp_supergroup_tbl_t& supergroup_tbl = val_corresp_supergroups[ifaces];
+			supergroup_tbl.insert(make_pair(source_k, p_c.get()));
+			supergroup_tbl.insert(make_pair(sink_k, p_c.get()));
 			
 			// the two counts are now redundant, but sanity-check for now
 			int assigned = counts[k]++;
