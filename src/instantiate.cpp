@@ -82,7 +82,7 @@ namespace cake
 		// this function --^ doesn't write a newline...
 		// ... so add extra dependencies
 		out << " $(patsubst %.cpp,%.o," << output_cxx_filename << ")";
-		out << "\n\tld -r -o \"$@\" $+" << endl;
+		out << "\n\tld -r $(LD_RELOC_FLAGS) -o \"$@\" $+" << endl;
 
 		out << "$(patsubst %.cpp,%.o," << output_cxx_filename << "): " 
 			<< output_cxx_filename << " " << output_filename << ".hpp";
@@ -240,8 +240,8 @@ namespace cake
 			&& "post-creation size");
 		
 		// sanity check
-		cerr << "Contents following instantiation of module " 
-			<< r.module_inverse_tbl[this->output_module] << " (@" << output_module.get() << "):" << endl;
-		cerr << output_module->get_ds();
+		//cerr << "Contents following instantiation of module " 
+		//	<< r.module_inverse_tbl[this->output_module] << " (@" << output_module.get() << "):" << endl;
+		//cerr << output_module->get_ds();
 	}
 }

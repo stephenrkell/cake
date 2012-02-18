@@ -1027,7 +1027,7 @@ namespace cake
 							cerr << "arglist position " << curpos << ", offset " << offset
 								<< " from start of ellipsis." << endl;
 
-							for (int j = 0; j < offset; ++j) 
+							for (unsigned j = 0; j < offset; ++j) 
 							{
 								if (i_fp != fps_end) ++i_fp;
 							}
@@ -1191,80 +1191,55 @@ namespace cake
 		wrap_file << "extern \"C\" {\n#include <libcake/repman.h>\n}" << endl;
 
 		// for each component, include its dwarfpp header in its own namespace
-		for (vector<module_ptr>::iterator i = input_modules.begin();
-				i != input_modules.end();
-				i++)
+		for (vector<module_ptr>::iterator i_mod = input_modules.begin();
+				i_mod != input_modules.end();
+				i_mod++)
 		{
 			wrap_file << "namespace cake { namespace " << namespace_name()
-					<< " { namespace " << r.module_inverse_tbl[*i] << " {" << endl;
+					<< " { namespace " << r.module_inverse_tbl[*i_mod] << " {" << endl;
 					
-			wrap_file << "\t#include \"" << (*i)->get_filename() << ".hpp\"" << endl;
+			wrap_file << "\t#include \"" << (*i_mod)->get_filename() << ".hpp\"" << endl;
 			// also output any extra definitions we have added to the dieset.
-			// We start with the firss new offset, then add its siblings (only);
-			// these will mainly be typedefs and pointer types
+			// We start with the first new offset, then emit toplevel DIEs (only).
 			
-			abstract_dieset::iterator first_added_die(
-				 	(*i)->get_ds().find((*i)->greatest_preexisting_offset() + 1),
-					abstract_dieset::siblings_policy_sg);
-			// special case: if first added DIE is a CU, descend inside it
-			if ((*first_added_die)->get_tag() == DW_TAG_compile_unit)
-			{
-				first_added_die = (*first_added_die)->children_begin();
-			}
+			// This is subtle because we might also have added (non-empty) compile_unit DIEs.
+			// We want to skip these. Our approach is
+			// to find ourselves in the list of visible grandchildren,
+			// which necessarily goes in CU order,
+			// and continue from there.
+			// FIXME: this inefficient because it walks the whole list of DIEs.
+			// We could probably just construct the conjoining_iterator directly,
+			// knowing its offset.
+			auto visible_toplevel_seq = (*i_mod)->get_ds().toplevel()
+				->visible_grandchildren_sequence();
+			auto i_first_added = visible_toplevel_seq->begin();
+			while (i_first_added != visible_toplevel_seq->end()
+				&& (*i_first_added)->get_offset() <= (*i_mod)->greatest_preexisting_offset())
+				++i_first_added;
+			wrap_file << "// DIEs added by Cake begin at 0x" 
+				<< std::hex << (*i_first_added)->get_offset() << std::dec
+				<< " (greatest preexisting: 0x" 
+				<< std::hex << (*i_mod)->greatest_preexisting_offset() << std::dec
+				<< ")" << endl
+				<< "// (and do not necessarily begin with lowest offset)" << endl;
 			
-			for (abstract_dieset::iterator i_die = first_added_die;
-					i_die != (*i)->get_ds().end();
+// 			abstract_dieset::iterator first_added_die(
+// 					(*i_mod)->get_ds().find((*i_mod)->greatest_preexisting_offset() + 1),
+// 					abstract_dieset::siblings_policy_sg);
+// 			// special case: if first added DIE is a CU, descend inside it
+// 			if ((*first_added_die)->get_tag() == DW_TAG_compile_unit)
+// 			{
+// 				wrap_file << "// ... which is a compile_unit, so really beginning at 0x" ;
+// 				first_added_die = (*first_added_die)->children_begin();
+// 				wrap_file << std::hex << (*first_added_die)->get_offset() << std::dec
+// 					<< endl;
+// 			}
+			
+			for (auto i_die = i_first_added;
+					i_die != visible_toplevel_seq->end();
 					++i_die)
 			{
-// 				// now output something if we know how
-// 				switch((*i_die)->get_tag())
-// 				{
-// 					case DW_TAG_pointer_type: {
-// 						string name_to_use
-// 						 = (*i_die)->get_name() 
-// 						 ? compiler.cxx_name_from_string(*(*i_die)->get_name(), "_dwarfhpp_") 
-// 						 : compiler.create_ident_for_anonymous_die(*i_die);
-// 
-// 						if (!dynamic_pointer_cast<spec::pointer_type_die>(*i_die)->get_type())
-// 						{
-// 							wrap_file << "typedef void *" 
-// 								<< compiler.protect_ident(name_to_use) 
-// 								<< ";" << endl;
-// 						}
-// 						else 
-// 						{
-// 							wrap_file << compiler.make_typedef(
-// 								dynamic_pointer_cast<spec::type_die>(*i_die),
-// 								name_to_use
-// 							) << endl;
-// 						}
-// 					}
-// 					break;
-// 					case DW_TAG_typedef: {
-// 						auto name_to_use = (*i_die)->get_name() 
-// 							? *(*i_die)->get_name()
-// 							: compiler.create_ident_for_anonymous_die(*i_die);
-// 						if (dynamic_pointer_cast<spec::typedef_die>(*i_die)->get_type())
-// 						{	
-// 							wrap_file << compiler.make_typedef(
-// 								dynamic_pointer_cast<spec::typedef_die>(*i_die)->get_type(),
-// 								name_to_use);
-// 						} 
-// 						else
-// 						{
-// 							wrap_file << "typedef void " << name_to_use << ";";
-// 						}
-// 						wrap_file << endl;
-// 					} break;
-// 					default:
-// 						wrap_file << "// FIXME: we seem to have added a DIE of tag " 
-// 							<< (*i_die)->get_spec().tag_lookup((*i_die)->get_tag()) << ", name "
-// 							<< ((*i_die)->get_name() ? *(*i_die)->get_name() : "(no name)")
-// 							<< " at offset 0x" << std::hex << (*i_die)->get_offset() << std::dec << endl;
-// 					break;
-// 				}
-				compiler.dispatch_to_model_emitter(wrap_file, i_die);
-				
+				compiler.dispatch_to_model_emitter(wrap_file, i_die.base().base());
 			}
 			
 			// also define a marker class, and code to grab a rep_id at init time
@@ -1272,15 +1247,15 @@ namespace cake
 					<< endl;
 			wrap_file << "\tint marker::rep_id;" << endl;
 			wrap_file << "\tstatic void get_rep_id(void) __attribute__((constructor)); static void get_rep_id(void) { marker::rep_id = next_rep_id++; rep_component_names[marker::rep_id] = \""
-			<< r.module_inverse_tbl[*i] << "\"; }" << endl; // FIXME: C-escape this
+			<< r.module_inverse_tbl[*i_mod] << "\"; }" << endl; // FIXME: C-escape this
 			// also define the Cake component as a set of compilation units
 			wrap_file << "extern \"C\" {" << endl;
-			wrap_file << "\tconst char *__cake_component_" << r.module_inverse_tbl[*i]
+			wrap_file << "\tconst char *__cake_component_" << r.module_inverse_tbl[*i_mod]
 				<< " = ";
 			/* output a bunch of string literals of the form
 			 * <compilation-unit-name>-<full-compil-directory-name>-<compiler-ident> */
-			for (auto i_cu = (*i)->get_ds().toplevel()->compile_unit_children_begin();
-					i_cu != (*i)->get_ds().toplevel()->compile_unit_children_end();
+			for (auto i_cu = (*i_mod)->get_ds().toplevel()->compile_unit_children_begin();
+					i_cu != (*i_mod)->get_ds().toplevel()->compile_unit_children_end();
 					++i_cu)
 			{
 				wrap_file << "\t\t\"^" // FIXME: escape these!
@@ -1296,7 +1271,7 @@ namespace cake
 			wrap_file << "} /* end extern \"C\" */" << endl;
 			wrap_file << "} } }" << endl; 
 
-		}
+		} // end for module
 		
 		// FIXME: collapse type synonymy
 		// (AFTER doing name-matching, s.t. can match maximally)
@@ -1475,9 +1450,11 @@ namespace cake
 			auto all_value_corresp_groups = val_corresp_groups[*i_pair];
 
 			// collect mappings of artificial type names (tags) in each group
-			map< val_corresp_group_key, map<string, vector< val_corresp *> > >
+			typedef map< val_corresp_group_key, map<string, vector< val_corresp *> > >
+			corresps_by_artificial_names_map_t;
+			corresps_by_artificial_names_map_t
 			all_corresps_by_artificial_names_for_first_type;
-			map< val_corresp_group_key, map<string, vector< val_corresp *> > >
+			corresps_by_artificial_names_map_t
 			all_corresps_by_artificial_names_for_second_type;
 			for (auto i_corresp_group = all_value_corresp_groups.begin();
 				i_corresp_group != all_value_corresp_groups.end();
@@ -1533,10 +1510,21 @@ namespace cake
 					direction_is_first_to_second < 2;
 					++direction_is_first_to_second)
 				{
-					wrap_file << "// " << (half_key_is_first ? wrap_code.get_type_name(i_half_key->second) : "    ...    ")
+					wrap_file << "// " 
+						<< "(from half key: " 
+						<< i_half_key->first->get_filename() << ", "
+						<< i_half_key->second->summary() << ") "
+						<< (half_key_is_first ? wrap_code.get_type_name(i_half_key->second) : "    ...    ")
 						<< ( (direction_is_first_to_second) ? " --> " : " <-- " )
 						<< (half_key_is_first ? "    ...    " : wrap_code.get_type_name(i_half_key->second))
 						<< endl;
+					if (i_half_key->second->get_tag() == DW_TAG_base_type)
+					{
+						wrap_file << "// half key is base type: " 
+							<< cxx_compiler::base_type(
+								dynamic_pointer_cast<spec::base_type_die>(i_half_key->second)
+								) << endl;
+					}
 						
 					bool half_key_is_source = (half_key_is_first && direction_is_first_to_second)
 					                       || (!half_key_is_first && !direction_is_first_to_second);
@@ -1573,15 +1561,20 @@ namespace cake
 						// -- we only match rules whose source/sink (as appropriate, w.r.t. our direction)
 						bool relevant;
 						if (i_p_corresp->second->sink == i_half_key->first)
-						// then it's relevant if its source is the other module
-						relevant = (i_p_corresp->second->source == the_other_module)
-						// and our direction is from the half-key module to the other module
-						         && half_key_is_source;
-						else  //  our half-key module is the source module
-						// else it's relevant if its sink is the other module
-						relevant = (i_p_corresp->second->sink == the_other_module)
-						         && !half_key_is_source;
-						
+						{
+							assert(i_p_corresp->second->source == the_other_module);
+							relevant = !half_key_is_source;
+						}
+						else 
+						{
+							// it shouldn't be from a different iface pair, so 
+							// we should have the source be the half-key
+							assert(i_p_corresp->second->source == i_half_key->first);
+							assert(i_p_corresp->second->sink == the_other_module);
+							//  our half-key module is the source module
+							// else it's relevant if its sink is the other module
+							relevant = half_key_is_source;
+						}
 						if (relevant)
 						{
 							vec.push_back(i_p_corresp->second);
@@ -1598,6 +1591,7 @@ namespace cake
 					bool emitted_default_to_default = false;
 					for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); ++i_p_corresp)
 					{
+						// our relevance criteria ensured that 
 						// whichever way the half-key is, this should hold
 						module_ptr first_module = (direction_is_first_to_second) 
 							? (*i_p_corresp)->source : (*i_p_corresp)->sink;
@@ -1610,10 +1604,10 @@ namespace cake
 							: (((*i_p_corresp)->sink == i_half_key->first)   && ((*i_p_corresp)->source == the_other_module)));
 							
 						// the template argument data type, i.e. always the half-key type
-						shared_ptr<type_die> outer_type = i_half_key->second;
-						//(k.source_module == i_pair->second)
-						//	? (*i_p_corresp)->source_data_type
-						//	: (*i_p_corresp)->sink_data_type;
+						shared_ptr<type_die> outer_type = 
+						(half_key_is_source)
+							? (*i_p_corresp)->source_data_type
+							: (*i_p_corresp)->sink_data_type;
 						auto outer_type_synonymy_chain = type_synonymy_chain(outer_type);
 
 						// the type to be typedef'd in the struct body -- the one from the *other* module
@@ -1656,10 +1650,22 @@ namespace cake
                     	   << "_in_" << (half_key_is_first ? "second" : "first") << ";" << endl;
 					} // end outputting typedefs
 					
-					/* For each full key containing this half key... */
-					// now output the tags enums
+					/* For each full key containing this half key...
+					 * output the tag enums.
+					 * We have to group the corresps by the tag string on the half key side,
+					 * so that each enum element is output together
+					 * without trying to close and reopen the same struct. 
+					 * This means that we can't do a two-level iteration
+					 * of full_key then corresp; 
+					 * we have to flip between distinct full keys
+					 * while outputting a single enum.
+					 * So, expand keys into <half_key_tagstring, full_key> -> corresp map. */
+					multimap< string, val_corresp * > by_enum;
+					set< string > enums;
+					
 					std::set< val_corresp_group_key>& keys_for_this_supergroup
 					 = val_corresp_group_keys_by_supergroup[*i_pair][*i_half_key];
+					
 					for (auto i_full_key = keys_for_this_supergroup.begin();
 						i_full_key != keys_for_this_supergroup.end();
 						++i_full_key)
@@ -1670,6 +1676,85 @@ namespace cake
 					
 						auto& corresps_by_artificial_names_for_half_key_type
 						 = corresps_by_artificial_names_for_half_key_type_map[*i_full_key];
+						 
+						for (auto i_tag_in_half_key = corresps_by_artificial_names_for_half_key_type.begin();
+								  i_tag_in_half_key != corresps_by_artificial_names_for_half_key_type.end();
+								 /* prev_half_key_tagstring = i_tag_in_half_key->first, */
+								  ++i_tag_in_half_key)
+						{
+							for (auto i_p_corresp = i_tag_in_half_key->second.begin(); 
+								i_p_corresp != i_tag_in_half_key->second.end(); ++i_p_corresp)
+							{
+								// COMPLETE HACK: skip init-only rules
+								if ((*i_p_corresp)->init_only) continue;
+								
+								by_enum.insert(make_pair(i_tag_in_half_key->first, *i_p_corresp));
+								enums.insert(i_tag_in_half_key->first);
+							}
+						}
+					}
+					
+					for (auto i_enum = enums.begin(); i_enum != enums.end(); ++i_enum)
+					{
+						wrap_file << "         struct rule_tag_in_" << (half_key_is_first ? "second" : "first") 
+						  << "_given_" << (half_key_is_first ? "first" : "second") 
+						  << "_artificial_name_" << *i_enum 
+							<< " { enum __cake_rule_tags {" << endl;
+						auto enum_seq = by_enum.equal_range(*i_enum);
+						for (auto i_p_corresp_pair = enum_seq.first;
+							i_p_corresp_pair != enum_seq.second;
+							++i_p_corresp_pair)
+						{
+							if (i_p_corresp_pair != enum_seq.first) wrap_file << ", " << endl;
+							// here we want the data type in the *other* module, but not concretised
+							auto half_key_die = (half_key_is_source) ?
+								(*i_p_corresp_pair).second->source_data_type : (*i_p_corresp_pair).second->sink_data_type;
+							auto the_other_die = (half_key_is_source) ? 
+								(*i_p_corresp_pair).second->sink_data_type : (*i_p_corresp_pair).second->source_data_type;
+							//auto artificial_name_for_half_key_die =
+							//	(!data_types_are_identical(half_key_die->get_concrete_type(), half_key_die)) 
+							//	? *half_key_die->get_name()
+							//	 : "__cake_default";
+							auto artificial_name_for_the_other_die =
+								(!data_types_are_identical(the_other_die->get_concrete_type(), the_other_die)) 
+								? *the_other_die->get_name()
+								 : "__cake_default";
+
+							assert(val_corresp_numbering.find(i_p_corresp_pair->second->shared_from_this())
+							    != val_corresp_numbering.end());
+							wrap_file << artificial_name_for_the_other_die // artificial_name_for_half_key_die 
+								<< " = " 
+								<< val_corresp_numbering[(*i_p_corresp_pair).second->shared_from_this()];
+						}
+						wrap_file << "         }; };" << endl; // ends a tag enum/struct
+					}
+
+// 					vector< val_corresp_group_key > sorted_keys_for_this_supergroup;
+// 					auto sorted_size = srk31::count(
+// 						keys_for_this_supergroup.begin(),
+// 						keys_for_this_supergroup.end()
+// 					);
+// 					sorted_keys_for_this_supergroup.resize(sorted_size);
+// 					assert(sorted_keys_for_this_supergroup.begin() + sorted_size
+// 					 == sorted_keys_for_this_supergroup.end());
+// 					std::partial_sort_copy(
+// 						keys_for_this_supergroup.begin(),
+// 						keys_for_this_supergroup.end(),
+// 						sorted_keys_for_this_supergroup.begin(),
+// 						sorted_keys_for_this_supergroup.end(),
+// 						[corresps_by_artificial_names_for_half_key_type_map](
+// 							const val_corresp_group_key& arg1,
+// 							const val_corresp_group_key& arg2
+// 						)
+// 						{
+// 							auto& 
+// 							corresps_by_artificial_names_for_half_key_type
+// 							 = corresps_by_artificial_names_for_half_key_type_map[arg1];
+// 							corresps_by_artificial_names_for_half_key_type
+// 							 = corresps_by_artificial_names_for_half_key_type_map[arg2];
+// 							 
+// 						}
+// 					);
 // 						  (val_corresp_group_key){
 // 							/* source */
 // 								direction_is_first_to_second ? first_module : i_half_key->first,
@@ -1681,35 +1766,69 @@ namespace cake
 // 								(*i_p_corresp)->sink_data_type
 // 						}];
 
-						for (auto i_tag_in_half_key = corresps_by_artificial_names_for_half_key_type.begin();
-				        		  i_tag_in_half_key != corresps_by_artificial_names_for_half_key_type.end();
-				        		  ++i_tag_in_half_key)
-						{
-		  wrap_file << "         struct rule_tag_in_" << (half_key_is_first ? "second" : "first") << "_given_" << (half_key_is_first ? "first" : "second") << "_artificial_name_" << i_tag_in_half_key->first 
-  			<< " { enum __cake_rule_tags {" << endl;
-							for (auto i_p_corresp = i_tag_in_half_key->second.begin(); 
-								i_p_corresp != i_tag_in_half_key->second.end(); ++i_p_corresp)
-							{
-								// COMPLETE HACK: skip init-only rules
-								if ((*i_p_corresp)->init_only) continue;
-
-								// here we want the data type in the half-key module, but not concretised
-								auto half_key_die = (half_key_is_source) ?
-									(*i_p_corresp)->source_data_type : (*i_p_corresp)->sink_data_type;
-
-								auto artificial_name_for_half_key_die =
-									(!data_types_are_identical(half_key_die->get_concrete_type(), half_key_die)) 
-									? *half_key_die->get_name()
-									 : "__cake_default";
-
-								wrap_file << artificial_name_for_half_key_die 
-									<< " = " 
-									<< val_corresp_numbering[(*i_p_corresp)->shared_from_this()];
-								if (i_p_corresp != i_tag_in_half_key->second.end() - 1) wrap_file << "," << endl;
-							}
-   wrap_file << "         }; };" << endl; // ends a tag enum
-						} // end for all tag enums
-					} // end for all groups in this supergroup
+						/* We group by the half_key tagstring. */
+// 						vector< pair<const string, val_corresp *> > sorted;
+// 						auto sorted_size = srk31::count(
+// 							corresps_by_artificial_names_for_half_key_type.begin(),
+// 							corresps_by_artificial_names_for_half_key_type.end());
+// 						sorted.resize(sorted_size);
+// 						assert(sorted.end() == sorted.begin() + sorted_size);
+// 						std::partial_sort_copy(
+// 							corresps_by_artificial_names_for_half_key_type.begin(),
+// 							corresps_by_artificial_names_for_half_key_type.end(),
+// 							sorted.begin(),
+// 							sorted.begin() + sorted_size,
+// 							[](const corresps_by_artificial_names_map_t::value_type& arg1,
+// 							   const corresps_by_artificial_names_map_t::value_type& arg2)
+// 							{
+// 								return arg1.first < arg2.first;
+// 							}
+// 						);
+// 						optional<string> prev_half_key_tagstring;
+// 						for (auto i_tag_in_half_key = corresps_by_artificial_names_for_half_key_type.begin();
+// 								  i_tag_in_half_key != corresps_by_artificial_names_for_half_key_type.end();
+// 								  prev_half_key_tagstring = i_tag_in_half_key->first, 
+// 								  ++i_tag_in_half_key)
+// 						{
+// 							if (!prev_half_key_tagstring 
+// 								|| i_tag_in_half_key->first != *prev_half_key_tagstring)
+// 							{
+// 								if (prev_half_key_tagstring) wrap_file << "         }; };" << endl; // ends a tag enum/struct
+// 								wrap_file << "         struct rule_tag_in_" << (half_key_is_first ? "second" : "first") 
+// 		  << "_given_" << (half_key_is_first ? "first" : "second") 
+// 		  << "_artificial_name_" << i_tag_in_half_key->first 
+// 			<< " { enum __cake_rule_tags {" << endl;
+// 							}
+// 							
+// 							for (auto i_p_corresp = i_tag_in_half_key->second.begin(); 
+// 								i_p_corresp != i_tag_in_half_key->second.end(); ++i_p_corresp)
+// 							{
+// 								// COMPLETE HACK: skip init-only rules
+// 								if ((*i_p_corresp)->init_only) continue;
+// 
+// 								// here we want the data type in the *other* module, but not concretised
+// 								auto half_key_die = (half_key_is_source) ?
+// 									(*i_p_corresp)->source_data_type : (*i_p_corresp)->sink_data_type;
+// 								auto the_other_die = (half_key_is_source) ? 
+// 									(*i_p_corresp)->sink_data_type : (*i_p_corresp)->source_data_type;
+// 
+// 								//auto artificial_name_for_half_key_die =
+// 								//	(!data_types_are_identical(half_key_die->get_concrete_type(), half_key_die)) 
+// 								//	? *half_key_die->get_name()
+// 								//	 : "__cake_default";
+// 								auto artificial_name_for_the_other_die =
+// 									(!data_types_are_identical(the_other_die->get_concrete_type(), the_other_die)) 
+// 									? *the_other_die->get_name()
+// 									 : "__cake_default";
+// 
+// 								wrap_file << artificial_name_for_the_other_die // artificial_name_for_half_key_die 
+// 									<< " = " 
+// 									<< val_corresp_numbering[(*i_p_corresp)->shared_from_this()];
+// 								if (i_p_corresp != i_tag_in_half_key->second.end() - 1) wrap_file << "," << endl;
+// 							}
+// 						} // end for all tag enums
+// 						if (prev_half_key_tagstring) wrap_file << "         }; };" << endl; // ends a tag enum/struct
+// 					} // end for all groups in this supergroup
      wrap_file << "    };" // ends a specialization
 << endl;
 				} // end for direction (first-to-second, second-to-first)
@@ -2109,7 +2228,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				out << "--redefine-sym " << *i_sym << "=__cake_protect_" << *i_sym << " ";
 			}
 			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< endl*/;
-			out << endl << '\t' << "ld -r -o " << output_module->get_filename() << ' ';
+			out << endl << '\t' << "ld -r $(LD_RELOC_FLAGS) -o " << output_module->get_filename() << ' ';
 			for (auto i_linker_arg = linker_args.begin(); 
 				i_linker_arg != linker_args.end();
 				++i_linker_arg)
@@ -2135,7 +2254,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		}  // Else just output the args
 		else 
 		{
-			out << endl << '\t' << "ld -r -o " << output_module->get_filename();
+			out << endl << '\t' << "ld -r $(LD_RELOC_FLAGS) -o " << output_module->get_filename();
 			for (auto i_linker_arg = linker_args.begin(); 
 				i_linker_arg != linker_args.end();
 				++i_linker_arg)
@@ -2741,74 +2860,80 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				||      GET_TYPE(t) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
 				||      GET_TYPE(t) == CAKE_TOKEN(KEYWORD_IN_AS)
 				||      GET_TYPE(t) == CAKE_TOKEN(KEYWORD_OUT_AS));
-				if (relevant) 
+				return relevant;
+			});
+		for (auto i_interp = interpretations.begin(); 
+			i_interp != interpretations.end();
+			++i_interp)
+		{
+			auto t = *i_interp;
+			auto target_type_in_ast = GET_CHILD(t, 0);
+			auto interpreted_expr = GET_CHILD(GET_PARENT(t), 0);
+			try
+			{
+				auto p_t = p_module->ensure_dwarf_type(target_type_in_ast);
+				assert(p_t);
+			}
+			catch (...) //(dwarf::lib::Not_supported)
+			{
+				// this means we asked to create a typedef with no definition
+				// -- try to get the *existing* DWARF type of this AST
+				// context.
+				auto found = map_ast_context_to_dwarf_element(
+					target_type_in_ast,
+					p_module,
+					false
+				);
+				assert(found);
+				cerr << "found " << *found << " as DWARF context of " 
+					<< CCP(TO_STRING_TREE(target_type_in_ast)) << endl;
+				if (found->get_tag() == DW_TAG_unspecified_parameters)
 				{
-					auto target_type_in_ast = GET_CHILD(t, 0);
-					auto interpreted_expr = GET_CHILD(GET_PARENT(t), 0);
-					try
+					cerr << "Was not expecting to find unspecified_parameters "
+						<< "for subprogram " << *found->get_parent() << endl
+						<< " with children: ";
+					for (auto i_child = found->get_parent()->children_begin();
+						i_child != found->get_parent()->children_end();
+						++i_child)
+					{ cerr << **i_child << endl; }
+
+					assert(false);
+				}
+				auto can_have_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(found);
+				assert(can_have_type);
+				auto maybe_subprogram = can_have_type->get_parent();
+				assert(maybe_subprogram);
+				shared_ptr<subprogram_die> subprogram;
+				subprogram = dynamic_pointer_cast<subprogram_die>(maybe_subprogram);
+				shared_ptr<type_die> is_type = can_have_type->get_type();
+				shared_ptr<spec::with_type_describing_layout_die> has_type = can_have_type;
+				if (can_have_type && !is_type)
+				{
+					cerr << "Guessing type info for arg "
+						<< *can_have_type
+						<< endl;
+					// this means we have no type info for this arg.
+					// This might happen if we use "as" in an
+					// event pattern (=> caller-side => no DWARF info).
+
+					// we need an identifier (argument name)
+					string ident;
+					if (GET_TYPE(interpreted_expr) == CAKE_TOKEN(IDENT))
 					{
-						p_module->ensure_dwarf_type(target_type_in_ast);
+						ident = unescape_ident(CCP(GET_TEXT(interpreted_expr)));
 					}
-					catch (dwarf::lib::Not_supported)
+					else if (GET_TYPE(interpreted_expr) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
 					{
-						// this means we asked to create a typedef with no definition
-						// -- try to get the *existing* DWARF type of this AST
-						// context.
-						auto found = map_ast_context_to_dwarf_element(
-							target_type_in_ast,
-							p_module,
-							false
-						);
-						assert(found);
-						cerr << "found " << *found << " as DWARF context of " 
-							<< CCP(TO_STRING_TREE(target_type_in_ast)) << endl;
-						if (found->get_tag() == DW_TAG_unspecified_parameters)
-						{
-							cerr << "Was not expecting to find unspecified_parameters "
-								<< "for subprogram " << *found->get_parent() << endl
-								<< " with children: ";
-							for (auto i_child = found->get_parent()->children_begin();
-								i_child != found->get_parent()->children_end();
-								++i_child)
-							{ cerr << **i_child << endl; }
-								
-							assert(false);
-						}
-						auto can_have_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(found);
-						assert(can_have_type);
-						auto maybe_subprogram = can_have_type->get_parent();
-						assert(maybe_subprogram);
-						shared_ptr<subprogram_die> subprogram;
-						subprogram = dynamic_pointer_cast<subprogram_die>(maybe_subprogram);
-						shared_ptr<type_die> is_type = can_have_type->get_type();
-						shared_ptr<spec::with_type_describing_layout_die> has_type = can_have_type;
-						if (can_have_type && !is_type)
-						{
-							cerr << "Guessing type info for arg "
-								<< *can_have_type
-								<< endl;
-							// this means we have no type info for this arg.
-							// This might happen if we use "as" in an
-							// event pattern (=> caller-side => no DWARF info).
-							
-							// we need an identifier (argument name)
-							string ident;
-							if (GET_TYPE(interpreted_expr) == CAKE_TOKEN(IDENT))
-							{
-								ident = unescape_ident(CCP(GET_TEXT(interpreted_expr)));
-							}
-							else if (GET_TYPE(interpreted_expr) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
-							{
-								auto dmn = read_definite_member_name(interpreted_expr);
-								assert(dmn.size() == 1);
-								ident = dmn.at(0);
-							}
-							else assert (false);
-							// we also need an enclosing corresp
-							antlr::tree::Tree *enclosing_corresp = interpreted_expr;
-							antlr::tree::Tree *enclosing_event_pattern = 0;
-							assert(opt_corresp);
-							
+						auto dmn = read_definite_member_name(interpreted_expr);
+						assert(dmn.size() == 1);
+						ident = dmn.at(0);
+					}
+					else assert (false);
+					// we also need an enclosing corresp
+					antlr::tree::Tree *enclosing_corresp = interpreted_expr;
+					antlr::tree::Tree *enclosing_event_pattern = 0;
+					assert(opt_corresp);
+
 // 							while (GET_TYPE(enclosing_corresp) != CAKE_TOKEN(BI_DOUBLE_ARROW)
 // 							 &&    GET_TYPE(enclosing_corresp) != CAKE_TOKEN(LR_DOUBLE_ARROW)
 // 							 &&    GET_TYPE(enclosing_corresp) != CAKE_TOKEN(RL_DOUBLE_ARROW) )
@@ -2821,9 +2946,9 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 // 								enclosing_corresp = GET_PARENT(enclosing_corresp);
 // 							}
 // 							assert(enclosing_event_pattern);
-							
-							// Now use that to recover our module-level context
-							// which module's DWARF info should we search through?
+
+					// Now use that to recover our module-level context
+					// which module's DWARF info should we search through?
 // 							// HACK HACK HACK HACK
 // 							ev_corresp_map_t::iterator i_corresp;
 // 							for (i_corresp = ev_corresps.begin();
@@ -2835,264 +2960,264 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 // 											break;
 // 							}
 // 							assert(i_corresp != ev_corresps.end());
-							
-							//assert(module_name && string(module_name) != "");
-							//auto source_module = r.module_inverse_tbl[module_name];
-							//assert(source_module);
 
-							module_ptr source_module = opt_corresp->source;
-							vector<antlr::tree::Tree *> contexts;
-							find_usage_contexts(ident,
-								opt_corresp->sink_expr,
-								contexts);
-							if (contexts.size() > 0)
+					//assert(module_name && string(module_name) != "");
+					//auto source_module = r.module_inverse_tbl[module_name];
+					//assert(source_module);
+
+					module_ptr source_module = opt_corresp->source;
+					vector<antlr::tree::Tree *> contexts;
+					find_usage_contexts(ident,
+						opt_corresp->sink_expr,
+						contexts);
+					if (contexts.size() > 0)
+					{
+						cerr << "Considering type expectations "
+							<< "for stub uses of identifier " 
+							<< ident << endl;
+						shared_ptr<type_die> seen_concrete_type;
+						for (auto i_ctxt = contexts.begin(); 
+							i_ctxt != contexts.end();
+							++i_ctxt)
+						{
+							shared_ptr<spec::basic_die> found_die
+							 = map_ast_context_to_dwarf_element(
+								*i_ctxt,
+								opt_corresp->sink, false);
+
+							if (found_die)
 							{
-								cerr << "Considering type expectations "
-									<< "for stub uses of identifier " 
-									<< ident << endl;
-								shared_ptr<type_die> seen_concrete_type;
-								for (auto i_ctxt = contexts.begin(); 
-									i_ctxt != contexts.end();
-									++i_ctxt)
-								{
-									shared_ptr<spec::basic_die> found_die
-									 = map_ast_context_to_dwarf_element(
-										*i_ctxt,
-										opt_corresp->sink, false);
+								cerr << "Found a stub function call using ident " 
+									<< ident 
+									<< " as " << *found_die
+									<< ", child of " << *found_die->get_parent()
+									<< endl;
 
-									if (found_die)
-									{
-										cerr << "Found a stub function call using ident " 
-											<< ident 
-											<< " as " << *found_die
-											<< ", child of " << *found_die->get_parent()
-											<< endl;
-										
-										has_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(found_die);
-										assert(has_type);
-										shared_ptr<type_die> is_type = has_type->get_type();
-										if (has_type && !is_type)
-										{
-											// this means we found an arg with no type info
-											continue;
-										}
-										
-										if (seen_concrete_type)
-										{
-											if (seen_concrete_type != is_type->get_concrete_type())
-											{
-												// disagreement in usage contexts of ident....
-												assert(false);
-											}
-										} 
-										else seen_concrete_type = is_type->get_concrete_type();
-									}
-								} // end for all contexts
-								// when we get here, we may have identified some
-								// type expectations, or we may not.
-								
-								bool is_indirect = false;
-								if (seen_concrete_type 
-									&& seen_concrete_type->get_tag() == DW_TAG_pointer_type)
+								has_type = dynamic_pointer_cast<spec::with_type_describing_layout_die>(found_die);
+								assert(has_type);
+								shared_ptr<type_die> is_type = has_type->get_type();
+								if (has_type && !is_type)
 								{
-									is_indirect = true;
-									seen_concrete_type = dynamic_pointer_cast<pointer_type_die>(
-										seen_concrete_type)->get_type();
+									// this means we found an arg with no type info
+									continue;
 								}
-								
+
 								if (seen_concrete_type)
 								{
-									assert(source_module);
-									
-									// okay, check for unique corresponding type
-									auto found_unique_from_sink_to_source
-									 = unique_corresponding_dwarf_type(
-										seen_concrete_type,
-										source_module,
-										true);
-									auto found_unique_from_source_to_sink
-									 = unique_corresponding_dwarf_type(
-										seen_concrete_type,
-										source_module,
-										false);
-									
-									if (found_unique_from_sink_to_source
-									 && found_unique_from_sink_to_source
-									    == found_unique_from_source_to_sink)
+									if (seen_concrete_type != is_type->get_concrete_type())
 									{
-										// success!
-										auto encap_fp = dynamic_pointer_cast<encap::formal_parameter_die>(
-											can_have_type);
-										auto fp_type = 
-											(is_indirect) 
-											? source_module->ensure_dwarf_type(
+										// disagreement in usage contexts of ident....
+										assert(false);
+									}
+								} 
+								else seen_concrete_type = is_type->get_concrete_type();
+							}
+						} // end for all contexts
+						// when we get here, we may have identified some
+						// type expectations, or we may not.
+
+						bool is_indirect = false;
+						if (seen_concrete_type 
+							&& seen_concrete_type->get_tag() == DW_TAG_pointer_type)
+						{
+							is_indirect = true;
+							seen_concrete_type = dynamic_pointer_cast<pointer_type_die>(
+								seen_concrete_type)->get_type();
+						}
+
+						if (seen_concrete_type)
+						{
+							assert(source_module);
+
+							// okay, check for unique corresponding type
+							auto found_unique_from_sink_to_source
+							 = unique_corresponding_dwarf_type(
+								seen_concrete_type,
+								source_module,
+								true);
+							auto found_unique_from_source_to_sink
+							 = unique_corresponding_dwarf_type(
+								seen_concrete_type,
+								source_module,
+								false);
+
+							if (found_unique_from_sink_to_source
+							 && found_unique_from_sink_to_source
+								== found_unique_from_source_to_sink)
+							{
+								// success!
+								auto encap_fp = dynamic_pointer_cast<encap::formal_parameter_die>(
+									can_have_type);
+								auto fp_type = 
+									(is_indirect) 
+									? source_module->ensure_dwarf_type(
+											build_ast(
+												GET_FACTORY(ast),
+												CAKE_TOKEN(KEYWORD_PTR),
+												"ptr",
+												(vector<antlr::tree::Tree*>){
 													build_ast(
 														GET_FACTORY(ast),
-														CAKE_TOKEN(KEYWORD_PTR),
-														"ptr",
-														(vector<antlr::tree::Tree*>){
-															build_ast(
-																GET_FACTORY(ast),
-																CAKE_TOKEN(IDENT),
-																/* HACK */ *seen_concrete_type->get_name(),
-																vector<antlr::tree::Tree*>()
-															)
-														}
+														CAKE_TOKEN(IDENT),
+														/* HACK */ *seen_concrete_type->get_name(),
+														vector<antlr::tree::Tree*>()
 													)
-												)
-											: found_unique_from_sink_to_source;
-											
-										encap_fp->set_type(found_unique_from_sink_to_source);
-										
-										is_type = fp_type;
-									}
-									else
-									{
-										cerr << "No unique corresponding type to " 
-											<< *seen_concrete_type
-											<< " so not filling in missing caller type information."
-											<< endl;
-									}
-								}
-							} // end if contexts.size() > 0
-								
-						} // end if can_have_type && !is_type
-						
-						assert(is_type);
-						
-						// if we are dealing with a virtual data type, we do things differently
-						auto interp_head = GET_PARENT(target_type_in_ast);
-						assert(GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_AS)
-						   ||  GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_IN_AS)
-						   ||  GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_OUT_AS)
-						   ||  GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_INTERPRET_AS));
-						if (GET_TYPE(GET_CHILD(interp_head, 1))
-							== CAKE_TOKEN(VALUE_CONSTRUCT) 
-							&& GET_CHILD_COUNT(GET_CHILD(interp_head, 1)) > 0)
-						{
-							antlr::tree::Tree *val_construct = GET_CHILD(interp_head, 1);
-							
-							// for now, we only do this for pointers
-							if (is_type->get_concrete_type()->get_tag() != DW_TAG_pointer_type)
-							{
-								cerr << "Bad type: " << *is_type->get_concrete_type() << endl;
-								cerr << "For interpretation: " << CCP(TO_STRING_TREE(interp_head)) << endl;
-								cerr << "Referenced by: " << *has_type->get_parent() << endl;
-								cerr << "All referer's children: " << endl;
-								for (auto i_child = has_type->get_parent()->children_begin();
-									i_child != has_type->get_parent()->children_end();
-									++i_child)
-								{
-									cerr << **i_child;
-								}
-								assert(false);
-							}
-							shared_ptr<encap::pointer_type_die> is_pointer_type
-							 = dynamic_pointer_cast<encap::pointer_type_die>(is_type);
-							// also for now: only do this for void-typed pointers!
-							// (saves us having to replace the target type with our new fake type)
-							assert(!is_pointer_type->get_type());
-							
-							auto created = p_module->create_empty_structure_type(
-								CCP(GET_TEXT(target_type_in_ast)));
-							dynamic_pointer_cast<encap::structure_type_die>(created)
-								->set_artificial(true);
-							/* We create a reference-typed member for each argument. */
-							{
-								INIT;
-								FOR_ALL_CHILDREN(val_construct)
-								{
-									ALIAS3(n, named_field, IDENT);
-									string field_name = unescape_ident(CCP(GET_TEXT(named_field)));
-									// look for a parameter of this name, and grab its type
-									shared_ptr<formal_parameter_die> found_fp;
-									shared_ptr<type_die> found_type;
-									for (auto i_child = subprogram->formal_parameter_children_begin();
-										i_child != subprogram->formal_parameter_children_end();
-										++i_child)
-									{
-										if ((*i_child)->get_name() && *(*i_child)->get_name()
-											== field_name)
-										{
-											if (!(*i_child)->get_type())
-											{
-												RAISE(named_field, 
-													"virtual data types require parameter type information"
-												);
-											}
-											found_fp = *i_child;
-											found_type = (*i_child)->get_type();
-											break;
-										}
-									}
-									if (!found_fp)
-									{
-										cerr << "Problem with " << *subprogram << endl;
-										RAISE(named_field, "no such field in subprogram");
-									}
-									
-									// now we have a type; add a member
-									auto member_type = p_module->ensure_reference_type_with_target(
-										arg_is_indirect(found_fp) 
-										? dynamic_pointer_cast<pointer_type_die>(found_type)->get_type()
-										: found_type
-									);
-									auto member = dwarf::encap::factory::for_spec(
-										dwarf::spec::DEFAULT_DWARF_SPEC
-									).create_die(DW_TAG_member,
-										dynamic_pointer_cast<encap::structure_type_die>(created),
-										opt<string>(field_name)
-									);
-									dynamic_pointer_cast<encap::member_die>(member)->set_type(
-										dynamic_pointer_cast<spec::type_die>(member_type));
-									cerr << "Set type of member named " << field_name
-										<< " to " << *member_type << endl;
-									cerr << "Referent type is " << *found_type << endl;
-									cerr << "In cxx: " << compiler.cxx_declarator_from_type_die(
-										found_type).first << endl;
+												}
+											)
+										)
+									: found_unique_from_sink_to_source;
 
-								}
+								encap_fp->set_type(found_unique_from_sink_to_source);
+
+								is_type = fp_type;
 							}
-							
-							
-							//is_pointer_type->set_type(dynamic_pointer_cast<spec::type_die>(created));
-							//has_type->set_type(p_module->ensure_pointer_type_with_target(
-								
-							
-							cerr << "Created opaque structure named " 
-								<< CCP(GET_TEXT(target_type_in_ast))
-								<< endl;
-							cerr << "Really! " << *created  << endl;
+							else
+							{
+								cerr << "No unique corresponding type to " 
+									<< *seen_concrete_type
+									<< " so not filling in missing caller type information."
+									<< endl;
+							}
 						}
-						else
-						{
-							// artificial data type: now handle implicit indirection (pointerness)
-							if (is_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type
-								&& GET_TYPE(target_type_in_ast) != CAKE_TOKEN(KEYWORD_PTR))
-							{
-								// the DWARF context wants a pointer, and our AST doesn't
-								// say it's a pointer. Infer that it *is* a pointer.
-								// The typedef should alias the pointed-to type.
-								shared_ptr<pointer_type_die> is_pointer_type = dynamic_pointer_cast<pointer_type_die>(is_type);
-								assert(is_pointer_type);
-								shared_ptr<type_die> pointed_to_type = is_pointer_type->get_type();
-								assert(pointed_to_type);
-								is_type = pointed_to_type;
-							}
-							// converse case: the DWARF context doesn't want a pointer,
-							// but our AST says it is a pointer: this is probably bad Cake,
-							// and we catch it by asserting that our corresps never take pointer types.
+					} // end if contexts.size() > 0
 
-							// now create a typedef DIE pointing at that type
-							auto created = p_module->create_typedef(is_type, CCP(GET_TEXT(target_type_in_ast)));
-							cerr << "Created typedef of " << *is_type << " named " << CCP(GET_TEXT(target_type_in_ast))
-								<< endl;
-							cerr << "Really! " << *created << endl;
+				} // end if can_have_type && !is_type
+
+				assert(is_type);
+
+				// if we are dealing with a virtual data type, we do things differently
+				auto interp_head = GET_PARENT(target_type_in_ast);
+				assert(GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_AS)
+				   ||  GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_IN_AS)
+				   ||  GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_OUT_AS)
+				   ||  GET_TYPE(interp_head) == CAKE_TOKEN(KEYWORD_INTERPRET_AS));
+				if (GET_TYPE(GET_CHILD(interp_head, 1))
+					== CAKE_TOKEN(VALUE_CONSTRUCT) 
+					&& GET_CHILD_COUNT(GET_CHILD(interp_head, 1)) > 0)
+				{
+					antlr::tree::Tree *val_construct = GET_CHILD(interp_head, 1);
+
+					// for now, we only do this for pointers
+					if (is_type->get_concrete_type()->get_tag() != DW_TAG_pointer_type)
+					{
+						cerr << "Bad type: " << *is_type->get_concrete_type() << endl;
+						cerr << "For interpretation: " << CCP(TO_STRING_TREE(interp_head)) << endl;
+						cerr << "Referenced by: " << *has_type->get_parent() << endl;
+						cerr << "All referer's children: " << endl;
+						for (auto i_child = has_type->get_parent()->children_begin();
+							i_child != has_type->get_parent()->children_end();
+							++i_child)
+						{
+							cerr << **i_child;
+						}
+						assert(false);
+					}
+					shared_ptr<encap::pointer_type_die> is_pointer_type
+					 = dynamic_pointer_cast<encap::pointer_type_die>(is_type);
+					// also for now: only do this for void-typed pointers!
+					// (saves us having to replace the target type with our new fake type)
+					assert(!is_pointer_type->get_type());
+
+					auto created = p_module->create_empty_structure_type(
+						CCP(GET_TEXT(target_type_in_ast)));
+					dynamic_pointer_cast<encap::structure_type_die>(created)
+						->set_artificial(true);
+					/* We create a reference-typed member for each argument. */
+					{
+						INIT;
+						FOR_ALL_CHILDREN(val_construct)
+						{
+							ALIAS3(n, named_field, IDENT);
+							string field_name = unescape_ident(CCP(GET_TEXT(named_field)));
+							// look for a parameter of this name, and grab its type
+							shared_ptr<formal_parameter_die> found_fp;
+							shared_ptr<type_die> found_type;
+							for (auto i_child = subprogram->formal_parameter_children_begin();
+								i_child != subprogram->formal_parameter_children_end();
+								++i_child)
+							{
+								if ((*i_child)->get_name() && *(*i_child)->get_name()
+									== field_name)
+								{
+									if (!(*i_child)->get_type())
+									{
+										RAISE(named_field, 
+											"virtual data types require parameter type information"
+										);
+									}
+									found_fp = *i_child;
+									found_type = (*i_child)->get_type();
+									break;
+								}
+							}
+							if (!found_fp)
+							{
+								cerr << "Problem with " << *subprogram << endl;
+								RAISE(named_field, "no such field in subprogram");
+							}
+
+							// now we have a type; add a member
+							auto member_type = p_module->ensure_reference_type_with_target(
+								arg_is_indirect(found_fp) 
+								? dynamic_pointer_cast<pointer_type_die>(found_type)->get_type()
+								: found_type
+							);
+							auto member = dwarf::encap::factory::for_spec(
+								dwarf::spec::DEFAULT_DWARF_SPEC
+							).create_die(DW_TAG_member,
+								dynamic_pointer_cast<encap::structure_type_die>(created),
+								opt<string>(field_name)
+							);
+							dynamic_pointer_cast<encap::member_die>(member)->set_type(
+								dynamic_pointer_cast<spec::type_die>(member_type));
+							cerr << "Set type of member named " << field_name
+								<< " to " << *member_type << endl;
+							cerr << "Referent type is " << *found_type << endl;
+							cerr << "In cxx: " << compiler.cxx_declarator_from_type_die(
+								found_type).first << endl;
+
 						}
 					}
+
+
+					//is_pointer_type->set_type(dynamic_pointer_cast<spec::type_die>(created));
+					//has_type->set_type(p_module->ensure_pointer_type_with_target(
+
+
+					cerr << "Created opaque structure named " 
+						<< CCP(GET_TEXT(target_type_in_ast))
+						<< endl;
+					cerr << "Really! " << *created  << endl;
+					cerr << "Enclosing CU: " << created->enclosing_compile_unit()->summary()
+						<< endl;
 				}
-				return relevant;
-			});
+				else
+				{
+					// artificial data type: now handle implicit indirection (pointerness)
+					if (is_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type
+						&& GET_TYPE(target_type_in_ast) != CAKE_TOKEN(KEYWORD_PTR))
+					{
+						// the DWARF context wants a pointer, and our AST doesn't
+						// say it's a pointer. Infer that it *is* a pointer.
+						// The typedef should alias the pointed-to type.
+						shared_ptr<pointer_type_die> is_pointer_type = dynamic_pointer_cast<pointer_type_die>(is_type);
+						assert(is_pointer_type);
+						shared_ptr<type_die> pointed_to_type = is_pointer_type->get_type();
+						assert(pointed_to_type);
+						is_type = pointed_to_type;
+					}
+					// converse case: the DWARF context doesn't want a pointer,
+					// but our AST says it is a pointer: this is probably bad Cake,
+					// and we catch it by asserting that our corresps never take pointer types.
+
+					// now create a typedef DIE pointing at that type
+					auto created = p_module->create_typedef(is_type, CCP(GET_TEXT(target_type_in_ast)));
+					cerr << "Created typedef of " << *is_type << " named " << CCP(GET_TEXT(target_type_in_ast))
+						<< endl;
+					cerr << "Really! " << *created << endl;
+				} // end else
+			} // end catch
+		} // end for interpretation
 	}
 	
 	void link_derivation::add_event_corresp(
@@ -3958,18 +4083,21 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			auto base_type_not_in_set = [](const base_type_pairset_t& s, shared_ptr<type_die> p_t) {
 				using dwarf::tool::cxx_compiler;
 				using dwarf::spec::base_type_die;
-				return p_t->get_concrete_type()->get_tag() != DW_TAG_base_type
+				auto concrete_t = p_t->get_concrete_type();
+				auto base_t = dynamic_pointer_cast<base_type_die>(concrete_t);
+				return !concrete_t // typedef of void
+					|| concrete_t->get_tag() != DW_TAG_base_type
 					|| std::find_if(
 							s.begin(), 
 							s.end(),
-							[p_t](const pair<cxx_compiler::base_type, shared_ptr<type_die> >& p) {
+							[base_t](const pair<cxx_compiler::base_type, shared_ptr<type_die> >& p) {
+								assert(base_t);
 								return 
 									data_types_are_identical(
-										p_t->get_concrete_type(),
+										base_t,
 										p.second
 									)
-								&& cxx_compiler::base_type(dynamic_pointer_cast<base_type_die>(p_t))
-									== p.first;
+								&& cxx_compiler::base_type(base_t) == p.first;
 							}) == s.end();
 			};
 			
@@ -4329,8 +4457,10 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				p_c->source_data_type->get_concrete_type(), 
 				p_c->sink_data_type->get_concrete_type() 
 			};
-			auto source_k = make_pair(p_c->source, p_c->source_data_type->get_concrete_type());
-			auto sink_k = make_pair(p_c->sink, p_c->sink_data_type->get_concrete_type());
+			auto source_k = make_pair(p_c->source,
+				canonicalise_type(p_c->source_data_type, p_c->source, compiler));
+			auto sink_k = make_pair(p_c->sink, 
+				canonicalise_type(p_c->sink_data_type, p_c->sink, compiler));
 			
 			// 1. put it in the group table
 			auto ifaces = sorted(make_pair(p_c->source, p_c->sink));

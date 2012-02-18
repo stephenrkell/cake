@@ -13,11 +13,11 @@
 #include <deque>
 #include <sstream>
 
+#include <srk31/algorithm.hpp>
 #include <dwarfpp/encap.hpp>
 
 #include "parser.hpp"
-
-#include <srk31/algorithm.hpp>
+#include "cake/cxx_target.hpp"
 
 namespace cake
 {
@@ -134,6 +134,13 @@ namespace cake
 
 	bool
 	data_types_are_identical(shared_ptr<type_die> arg1, shared_ptr<type_die> arg2);
+
+	shared_ptr<type_die>
+	canonicalise_type(
+		shared_ptr<type_die> p_t, 
+		module_ptr p_mod,
+		dwarf::tool::cxx_compiler& compiler
+	);
 
 	template <typename Action>
 	void

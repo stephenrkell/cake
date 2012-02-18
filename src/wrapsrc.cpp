@@ -2176,7 +2176,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		 = get_type_name_prefix(t);
 		 
 		return /*m_out <<*/ ((t->get_tag() == DW_TAG_base_type) ?
-			compiler.local_name_for(t)
+			*compiler.name_for_base_type(dynamic_pointer_cast<base_type_die>(t))
 			: (namespace_prefix + "::" + compiler.fq_name_for(t)));
 	}
 	
@@ -3185,7 +3185,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		for (auto i_arginfo = output_arginfo.begin(); i_arginfo != output_arginfo.end(); ++i_arginfo)
 		{
 			// naive code for now
-			m_out << "boost::optional<" << compiler.cxx_declarator_from_type_die(i_arginfo->second).first
+			m_out << "boost::optional<" << get_type_name(i_arginfo->second)//compiler.cxx_declarator_from_type_die(i_arginfo->second).first
 				<< "& > " << i_arginfo->first << ";" << endl;
 		}
 		m_out << "};" << endl;

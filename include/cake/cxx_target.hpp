@@ -13,7 +13,7 @@ class cake_cxx_target : public dwarf::tool::cxx_target
 public:
 	string get_untyped_argument_typename()
 	{ return " ::cake::unspecified_wordsize_type"; }
-	cake_cxx_target() : cxx_target(vector<string>(1, string("g++"))) {}
+	cake_cxx_target() {} // use the default compiler args
 };
 
 } // end namespace cake

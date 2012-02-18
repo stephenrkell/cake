@@ -77,3 +77,4 @@ cake-generated.mk$
 ^examples/run-all-stdout\.log$
 ^examples/Results/run-all-stderr\.log$
 ^examples/Results/run-all-stdout\.log$
+^examples/Results/.*\.diff$

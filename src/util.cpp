@@ -14,10 +14,15 @@ using boost::shared_ptr;
 using namespace dwarf;
 using dwarf::spec::basic_die;
 using dwarf::spec::type_die;
+using dwarf::spec::base_type_die;
 using dwarf::spec::typedef_die;
 using dwarf::spec::type_chain_die;
 using boost::dynamic_pointer_cast;
 using std::vector;
+using std::map;
+using std::string;
+using std::pair;
+using std::make_pair;
 using std::cerr;
 using std::endl;
 
@@ -1206,6 +1211,91 @@ namespace cake
 		}
 		
 		return false;
+	}
+	
+	shared_ptr<type_die>
+	canonicalise_type(
+		shared_ptr<type_die> p_t, 
+		module_ptr p_mod, 
+		dwarf::tool::cxx_compiler& compiler
+	)
+	{
+		/* This is like get_concrete_type but stronger. We try to find
+		 * the first instance of the concrete type in *any* compilation unit.
+		 * Also, we deal with base types, which may be aliased below the DWARF
+		 * level. */
+		
+		auto concrete_t = p_t->get_concrete_type();
+		if (!concrete_t) goto return_concrete; // void is already canonicalised
+		else
+		{
+			auto opt_ident_path = concrete_t->ident_path_from_root();
+			if (opt_ident_path)
+			{
+				auto resolved = p_mod->get_ds().toplevel()->visible_resolve(
+					opt_ident_path->begin(), opt_ident_path->end()
+				);
+				if (resolved && dynamic_pointer_cast<type_die>(resolved)) 
+				{
+					concrete_t = dynamic_pointer_cast<type_die>(resolved)
+						->get_concrete_type();
+				}
+				else goto return_concrete; // FIXME: we could do more here
+			}
+			else goto return_concrete; // FIXME: we could do more here
+		}
+	
+	return_concrete:
+		static map<
+			pair<module_ptr, dwarf::tool::cxx_compiler *>,
+			map< dwarf::tool::cxx_compiler::base_type, shared_ptr<base_type_die> >
+		> cache;
+		/* Now we handle base types. */
+		if (concrete_t->get_tag() != DW_TAG_base_type) return concrete_t;
+		else
+		{
+			/* To canonicalise base types, we have to use the compiler's 
+			 * set of base types (i.e. the base types that it considers distinct). */
+			auto base_t = dynamic_pointer_cast<base_type_die>(concrete_t);
+			assert(base_t);
+			auto compiler_base_t = dwarf::tool::cxx_compiler::base_type(base_t);
+			auto& our_cache = cache[make_pair(p_mod, &compiler)];
+			auto found_in_cache = our_cache.find(compiler_base_t);
+			if (found_in_cache == our_cache.end())
+			{
+				/* Find the first visible named base type that is identical to base_t. */
+				auto visible_grandchildren_seq
+				 = p_mod->get_ds().toplevel()->visible_grandchildren_sequence();
+				auto i_vis = visible_grandchildren_seq->begin();
+				for (;
+					i_vis != visible_grandchildren_seq->end();
+					++i_vis)
+				{
+					auto vis_as_base = dynamic_pointer_cast<base_type_die>(*i_vis);
+					if (vis_as_base
+						&& vis_as_base->get_name()
+						&& dwarf::tool::cxx_compiler::base_type(vis_as_base)
+							== compiler_base_t)
+					{
+						auto result = our_cache.insert(
+							make_pair(
+								compiler_base_t,
+								vis_as_base
+							)
+						);
+						assert(result.second);
+						found_in_cache = result.first;
+						break;
+					}
+				}
+				assert(i_vis != visible_grandchildren_seq->end());
+			}
+			assert(found_in_cache != our_cache.end());
+			cerr << "Canonicalised base type " << concrete_t->summary() 
+				<< " to " << found_in_cache->second->summary() 
+				<< " (in compiler: " << compiler_base_t << ")" << endl;
+			return dynamic_pointer_cast<type_die>(found_in_cache->second);
+		}
 	}
 	
 	bool

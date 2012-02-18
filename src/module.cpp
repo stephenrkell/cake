@@ -79,7 +79,7 @@ namespace cake
 			cerr << **(get_ds().find(*i_off)) << endl;
 		}
 		cerr << "*****************************************************" << endl;
-		cerr << "Finished processing claims for module. New DIEs:" << filename << endl;
+		cerr << "New DIEs:" << endl;
 		
 		abstract_dieset::iterator first_added_die(
 				get_ds().find(greatest_preexisting_offset() + 1),
