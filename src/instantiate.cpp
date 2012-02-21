@@ -19,6 +19,7 @@ using std::pair;
 using std::make_pair;
 using std::vector;
 using std::map;
+using std::unique_ptr;
 
 namespace cake
 {
@@ -31,8 +32,7 @@ namespace cake
 	 : derivation(r, t), 
 	   output_namespace("instantiate_" + module_name + "_"), 
 	   output_filename(output_filename),
-	   output_cxx_filename(module_name + "_instantiate.cpp"),
-	   output_cxx_file(new std::ofstream(output_cxx_filename))
+	   output_cxx_filename(module_name + "_instantiate.cpp")
 	{
 		/* Add a derived module to the module table, and keep the pointer. */
 		assert(r.module_tbl.find(output_filename) == r.module_tbl.end());
@@ -61,11 +61,11 @@ namespace cake
 			<< "output filename = " << output_filename << ", "
 			<< "output cxx filename = " << output_cxx_filename << "." << endl;
 	}
-	void instantiate_derivation::extract_definition()
+	void instantiate_derivation::init()
 	{
 		// don't think we need this
 	}
-	
+		
 	void instantiate_derivation::write_makerules(std::ostream& out)
 	{
 		/* Instantiate works by
@@ -85,9 +85,123 @@ namespace cake
 		out << "\n\tld -r $(LD_RELOC_FLAGS) -o \"$@\" $+" << endl;
 
 		out << "$(patsubst %.cpp,%.o," << output_cxx_filename << "): " 
-			<< output_cxx_filename << " " << output_filename << ".hpp";
+			<< output_cxx_filename << " " << (*input_modules.begin())->get_filename() 
+			<< ".hpp";
 		out << "\n\t$(CXX) $(CXXFLAGS) -c -o \"$@\" \"$<\"" << endl;
 		
+		// write a rule that copies the input .o.hpp file to the output
+		assert(srk31::count(input_modules.begin(), input_modules.end()) == 1);
+		//out << output_filename << ".hpp: " 
+		//	<< (*input_modules.begin())->get_filename() << ".hpp"
+		//	<< "\n\tcp \"$<\" \"$@\"" << endl;
+		
+	}
+	
+	string instantiate_derivation::get_emitted_sourcefile_name()
+	{
+		return output_cxx_filename;
+	}
+	
+	bool 
+	instantiate_derivation::memb_is_funcptr(
+		spec::with_data_members_die::member_iterator i_memb
+	)
+	{
+		return (*i_memb)->get_type() 
+			&& (*i_memb)->get_type()->get_concrete_type()->get_tag() == DW_TAG_pointer_type
+			&& dynamic_pointer_cast<spec::pointer_type_die>((*i_memb)->get_type()->get_concrete_type())
+				->get_type()
+			&& dynamic_pointer_cast<spec::pointer_type_die>((*i_memb)->get_type()->get_concrete_type())
+				->get_type()->get_concrete_type()->get_tag() == DW_TAG_subroutine_type;
+	}
+	
+	shared_ptr<spec::subroutine_type_die>
+	instantiate_derivation::get_subroutine_type(
+		spec::with_data_members_die::member_iterator i_memb
+	)
+	{
+		return dynamic_pointer_cast<spec::subroutine_type_die>(
+					dynamic_pointer_cast<spec::pointer_type_die>(
+						(*i_memb)->get_type()->get_concrete_type())
+						->get_type()->get_concrete_type()
+						);
+	}
+	
+	void instantiate_derivation::fix_module()
+	{
+		
+		// create the state in the output module
+		assert(dynamic_cast<encap::dieset&>((*input_modules.begin())->get_ds()).map_size() > 0);
+		// 1. copy old DIEs
+		dynamic_cast<encap::dieset&>(output_module->get_ds())
+		 = dynamic_cast<encap::dieset&>((*input_modules.begin())->get_ds());
+		dynamic_pointer_cast<derived_module>(output_module)->updated_dwarf();
+		// 1a. sanity check
+		unsigned new_size_pre = dynamic_cast<encap::dieset&>(output_module->get_ds()).map_size();
+		unsigned old_size_pre = dynamic_cast<encap::dieset&>((*input_modules.begin())->get_ds()).map_size();
+		assert(new_size_pre >= old_size_pre && "pre-copy size");
+		// 2. create subprogram dies for each created subprogram
+		// -- in a new compile_unit? YES, for now -- will need fixing up later
+		auto created_cu = dynamic_pointer_cast<encap::compile_unit_die>(
+			dwarf::encap::factory::for_spec(
+				dwarf::spec::DEFAULT_DWARF_SPEC
+			).create_die(DW_TAG_compile_unit,
+				dynamic_pointer_cast<encap::basic_die>(output_module->get_ds().toplevel()),
+				output_cxx_filename));
+		created_cu->set_language(DW_LANG_C99); // lie!
+		created_cu->set_producer(r.compiler.get_producer_string());
+
+		// HACK: cloned from below
+		definite_member_name mn(1, objtype);
+		auto named = (*input_modules.begin())->get_ds().toplevel()->visible_resolve(
+			mn.begin(), mn.end());
+		auto named_type = dynamic_pointer_cast<spec::type_die>(named);
+		auto named_with_data_members = dynamic_pointer_cast<spec::with_data_members_die>(named_type);
+		assert(named && named_type && named_with_data_members);
+		
+		for (auto i_memb = named_with_data_members->member_children_begin(); 
+			i_memb != named_with_data_members->member_children_end(); ++i_memb)
+		{
+			if (memb_is_funcptr(i_memb))
+			{
+				auto subt = get_subroutine_type(i_memb);
+				
+				assert(subt);
+				auto created_subprogram = dynamic_pointer_cast<encap::subprogram_die>(
+					dwarf::encap::factory::for_spec(
+						dwarf::spec::DEFAULT_DWARF_SPEC
+					).create_die(DW_TAG_subprogram,
+						dynamic_pointer_cast<encap::basic_die>(created_cu),
+						symbol_prefix + *(*i_memb)->get_name()));
+				created_subprogram->set_declaration(true);
+				for (auto i_fp = subt->formal_parameter_children_begin();
+					i_fp != subt->formal_parameter_children_end(); ++i_fp)
+				{
+					auto created_fp = dynamic_pointer_cast<encap::formal_parameter_die>(
+						dwarf::encap::factory::for_spec(
+						dwarf::spec::DEFAULT_DWARF_SPEC
+					).create_die(DW_TAG_formal_parameter,
+						dynamic_pointer_cast<encap::basic_die>(created_subprogram),
+						(*i_fp)->get_name()));
+					created_fp->set_type((*i_fp)->get_type());
+				}
+				// FIXME: also do unspecified_parameters
+			}
+		}
+		// 3. sanity check
+		unsigned new_size_post = dynamic_cast<encap::dieset&>(output_module->get_ds()).map_size();
+		unsigned old_size_post = dynamic_cast<encap::dieset&>((*input_modules.begin())->get_ds()).map_size();
+		assert(new_size_post >= old_size_post
+			&& "post-creation size");
+	
+	}
+	
+	void instantiate_derivation::write_cxx()
+	{
+		this->fix_module();
+		auto output_cxx_file = unique_ptr<std::ofstream>(
+			new std::ofstream(output_cxx_filename)
+		);
 		/* To be consistent with the linkage names,
 		 * we should use the same namespacing conventions we use in
 		 * link.cpp. */ 
@@ -107,27 +221,6 @@ namespace cake
 		auto named_type = dynamic_pointer_cast<spec::type_die>(named);
 		auto named_with_data_members = dynamic_pointer_cast<spec::with_data_members_die>(named_type);
 		assert(named && named_type && named_with_data_members);
-		
-		// first define a couple of helper functions we'll use repeatedly
-		auto memb_is_funcptr = [](spec::with_data_members_die::member_iterator i_memb)
-		{
-			return (*i_memb)->get_type() 
-				&& (*i_memb)->get_type()->get_concrete_type()->get_tag() == DW_TAG_pointer_type
-				&& dynamic_pointer_cast<spec::pointer_type_die>((*i_memb)->get_type()->get_concrete_type())
-					->get_type()
-				&& dynamic_pointer_cast<spec::pointer_type_die>((*i_memb)->get_type()->get_concrete_type())
-					->get_type()->get_concrete_type()->get_tag() == DW_TAG_subroutine_type;
-		};
-		auto get_subroutine_type = [](
-			spec::with_data_members_die::member_iterator i_memb
-		)
-		{
-			return dynamic_pointer_cast<spec::subroutine_type_die>(
-						dynamic_pointer_cast<spec::pointer_type_die>(
-							(*i_memb)->get_type()->get_concrete_type())
-							->get_type()->get_concrete_type()
-							);
-		};
 		
 		for (auto i_memb = named_with_data_members->member_children_begin(); 
 			i_memb != named_with_data_members->member_children_end(); ++i_memb)
@@ -176,68 +269,6 @@ namespace cake
 		// close the namespace and flush the file
 		*output_cxx_file << "} }" << endl;
 		output_cxx_file->flush();
-		
-		// write a rule that copies the input .o.hpp file to the output
-		assert(srk31::count(input_modules.begin(), input_modules.end()) == 1);
-		out << output_filename << ".hpp: " 
-			<< (*input_modules.begin())->get_filename() << ".hpp"
-			<< "\n\tcp \"$<\" \"$@\"" << endl;
-		
-		// create the state in the output module
-		assert(dynamic_cast<encap::dieset&>((*input_modules.begin())->get_ds()).map_size() > 0);
-		// 1. copy old DIEs
-		dynamic_cast<encap::dieset&>(output_module->get_ds())
-		 = dynamic_cast<encap::dieset&>((*input_modules.begin())->get_ds());
-		dynamic_pointer_cast<derived_module>(output_module)->updated_dwarf();
-		// 1a. sanity check
-		unsigned new_size_pre = dynamic_cast<encap::dieset&>(output_module->get_ds()).map_size();
-		unsigned old_size_pre = dynamic_cast<encap::dieset&>((*input_modules.begin())->get_ds()).map_size();
-		assert(new_size_pre >= old_size_pre && "pre-copy size");
-		// 2. create subprogram dies for each created subprogram
-		// -- in a new compile_unit? YES, for now -- will need fixing up later
-		auto created_cu = dynamic_pointer_cast<encap::compile_unit_die>(
-			dwarf::encap::factory::for_spec(
-				dwarf::spec::DEFAULT_DWARF_SPEC
-			).create_die(DW_TAG_compile_unit,
-				dynamic_pointer_cast<encap::basic_die>(output_module->get_ds().toplevel()),
-				output_cxx_filename));
-		created_cu->set_language(DW_LANG_C99); // lie!
-		created_cu->set_producer(r.compiler.get_producer_string());
-		
-		for (auto i_memb = named_with_data_members->member_children_begin(); 
-			i_memb != named_with_data_members->member_children_end(); ++i_memb)
-		{
-			if (memb_is_funcptr(i_memb))
-			{
-				auto subt = get_subroutine_type(i_memb);
-				
-				assert(subt);
-				auto created_subprogram = dynamic_pointer_cast<encap::subprogram_die>(
-					dwarf::encap::factory::for_spec(
-						dwarf::spec::DEFAULT_DWARF_SPEC
-					).create_die(DW_TAG_subprogram,
-						dynamic_pointer_cast<encap::basic_die>(created_cu),
-						symbol_prefix + *(*i_memb)->get_name()));
-				created_subprogram->set_declaration(true);
-				for (auto i_fp = subt->formal_parameter_children_begin();
-					i_fp != subt->formal_parameter_children_end(); ++i_fp)
-				{
-					auto created_fp = dynamic_pointer_cast<encap::formal_parameter_die>(
-						dwarf::encap::factory::for_spec(
-						dwarf::spec::DEFAULT_DWARF_SPEC
-					).create_die(DW_TAG_formal_parameter,
-						dynamic_pointer_cast<encap::basic_die>(created_subprogram),
-						(*i_fp)->get_name()));
-					created_fp->set_type((*i_fp)->get_type());
-				}
-				// FIXME: also do unspecified_parameters
-			}
-		}
-		// 3. sanity check
-		unsigned new_size_post = dynamic_cast<encap::dieset&>(output_module->get_ds()).map_size();
-		unsigned old_size_post = dynamic_cast<encap::dieset&>((*input_modules.begin())->get_ds()).map_size();
-		assert(new_size_post >= old_size_post
-			&& "post-creation size");
 		
 		// sanity check
 		//cerr << "Contents following instantiation of module " 

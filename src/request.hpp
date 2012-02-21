@@ -82,8 +82,12 @@ namespace cake
 		
 		/* AST traversal */		
 		void depthFirst(antlr::tree::Tree *t);
-		void toplevel();
-		
+	public:
+		// main Cake modes of operation
+		void do_derivation(const string& derived_module_name);
+		void write_headers(const string& module_name);
+		void write_makerules();
+	private:
 		/* data structure instances */
         typedef std::map<std::string, module_ptr> module_tbl_t;
         typedef std::map<module_ptr, std::string> module_inverse_tbl_t;
@@ -92,7 +96,7 @@ namespace cake
         typedef module_tbl_t::value_type module_tbl_entry_t;
 		
 		/* cxx generation */
-		cake_cxx_target compiler;
+		cake_cxx_target compiler; // FIXME: can we merge cake_cxx_target and dwarfidl_cxx_target?
 
 	public:
     	typedef module_inverse_tbl_t::value_type module_name_pair;
@@ -103,7 +107,7 @@ namespace cake
 			// and then copying it -- but it's very large, so we don't want that!
 		std::map<std::string, std::vector<std::string> > module_alias_tbl;
         
-        typedef std::vector<boost::shared_ptr<derivation> > derivation_tbl_t;
+        typedef std::map<string, boost::shared_ptr<derivation> > derivation_tbl_t;
         derivation_tbl_t derivation_tbl;
         
         /* makes an absolute pathname out of a filename mentioned in Cake source */
@@ -147,7 +151,7 @@ namespace cake
 		void sort_derivations();
 					
 	public:
-		request(const char *cakefile, const char *makefile);
+		request(const char *cakefile, const char *makefile, const char *outfile);
 		int process();
 		
 		//static void print_abi_info(dwarf::abi_information& info, std::string& unescaped_filename);
@@ -163,13 +167,18 @@ namespace cake
 	
 	protected:
 		virtual void write_object_dependency_makerules(std::ostream& out);
+		virtual string get_emitted_sourcefile_name() = 0;
 		
 	public:
 		derivation(request& r, antlr::tree::Tree *t)
-         : r(r), t(t) {}
-		virtual void extract_definition() = 0;
-        virtual const std::string& namespace_name() = 0;
+		: r(r), t(t) {}
+		std::vector<module_ptr> get_input_modules() const { return input_modules; }
+		virtual void init() = 0;
+		virtual const std::string& namespace_name() = 0;
 		virtual void write_makerules(std::ostream& out) = 0;
+		virtual void fix_input_modules();
+		virtual void fix_module() = 0;
+		virtual void write_cxx() = 0;
 		virtual std::vector<std::string> dependencies() = 0;
         module_ptr get_output_module() { return output_module; }
 	};

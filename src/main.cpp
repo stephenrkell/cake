@@ -13,13 +13,26 @@
 // #undef EOF
 // #include <org/antlr/runtime/Token.h>
 
+/* New command-line options thing:
+ * 1.  no options will write makerules that reflect the entire structure
+ *     of Cake derivations. 
+ * 1a. These are the only makerules written by Cake.
+ * 2.  hpp files are written by Cake using --make-module-headers. 
+ * 3.  cpp files are written by Cake using --derive-module <name>
+ * 4.  That's it! */
+
 const struct option opts[] = {
 	{ "help", false, NULL, 'h' },
-	{ "output", true, NULL, 'o' }
-	
+	{ "output", true, NULL, 'o' },
+	{ "make-module-headers", true, NULL, 'm' },
+	{ "derive-module", true, NULL, 'd' }
 };
 
 static const char *makefile;
+
+static const char *outfile;
+static const char *headers_modulename;
+static const char *derived_modulename;
 
 int main(int argc, char **argv)
 {
@@ -29,7 +42,7 @@ int main(int argc, char **argv)
 	
 	while (getopt_retval != -1)
 	{
-		getopt_retval = getopt_long(argc, argv, "ho:", opts, &longindex);
+		getopt_retval = getopt_long(argc, argv, "ho:m:d:", opts, &longindex);
 		switch (getopt_retval)
 		{
 			case 'h':
@@ -37,10 +50,17 @@ int main(int argc, char **argv)
 				return 0;
 				
 			case 'o':
-				makefile = optarg;
+				outfile = optarg;
 				break;
 				
+			case 'm':
+				headers_modulename = optarg;
+				break;
 				
+			case 'd':
+				derived_modulename = optarg;
+				break;
+			
 			case -1: /* no more options */
 				break;
 
@@ -50,6 +70,9 @@ int main(int argc, char **argv)
 				break;
 		}
 	}
+	
+	/* Now fix up "makefile". */
+	makefile = outfile; // FIXME: more flexibility
 	
 	/* FIXME: this should automatically be added to the ELF .inits, rather than
 	 * embedded here. */
@@ -67,8 +90,19 @@ int main(int argc, char **argv)
 	{		
 		try
 		{
-			cake::request req(cakefile, makefile);
-			return req.process();
+			cake::request req(cakefile, makefile, 0);
+			if (!derived_modulename && !headers_modulename)
+			{
+				req.write_makerules();
+			}
+			else if (derived_modulename)
+			{
+				req.do_derivation(derived_modulename);
+			}
+			else if (headers_modulename)
+			{
+				req.write_headers(headers_modulename);
+			}
 		}
         catch (cake::SemanticError e)
         {
@@ -106,6 +140,8 @@ int main(int argc, char **argv)
 
 void usage()
 {
-	std::cerr << "Usage: cake <file>\n";
+	std::cerr << "Usage: cake [-o <outfile>]\n"
+	             "            [ < --make-module-headers | --derive-module > <modulename> ]\n"
+	             "            <file.cake>\n";
 }
 

@@ -26,9 +26,9 @@ using boost::optional;
 namespace cake
 {
 	string value_conversion::source_fq_namespace() const
-	{ return w.ns_prefix + "::" + w.m_d.name_of_module(source); }
+	{ return w.m_d.get_ns_prefix() + "::" + w.m_d.name_of_module(source); }
 	string value_conversion::sink_fq_namespace() const
-	{ return w.ns_prefix + "::" + w.m_d.name_of_module(sink); }
+	{ return w.m_d.get_ns_prefix() + "::" + w.m_d.name_of_module(sink); }
 	link_derivation::iface_pair
 	codegen_context::get_ifaces() const
 	{
@@ -70,24 +70,23 @@ namespace cake
 	}
 	
 	value_conversion::value_conversion(wrapper_file& w,
-		srk31::indenting_ostream& out,
 		const basic_value_conversion& basic)
-	 : basic_value_conversion(basic), w(w), m_out(out),
+	 : basic_value_conversion(basic), w(w), 
 	 	source_concrete_type(source_data_type->get_concrete_type()),
 		sink_concrete_type(sink_data_type->get_concrete_type()),
 		from_typename(source_concrete_type ? w.get_type_name(source_concrete_type) : "(no concrete type)"),
 		to_typename(sink_concrete_type ? w.get_type_name(sink_concrete_type) : "(no concrete type)")
 	{
-		assert(&w.m_out == &out);
+		
 	}
 			
 	void value_conversion::emit_preamble()
 	{
         emit_header(optional<string>(to_typename), false, false); // no struct keyword, no template<>
-        m_out << "::" << endl;
+        m_out() << "::" << endl;
         emit_signature(false, false); // NO return type, NO default argument
-        m_out << endl << "{" << endl;
-        m_out.inc_level();
+        m_out() << endl << "{" << endl;
+        m_out().inc_level();
 	}
 	
 	void value_conversion::emit_header(optional<string> return_typename, 
@@ -104,7 +103,7 @@ namespace cake
 // 			<< *this->sink_data_type
 // 			<< endl;
 		
-		m_out << (emit_template_prefix ? "template <>\n" : "" )
+		m_out() << (emit_template_prefix ? "template <>\n" : "" )
             << (emit_struct_keyword ? "struct " : "")
 			<< ((emit_return_typename && return_typename) ? *return_typename + "\n" : "")
 			<< "value_convert<"
@@ -137,7 +136,7 @@ namespace cake
 	void virtual_value_conversion::emit_signature(bool emit_return_type/* = true*/, 
 		bool emit_default_argument /* = true */) 
 	{
-		m_out << (emit_return_type ? (treat_target_type_as_user_allocated() ? to_typename + "&" : to_typename ) : "") 
+		m_out() << (emit_return_type ? (treat_target_type_as_user_allocated() ? to_typename + "&" : to_typename ) : "") 
 			<< " operator()(const " << from_typename << "& __cake_from, " 
 			<< to_typename << "*__cake_p_to"
 			<< (emit_default_argument ? " = 0" : "")
@@ -180,10 +179,14 @@ namespace cake
 		return false;
 	}
 	
+	srk31::indenting_ostream&
+	value_conversion::m_out()
+	{ return *w.p_out; }
+		
 	void value_conversion::emit_signature(bool emit_return_type/* = true*/, 
 		bool emit_default_argument /* = true */) 
 	{
-        m_out << (emit_return_type ? to_typename : "") 
+        m_out() << (emit_return_type ? to_typename : "") 
 			<< " operator()(const " << from_typename << "& __cake_from, " 
 			<< to_typename << "*__cake_p_to"
 			<< (emit_default_argument ? " = 0" : "")
@@ -193,22 +196,22 @@ namespace cake
 	void value_conversion::emit_forward_declaration()
 	{
         emit_header(/* false */ optional<string>(), true); // FIXME: looks buggy
-		m_out << "{" << endl;
-		m_out.inc_level();
+		m_out() << "{" << endl;
+		m_out().inc_level();
 		emit_signature();
-		m_out << ";";
-        m_out.dec_level();
-        m_out << "};" << endl;
+		m_out() << ";";
+        m_out().dec_level();
+        m_out() << "};" << endl;
 	}
 
 	void value_conversion::emit_function_name()
 	{
-		/* m_out.flush();
+		/* m_out().flush();
 		emit_header(false, false, false);
-		m_out.flush();
-		m_out << "::operator()";
-		m_out.flush();*/ 
-		m_out << "value_convert_function<"
+		m_out().flush();
+		m_out() << "::operator()";
+		m_out().flush();*/ 
+		m_out() << "value_convert_function<"
             << from_typename // From
             << ", "
             << to_typename // To
@@ -224,7 +227,7 @@ namespace cake
 	void value_conversion::emit_cxx_function_ptr_type(
 		optional<const string& > decl_name)
 	{
-		m_out << "void *(*" << (decl_name ? *decl_name : "")
+		m_out() << "void *(*" << (decl_name ? *decl_name : "")
 			<< ")(" << from_typename << "* ,"
 				<< to_typename << " *)" << endl;
 	}
@@ -334,7 +337,7 @@ namespace cake
 
 	void reinterpret_value_conversion::emit_body()
 	{
-		m_out << "if (__cake_p_to) *__cake_p_to = *reinterpret_cast<const " 
+		m_out() << "if (__cake_p_to) *__cake_p_to = *reinterpret_cast<const " 
 			<< w.get_type_name(sink_data_type) << "*>(&__cake_from);" << endl
 			<< "return *reinterpret_cast<const " 
 			<< w.get_type_name(sink_data_type) << "*>(&__cake_from);" << endl;
@@ -342,7 +345,7 @@ namespace cake
 	
 	void virtual_value_conversion::emit_body()
 	{
-		//m_out << "assert(false);" << endl;
+		//m_out() << "assert(false);" << endl;
 		this->structural_value_conversion::emit_body();
 	}
 	
@@ -447,11 +450,10 @@ namespace cake
 	}
 
 	primitive_value_conversion::primitive_value_conversion(wrapper_file& w,
-			srk31::indenting_ostream& out, 
 			const basic_value_conversion& basic,
 			bool init_only,
 			bool& init_is_identical)
-		:   value_conversion(w, out, basic), 
+		:   value_conversion(w, basic), 
 			source_module(w.m_d.module_of_die(source_data_type)),
 			target_module(w.m_d.module_of_die(sink_data_type)),
 			modules(link_derivation::sorted(make_pair(source_module, target_module)))
@@ -466,12 +468,11 @@ namespace cake
 	}
 	
 	structural_value_conversion::structural_value_conversion(wrapper_file& w,
-			srk31::indenting_ostream& out, 
 			const basic_value_conversion& basic,
 			bool init_only,
 			bool& init_is_identical)
-		:   value_conversion(w, out, basic), 
-		    primitive_value_conversion(w, out, basic, init_only, init_is_identical)
+		:   value_conversion(w, basic), 
+		    primitive_value_conversion(w, basic, init_only, init_is_identical)
 	{
 		/* Find explicitly assigned-to fields:
 		 * the map is from the assigned-to- field
@@ -881,7 +882,7 @@ namespace cake
 					" >::type "
 				" >::type &";
 
-		m_out << dest_type_string << " __cake_nonconst_from = "
+		m_out() << dest_type_string << " __cake_nonconst_from = "
 			"const_cast< "
 				<< dest_type_string <<
 			" >(__cake_from);" << endl;
@@ -892,7 +893,7 @@ namespace cake
 	void primitive_value_conversion::emit_target_buffer_declaration()
 	{
 		/* Create or find buffer */
-		m_out << w.get_type_name(sink_data_type) << " __cake_tmp, *__cake_p_buf;" << endl
+		m_out() << w.get_type_name(sink_data_type) << " __cake_tmp, *__cake_p_buf;" << endl
 			<< "if (__cake_p_to) __cake_p_buf = __cake_p_to; else __cake_p_buf = &__cake_tmp;" << endl;
 	}
 
@@ -903,12 +904,12 @@ namespace cake
 		// if we are user-allocated, we just declare a pointer
 		if (treat_target_type_as_user_allocated())
 		{
-			m_out << w.get_type_name(sink_data_type) << " *__cake_p_buf = __cake_p_to;" << endl
+			m_out() << w.get_type_name(sink_data_type) << " *__cake_p_buf = __cake_p_to;" << endl
 				<< "// assert (__cake_p_to); /* can be null to begin; sink stub will provide value... */" << endl;
 		}
 		else
 		{
-			m_out << w.get_type_name(sink_data_type) << " *__cake_p_buf = __cake_p_to;" << endl
+			m_out() << w.get_type_name(sink_data_type) << " *__cake_p_buf = __cake_p_to;" << endl
 				<< "assert (__cake_p_to); /* no temporary buffer option for this virtual corresp */" << endl;
 		}
 	}
@@ -942,7 +943,7 @@ namespace cake
 			true /* force writing to void target */);
 			
 		// output return statement
-		m_out << "return *__cake_p_buf;" << endl;
+		m_out() << "return *__cake_p_buf;" << endl;
 	}
 	
 	void 
@@ -1087,7 +1088,7 @@ namespace cake
 		 * if we added them -- these are side-specific. */
 		// crossover point
 		ctxt.modules.current = target_module;
-		m_out << "// source->sink crossover point" << endl;
+		m_out() << "// source->sink crossover point" << endl;
 		auto crossed_env = w.crossover_environment_and_sync(
 			source_module, basic_env, target_module, 
 			/* no constraints */ 
@@ -1161,7 +1162,7 @@ namespace cake
 		if (!is_void_target || write_void_target)
 		{
 			assert(ctxt.env["__cake_it"].cxx_name != "");
-			m_out << "(*__cake_p_buf)" << target_field_selector << " = " <<
+			m_out() << "(*__cake_p_buf)" << target_field_selector << " = " <<
 				ctxt.env["__cake_it"].cxx_name << ";" << endl;
 		}
 	}
@@ -1350,9 +1351,9 @@ namespace cake
 				/* All dependencies should be in place now -- check this. */
 				if (!is_void_target) i_target->second->check_sanity();
 
-				m_out << "{ // begin expression assigned to field " 
+				m_out() << "{ // begin expression assigned to field " 
 					<< (target_field_selector == "" ? "(no field)" : target_field_selector);
-				m_out.inc_level();
+				m_out().inc_level();
 
 				/* If we *do* have a unique source field, then a bunch of other Cake idents
 				 * are defined: "this", "here" and "there" (but not "that" -- I think). */
@@ -1380,8 +1381,8 @@ namespace cake
 				write_single_field(ctxt, target_field_selector, unique_source_field_selector,
 					i_target->second->stub, i_target->second->pre_stub, i_target->second->post_stub);
 
-				m_out.dec_level();
-				m_out << "}" << endl;
+				m_out().dec_level();
+				m_out() << "}" << endl;
 			}
 		}
 		/* Emit overall sink-side stub. */
@@ -1444,7 +1445,7 @@ namespace cake
 		}
 
 		// output return statement
-		m_out << "return *__cake_p_buf;" << endl;
+		m_out() << "return *__cake_p_buf;" << endl;
 	}
 	
 	void 
@@ -1455,7 +1456,7 @@ namespace cake
 	{
 		if (treat_target_type_as_user_allocated())
 		{
-			m_out << "__cake_p_buf = __cake_p_to = " << return_status.result_fragment
+			m_out() << "__cake_p_buf = __cake_p_to = " << return_status.result_fragment
 				<< ";" << endl;
 		}
 	}

@@ -175,10 +175,6 @@ namespace cake {
         // Note: all pointers should all point into same map, and moreover,
         // should have the same first element (iface_pair).
         typedef vector<ev_corresp_map_t::value_type *> ev_corresp_pair_ptr_list;
-        
-        // Map from symbol name
-        // to list of correspondences
-        typedef map<string, ev_corresp_pair_ptr_list> wrappers_map_t;
 		
 		std::set< shared_ptr<type_die> > significant_typedefs;
 		
@@ -289,17 +285,21 @@ namespace cake {
         // wrappers are stored in a map from symname to corresp-list
         // a corresp is in the list iff it activates the wrapper
         // i.e. its source event 
-        wrappers_map_t wrappers;
+        
+        // Map from symbol name
+        // to list of correspondences
+		typedef map<string, ev_corresp_pair_ptr_list> wrappers_map_t;
+		wrappers_map_t wrappers;
+		map<string, bool> wrappers_needed;
         string output_namespace; // namespace in which code is emitted
 
         string wrap_file_makefile_name;
         string wrap_file_name;
-		std::ofstream raw_wrap_file;
-        indenting_ostream wrap_file;
 
-        wrapper_file *p_wrap_code; // FIXME: this should be a contained subobject...
+        //optional<wrapper_file&> opt_wrap_code; // FIXME: this should be a contained subobject...
+		wrapper_file *p_wrap_code;
         wrapper_file& wrap_code;	// but is a pointer because of...
-        	// stupid C++ inability to resolve circular include dependency
+        // stupid C++ inability to resolve circular include dependency
     
     protected:
     	// process a pairwise block
@@ -361,10 +361,15 @@ namespace cake {
 		void assign_value_corresp_numbers();
 		void compute_init_rules();
 		void compute_wrappers();
-        module_tag_t module_tag(module_ptr module) 
+		module_tag_t module_tag(module_ptr module) 
 		{ return reinterpret_cast<module_tag_t>(module.get()); }
-		
+
+		string get_emitted_sourcefile_name();
 //		void output_static_co_objects(); 
+		int compute_wrappers_needed_and_linker_args(
+			map<wrappers_map_t::key_type, bool>& wrappers_needed,
+			vector<string>& linker_args,
+			vector<string>& symbols_to_protect);
 
 	public:
 		pair<
@@ -377,8 +382,17 @@ namespace cake {
 		typedef val_corresp_map_t::iterator val_corresp_iterator;
 		
 		typedef link_derivation::val_corresp_map_t::value_type ent;
-				void write_makerules(std::ostream& out);	
-		void extract_definition();
+		void write_makerules(std::ostream& out);	
+		void init();
+		void fix_module();
+		void write_cxx();
+		string get_type_name(
+			shared_ptr<spec::type_die> t/*,
+				const std::string& namespace_prefix*/);
+		string get_type_name_prefix(
+			shared_ptr<spec::type_die> t/*,
+				const std::string& namespace_prefix*/);
+		string get_ns_prefix();
 		vector<string> dependencies() { return vector<string>(); }
         link_derivation(cake::request& r, antlr::tree::Tree *t, 
         	const string& id, const string& output_filename);

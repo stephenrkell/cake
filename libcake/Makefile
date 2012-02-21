@@ -4,16 +4,18 @@ CXX ?= g++-4.5
 default: libcake.so
 
 C_SRC := $(wildcard *.c) 
-CXX_SRC := $(wildcard *.cpp) $(wildcard *.cc)
+CPP_SRC := $(wildcard *.cpp)
+CC_SRC := $(wildcard *.cc)
 C_OBJS := $(patsubst %.c,%.o,$(C_SRC))
-CXX_OBJS := $(patsubst %.cpp,%.o,$(filter %.cpp,$(CXX_SRC))) \
- $(patsubst %.cc,%.o,$(filter %.cc,$(CXX_SRC)))
-OBJS := $(C_OBJS) $(CXX_OBJS)
+CC_OBJS := $(patsubst %.cc,%.o,$(filter %.cc,$(CC_SRC)))
+CPP_OBJS := $(patsubst %.cpp,%.o,$(CPP_SRC)) 
+OBJS := $(C_OBJS) $(CC_OBJS) $(CPP_OBJS)
 
 CPP_DEPS := $(patsubst %.cpp,.%.d,$(CPP_SRC))
-CC_DEPS := $(patsubst %.cc,.%.d,$(CPP_SRC))
+CC_DEPS := $(patsubst %.cc,.%.d,$(CC_SRC))
 C_DEPS := $(patsubst %.c,.%.d,$(C_SRC))
 DEPS := $(CC_DEPS) $(CPP_DEPS) $(C_DEPS)
+$(warning DEPS are $(DEPS))
 
 $(CPP_DEPS): .%.d : %.cpp
 	g++ -MM $(CXXFLAGS) "$<"  > "$@"

@@ -26,6 +26,7 @@ using std::map;
 using std::multimap;
 using dwarf::spec::type_die;
 using dwarf::spec::subprogram_die;
+using dwarf::spec::base_type_die;
 using dwarf::spec::pointer_type_die;
 using dwarf::spec::opt;
 using dwarf::spec::abstract_dieset;
@@ -33,6 +34,29 @@ using srk31::indenting_ostream;
 
 namespace cake
 {
+	string
+	link_derivation::get_ns_prefix()
+	{
+		return "cake::" + namespace_name();
+	}
+
+	string 
+	link_derivation::get_type_name(shared_ptr<type_die> t)
+	{
+		const std::string& namespace_prefix
+		 = get_type_name_prefix(t);
+		 
+		return /*m_out <<*/ ((t->get_tag() == DW_TAG_base_type) ?
+			*compiler.name_for_base_type(dynamic_pointer_cast<base_type_die>(t))
+			: (namespace_prefix + "::" + compiler.fq_name_for(t)));
+	}
+	
+	string 
+	link_derivation::get_type_name_prefix(shared_ptr<type_die> t)
+	{
+		return get_ns_prefix() + "::" + name_of_module(module_of_die(t));
+	}
+	
 	module_ptr 
 	link_derivation::module_for_die(boost::shared_ptr<dwarf::spec::basic_die> p_d)
 	{
@@ -55,6 +79,12 @@ namespace cake
 			+ namespace_name() + "::" + r.module_inverse_tbl[ifaces.second]
 			+ "::marker>";
 	}
+	
+	string
+	link_derivation::get_emitted_sourcefile_name()
+	{
+		return wrap_file_name;
+	}
 			
 	link_derivation::link_derivation(cake::request& r, antlr::tree::Tree *t,
 		const string& id,
@@ -65,10 +95,10 @@ namespace cake
 		wrap_file_makefile_name(
 			boost::filesystem::path(id + "_wrap.cpp").string()),
 		wrap_file_name((boost::filesystem::path(r.in_filename).branch_path() 
-				/ wrap_file_makefile_name).string()),
-		raw_wrap_file(wrap_file_name.c_str()),
-		wrap_file(raw_wrap_file),
-		p_wrap_code(new wrapper_file(*this, compiler, wrap_file)), wrap_code(*p_wrap_code)
+				/ wrap_file_makefile_name).string()) ,
+		//raw_wrap_file(wrap_file_name.c_str()),
+		//wrap_file(raw_wrap_file),
+		p_wrap_code(new wrapper_file(*this, compiler)), wrap_code(*p_wrap_code)
 	{
 		/* Add a derived module to the module table, and keep the pointer. */
 		assert(r.module_tbl.find(output_module_filename) == r.module_tbl.end());
@@ -99,10 +129,15 @@ namespace cake
 		}
 	}
 	
+	void link_derivation::fix_module()
+	{
+		// do nothing -- we did it in "init"
+	}
+	
 	link_derivation::~link_derivation() 
-	{ raw_wrap_file.flush(); raw_wrap_file.close(); delete p_wrap_code; }
+	{ /* raw_wrap_file.flush(); raw_wrap_file.close(); */ delete p_wrap_code; /* &(*opt_wrap_code);*/ }
 
-	void link_derivation::extract_definition()
+	void link_derivation::init()
 	{
 		// enumerate all interface pairs
 		for (vector<module_ptr>::iterator i_mod = input_modules.begin();
@@ -212,8 +247,8 @@ namespace cake
 						// (FIXME: this is a quick-and-dirty C++-specific HACK right now
 						// and should be fixed to use knowledge of DWARF base type encodings.)
 							cerr << "Falling back on C++-assignability to convert from "
-								<< wrap_code.get_type_name(i_dep->first) 
-								<< " to " << wrap_code.get_type_name(i_dep->second) << endl;
+								<< get_type_name(i_dep->first) 
+								<< " to " << get_type_name(i_dep->second) << endl;
 							continue;
 						}
 
@@ -1173,18 +1208,265 @@ namespace cake
 //         return s.str();
 // 	}
 
+	int link_derivation::compute_wrappers_needed_and_linker_args(
+		map<wrappers_map_t::key_type, bool>& wrappers_needed,
+		vector<string>& linker_args,
+		vector<string>& symbols_to_protect
+	)
+	{
+		bool wrapped_some = false;
+		int num_wrappers = 0;
+		// output wrapped symbol names (and the wrappers, to a separate file)
+		for (wrappers_map_t::iterator i_wrap = wrappers.begin(); i_wrap != wrappers.end();
+				++i_wrap)
+		{
+			// i_wrap->first is the wrapped symbol name
+			// i_wrap->second is a list of pointer to the event correspondences
+			//   whose *source* pattern invokes that symbol
+			
+			// ... however, if we have no source specifying an argument pattern,
+			// don't emit a wrapper (because we can't provide args to invoke the __real_ function),
+			// just --defsym __wrap_ = __real_ (i.e. undo the wrapping)
+			bool can_simply_rebind = true;
+			optional<string> symname_bound_to;
+			for (ev_corresp_pair_ptr_list::iterator i_corresp_ptr = i_wrap->second.begin();
+						i_corresp_ptr != i_wrap->second.end();
+						++i_corresp_ptr)
+			{
+				// we can only simply rebind if our symbol is only invoked
+				// with simple name-only patterns mapped to an argument-free
+				// simple expression.
+				// AND if all arguments are rep-compatible
+				// AND return value too
+				optional<string> source_symname =
+					source_pattern_is_simple_function_name((*i_corresp_ptr)->second.source_pattern);
+				optional<string> sink_symname =
+					sink_expr_is_simple_function_name((*i_corresp_ptr)->second.sink_expr);
+				if (source_symname && sink_symname) 
+				{
+					assert(source_symname == i_wrap->first);
+					definite_member_name source_sym_mn(1, *source_symname);
+					definite_member_name sink_sym_mn(1, *sink_symname);
+					auto source_subprogram = 
+						(*i_corresp_ptr)->second.source->get_ds().toplevel()->visible_resolve(source_sym_mn.begin(), source_sym_mn.end());
+					auto sink_subprogram =
+						(*i_corresp_ptr)->second.sink->get_ds().toplevel()->visible_resolve(sink_sym_mn.begin(), sink_sym_mn.end());
+					assert(source_subprogram->get_tag() == DW_TAG_subprogram
+					 && sink_subprogram->get_tag() == DW_TAG_subprogram);
+					dwarf::spec::abstract_dieset::iterator i_source_arg 
+					 = source_subprogram->children_begin();
+					for (auto i_sink_arg = sink_subprogram->children_begin();
+						i_sink_arg != sink_subprogram->children_end();
+						++i_sink_arg)
+					{
+						if ((*i_sink_arg)->get_tag() == DW_TAG_unspecified_parameters)
+						{
+							// exhausted described sink args at/before exhausting source args
+							assert(false); 
+							// what do we want to do here?
+							// we COULD force a wrap... would that be any good?
+							// we can't really do anything with the arguments in the wrapper
+						}
+						if (i_source_arg == source_subprogram->children_end()
+							|| (*i_source_arg)->get_tag() == DW_TAG_unspecified_parameters)
+						{
+							// reached the last source arg before exhausting sink args
+							//assert(false);
+							// force a wrap here -- will our wrapper take its arg types from the sink?
+							can_simply_rebind = false;
+							break;
+						}
+						shared_ptr<dwarf::spec::formal_parameter_die> source_arg, sink_arg;
+						source_arg = dynamic_pointer_cast<dwarf::spec::formal_parameter_die>
+							(*i_source_arg);
+						assert(source_arg && source_arg->get_type());
+						sink_arg = dynamic_pointer_cast<dwarf::spec::formal_parameter_die>
+							(*i_sink_arg);
+						assert(sink_arg && sink_arg->get_type());
+						if (!source_arg->get_type()->is_rep_compatible(sink_arg->get_type()))
+						{
+							cerr << "Detected that required symbol " << i_wrap->first
+								<< " is not a simple rebinding of a required symbol "
+								<< " because arguments are not rep-compatible." << endl;
+							can_simply_rebind = false;
+							//can't continue
+							break;
+						}
+						else { /* okay, continue */ }
+						
+						++i_source_arg;
+					}
+							
+				}
+				else 
+				{
+					cerr << "Detected that required symbol " << i_wrap->first
+						<< " is not a simple rebinding of a required symbol "
+						<< " because source pattern "
+						<< CCP(TO_STRING_TREE((*i_corresp_ptr)->second.source_pattern))
+						<< " is not a simple function name." << endl;
+					can_simply_rebind = false;
+				}
+				if (sink_symname)
+				{
+					if (symname_bound_to) RAISE((*i_corresp_ptr)->second.sink_expr,
+						"previous event correspondence has bound caller to different symname");
+					else symname_bound_to = sink_symname;
+				}
+				else 
+				{
+					cerr << "Detected that required symbol " << i_wrap->first
+						<< " is not a simple rebinding of a required symbol "
+						<< " because sink pattern "
+						<< CCP(TO_STRING_TREE((*i_corresp_ptr)->second.sink_expr))
+						<< " is not a simple function name." << endl;
+					can_simply_rebind = false;
+				}
+				
+				/* If a given module both requires and provides the same symbol, i.e.
+				 * if we are trying to interpose on an internal reference, we have to
+				 * emit some extra make rules. FIXME: support this! */
+				
+			} // end for each corresp
+
+			// (**WILL THIS WORK in ld?**)
+			// It's an error to have some but not all sources specifyin an arg pattern.
+			// FIXME: check for this
+
+			if (!can_simply_rebind)
+			{
+				wrapped_some = true;
+				++num_wrappers;
+
+				// tell the linker that we're wrapping this symbol
+				linker_args.push_back("--wrap ");
+				symbols_to_protect.push_back(i_wrap->first);
+				linker_args.push_back(i_wrap->first);
+				
+				// also tell the linker that unprefixed references to the symbol
+				// should go to __real_<sym>
+				// FIXME: can't do this as at the time of processing, there is no
+				// symbol __real_<sym>. Instead must do as a separate stage,
+				// e.g. when building executable.
+				//linker_args << "--defsym " << i_wrap->first 
+				//	<< '=' << "__real_" << i_wrap->first << ' ';
+			}
+			else
+			{
+				// don't emit wrapper, just use --defsym 
+				if (!symname_bound_to || i_wrap->first != *symname_bound_to)
+				{
+					linker_args.push_back("--defsym ");
+					linker_args.push_back(i_wrap->first  + "=" 
+						// FIXME: if the callee symname is the same as the wrapped symbol,
+						// we should use __real_; otherwise we should use
+						// the plain old callee symbol name. 
+						/*<< "__real_"*/ 
+						+ *symname_bound_to); //i_wrap->first
+				}
+				else { /* do nothing! */ }
+				
+			}
+			
+			wrappers_needed[i_wrap->first] = !can_simply_rebind;
+			
+			//wrap_file.flush();
+		} // end for each wrapper
+		
+		return num_wrappers;
+	}
+
 	void link_derivation::write_makerules(ostream& out)
 	{
 		// implicit rule for making hpp files
-		out << "%.o.hpp: %.o" << endl
-			<< '\t' << "dwarfhpp \"$<\" > \"$@\"" << endl;
+		//out << "%.o.hpp: %.o" << endl
+		//	<< '\t' << "dwarfhpp \"$<\" > \"$@\"" << endl;
+		
 		// dependencies for generated cpp file
-		out << wrap_file_makefile_name << ".d: " << wrap_file_makefile_name << endl
-			<< '\t' << "$(CXX) $(CXXFLAGS) -MM -MG -I. -c \"$<\" > \"$@\"" << endl;
-		out << "-include " << wrap_file_makefile_name << ".d" << endl;
+		// -- don't do this because it forces early evaluation, in our multi-invoc era
+		//out << wrap_file_makefile_name << ".d: " << wrap_file_makefile_name << endl
+		//	<< '\t' << "$(CXX) $(CXXFLAGS) -MM -MG -I. -c \"$<\" > \"$@\"" << endl;
+		//out << "-include " << wrap_file_makefile_name << ".d" << endl;
 
 		write_object_dependency_makerules(out);
+
+		vector<string> linker_args;
+		vector<string> symbols_to_protect;
+		int num_wrappers = compute_wrappers_needed_and_linker_args(this->wrappers_needed, 
+			linker_args, symbols_to_protect);
 		
+		// Now output the linker args.
+		// If wrapped some, first add the wrapper as a dependency (and an argument)
+		if (num_wrappers > 0)
+		{
+			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< endl*/;
+			// output the first objcopy
+			out << endl << '\t' << "objcopy ";
+			for (auto i_sym = symbols_to_protect.begin();
+				i_sym != symbols_to_protect.end();
+				++i_sym)
+			{
+				out << "--redefine-sym " << *i_sym << "=__cake_protect_" << *i_sym << " ";
+			}
+			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< endl*/;
+			out << endl << '\t' << "ld -r $(LD_RELOC_FLAGS) -o " << output_module->get_filename() << ' ';
+			for (auto i_linker_arg = linker_args.begin(); 
+				i_linker_arg != linker_args.end();
+				++i_linker_arg)
+			{
+				out << *i_linker_arg << ' ';
+			}
+			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< endl*/;
+			// add the other object files to the input file list
+			for (vector<module_ptr>::iterator i = input_modules.begin();
+				i != input_modules.end(); ++i)
+			{
+				out << (*i)->get_filename() << ' ';
+			}
+			// output the second objcopy
+			out << endl << '\t' << "objcopy ";
+			for (auto i_sym = symbols_to_protect.begin();
+				i_sym != symbols_to_protect.end();
+				++i_sym)
+			{
+				out << "--redefine-sym __cake_protect_" << *i_sym << "=" << *i_sym << " ";
+			}
+			out << output_module->get_filename() << endl;
+		}  // Else just output the args
+		else 
+		{
+			out << endl << '\t' << "ld -r $(LD_RELOC_FLAGS) -o " << output_module->get_filename();
+			for (auto i_linker_arg = linker_args.begin(); 
+				i_linker_arg != linker_args.end();
+				++i_linker_arg)
+			{
+				out << *i_linker_arg << ' ';
+			}
+			out << ' ';
+			// add the other object files to the input file list
+			for (vector<module_ptr>::iterator i = input_modules.begin();
+				i != input_modules.end(); i++)
+			{
+				out << (*i)->get_filename() << ' ';
+			}
+			out << endl;
+		}
+	}
+	
+	void link_derivation::write_cxx()
+	{
+		this->fix_module();
+		// reproduce the state we built when we generated the makefiles
+		// (i.e. this is nowa separate run of Cake...)
+		vector<string> linker_args;
+		vector<string> symbols_to_protect;
+		int num_wrappers = compute_wrappers_needed_and_linker_args(this->wrappers_needed, 
+			linker_args, symbols_to_protect);
+
+		std::ofstream raw_wrap_file(wrap_file_name);
+		indenting_ostream wrap_file(raw_wrap_file);
+		wrap_code.set_output_stream(wrap_file);
+
 		// output the wrapper file header
 		wrap_file << "// generated by Cake version " << CAKE_VERSION << endl;
 		wrap_file << "#include <cake/prelude.hpp>" << endl;
@@ -1212,34 +1494,47 @@ namespace cake
 			// knowing its offset.
 			auto visible_toplevel_seq = (*i_mod)->get_ds().toplevel()
 				->visible_grandchildren_sequence();
-			auto i_first_added = visible_toplevel_seq->begin();
-			while (i_first_added != visible_toplevel_seq->end()
-				&& (*i_first_added)->get_offset() <= (*i_mod)->greatest_preexisting_offset())
-				++i_first_added;
-			wrap_file << "// DIEs added by Cake begin at 0x" 
-				<< std::hex << (*i_first_added)->get_offset() << std::dec
-				<< " (greatest preexisting: 0x" 
-				<< std::hex << (*i_mod)->greatest_preexisting_offset() << std::dec
-				<< ")" << endl
-				<< "// (and do not necessarily begin with lowest offset)" << endl;
-			
-// 			abstract_dieset::iterator first_added_die(
-// 					(*i_mod)->get_ds().find((*i_mod)->greatest_preexisting_offset() + 1),
-// 					abstract_dieset::siblings_policy_sg);
-// 			// special case: if first added DIE is a CU, descend inside it
-// 			if ((*first_added_die)->get_tag() == DW_TAG_compile_unit)
-// 			{
-// 				wrap_file << "// ... which is a compile_unit, so really beginning at 0x" ;
-// 				first_added_die = (*first_added_die)->children_begin();
-// 				wrap_file << std::hex << (*first_added_die)->get_offset() << std::dec
-// 					<< endl;
-// 			}
-			
-			for (auto i_die = i_first_added;
-					i_die != visible_toplevel_seq->end();
-					++i_die)
+			if (!visible_toplevel_seq->is_empty())
 			{
-				compiler.dispatch_to_model_emitter(wrap_file, i_die.base().base());
+				auto i_first_added = visible_toplevel_seq->begin();
+				while (i_first_added != visible_toplevel_seq->end()
+					&& (*i_first_added)->get_offset() <= (*i_mod)->greatest_preexisting_offset())
+					++i_first_added;
+				if (i_first_added != visible_toplevel_seq->end())
+				{
+					wrap_file << "// DIEs added by Cake begin at 0x" 
+						<< std::hex << (*i_first_added)->get_offset() << std::dec
+						<< " (greatest preexisting: 0x" 
+						<< std::hex << (*i_mod)->greatest_preexisting_offset() << std::dec
+						<< ")" << endl
+						<< "// (and do not necessarily begin with lowest offset)" << endl;
+
+		// 			abstract_dieset::iterator first_added_die(
+		// 					(*i_mod)->get_ds().find((*i_mod)->greatest_preexisting_offset() + 1),
+		// 					abstract_dieset::siblings_policy_sg);
+		// 			// special case: if first added DIE is a CU, descend inside it
+		// 			if ((*first_added_die)->get_tag() == DW_TAG_compile_unit)
+		// 			{
+		// 				wrap_file << "// ... which is a compile_unit, so really beginning at 0x" ;
+		// 				first_added_die = (*first_added_die)->children_begin();
+		// 				wrap_file << std::hex << (*first_added_die)->get_offset() << std::dec
+		// 					<< endl;
+		// 			}
+
+					for (auto i_die = i_first_added;
+							i_die != visible_toplevel_seq->end();
+							++i_die)
+					{
+						// hmm -- we seem to need the extra test, probably because
+						// we add new stuff to the first CU, then end up traversing
+						// preexisting DIEs too?
+						if ((*i_die)->get_offset() > (*i_mod)->greatest_preexisting_offset())
+						{
+							compiler.dispatch_to_model_emitter(wrap_file, i_die.base().base());
+						}
+					}
+				}
+				else wrap_file << "// no DIEs added by Cake, except in declare/override" << endl;
 			}
 			
 			// also define a marker class, and code to grab a rep_id at init time
@@ -1271,7 +1566,7 @@ namespace cake
 			wrap_file << "} /* end extern \"C\" */" << endl;
 			wrap_file << "} } }" << endl; 
 
-		} // end for module
+		} // end for input module
 		
 		// FIXME: collapse type synonymy
 		// (AFTER doing name-matching, s.t. can match maximally)
@@ -1514,9 +1809,9 @@ namespace cake
 						<< "(from half key: " 
 						<< i_half_key->first->get_filename() << ", "
 						<< i_half_key->second->summary() << ") "
-						<< (half_key_is_first ? wrap_code.get_type_name(i_half_key->second) : "    ...    ")
+						<< (half_key_is_first ? get_type_name(i_half_key->second) : "    ...    ")
 						<< ( (direction_is_first_to_second) ? " --> " : " <-- " )
-						<< (half_key_is_first ? "    ...    " : wrap_code.get_type_name(i_half_key->second))
+						<< (half_key_is_first ? "    ...    " : get_type_name(i_half_key->second))
 						<< endl;
 					if (i_half_key->second->get_tag() == DW_TAG_base_type)
 					{
@@ -1538,7 +1833,7 @@ namespace cake
 	<< endl << "        component_pair<" 
 	<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
 	<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
-                    	  << wrap_code.get_type_name(i_half_key->second) << ", " // ALWAYS our half-key
+                    	  << get_type_name(i_half_key->second) << ", " // ALWAYS our half-key
                     	  << boolalpha << ((bool)(direction_is_first_to_second ^ !half_key_is_first)) << ">" 
 						  // if half_key is second, this bool is DirectionIsFromSecondToFirst, i.e. the opposite sense as our flag
 						  // if half_key is first, this bool is DirectionIsFromFirstToSecond, i.e. the same sense as our flag
@@ -1635,7 +1930,7 @@ namespace cake
 
 	   wrap_file << "         typedef "
 	   						// target of the typedef is always the inner type
-                    	   << wrap_code.get_type_name(inner_type)
+                    	   << get_type_name(inner_type)
                             //	  (*i_p_corresp)->source == i_pair->first // 
                             //    	 ? (*i_p_corresp)->source_data_type
                             //    	  : (*i_p_corresp)->sink_data_type)
@@ -2039,7 +2334,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				wrap_file << "// " << CCP(TO_STRING_TREE(i_corresp->second->corresp)) << endl;
 				i_corresp->second->emit();
 				
-// 				wrap_code.emit_value_conversion(
+// 				emit_value_conversion(
 //				 	i_corresp->second.source,
 //			 		p_from_type,
 //			 		i_corresp->second.source_infix_stub,
@@ -2052,223 +2347,17 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			}
 			wrap_file << "} // end namespace cake" << endl;
 			
-		}
-
-		bool wrapped_some = false;
-		/*std::ostringstream*/
-		vector<string> linker_args;
-		vector<string> symbols_to_protect;
-		// output wrapped symbol names (and the wrappers, to a separate file)
-		for (wrappers_map_t::iterator i_wrap = wrappers.begin(); i_wrap != wrappers.end();
-				++i_wrap)
+		} // end for iface pair
+		
+		// now emit the wrappers!
+		//wrapper_file wrap_code(*this, compiler, wrap_file);
+		for (auto i_wrap = wrappers.begin(); i_wrap != wrappers.end();
+			++i_wrap)
 		{
-			// i_wrap->first is the wrapped symbol name
-			// i_wrap->second is a list of pointer to the event correspondences
-			//   whose *source* pattern invokes that symbol
-			
-			// ... however, if we have no source specifying an argument pattern,
-			// don't emit a wrapper (because we can't provide args to invoke the __real_ function),
-			// just --defsym __wrap_ = __real_ (i.e. undo the wrapping)
-			bool can_simply_rebind = true;
-			optional<string> symname_bound_to;
-			for (ev_corresp_pair_ptr_list::iterator i_corresp_ptr = i_wrap->second.begin();
-						i_corresp_ptr != i_wrap->second.end();
-						++i_corresp_ptr)
+			if (wrappers_needed[i_wrap->first]) 
 			{
-				// we can only simply rebind if our symbol is only invoked
-				// with simple name-only patterns mapped to an argument-free
-				// simple expression.
-				// AND if all arguments are rep-compatible
-				// AND return value too
-				optional<string> source_symname =
-					source_pattern_is_simple_function_name((*i_corresp_ptr)->second.source_pattern);
-				optional<string> sink_symname =
-					sink_expr_is_simple_function_name((*i_corresp_ptr)->second.sink_expr);
-				if (source_symname && sink_symname) 
-				{
-					assert(source_symname == i_wrap->first);
-					definite_member_name source_sym_mn(1, *source_symname);
-					definite_member_name sink_sym_mn(1, *sink_symname);
-					auto source_subprogram = 
-						(*i_corresp_ptr)->second.source->get_ds().toplevel()->visible_resolve(source_sym_mn.begin(), source_sym_mn.end());
-					auto sink_subprogram =
-						(*i_corresp_ptr)->second.sink->get_ds().toplevel()->visible_resolve(sink_sym_mn.begin(), sink_sym_mn.end());
-					assert(source_subprogram->get_tag() == DW_TAG_subprogram
-					 && sink_subprogram->get_tag() == DW_TAG_subprogram);
-					dwarf::spec::abstract_dieset::iterator i_source_arg 
-					 = source_subprogram->children_begin();
-					for (auto i_sink_arg = sink_subprogram->children_begin();
-						i_sink_arg != sink_subprogram->children_end();
-						++i_sink_arg)
-					{
-						if ((*i_sink_arg)->get_tag() == DW_TAG_unspecified_parameters)
-						{
-							// exhausted described sink args at/before exhausting source args
-							assert(false); 
-							// what do we want to do here?
-							// we COULD force a wrap... would that be any good?
-							// we can't really do anything with the arguments in the wrapper
-						}
-						if (i_source_arg == source_subprogram->children_end()
-							|| (*i_source_arg)->get_tag() == DW_TAG_unspecified_parameters)
-						{
-							// reached the last source arg before exhausting sink args
-							//assert(false);
-							// force a wrap here -- will our wrapper take its arg types from the sink?
-							can_simply_rebind = false;
-							break;
-						}
-						shared_ptr<dwarf::spec::formal_parameter_die> source_arg, sink_arg;
-						source_arg = dynamic_pointer_cast<dwarf::spec::formal_parameter_die>
-							(*i_source_arg);
-						assert(source_arg && source_arg->get_type());
-						sink_arg = dynamic_pointer_cast<dwarf::spec::formal_parameter_die>
-							(*i_sink_arg);
-						assert(sink_arg && sink_arg->get_type());
-						if (!source_arg->get_type()->is_rep_compatible(sink_arg->get_type()))
-						{
-							cerr << "Detected that required symbol " << i_wrap->first
-								<< " is not a simple rebinding of a required symbol "
-								<< " because arguments are not rep-compatible." << endl;
-							can_simply_rebind = false;
-							//can't continue
-							break;
-						}
-						else { /* okay, continue */ }
-						
-						++i_source_arg;
-					}
-							
-				}
-				else 
-				{
-					cerr << "Detected that required symbol " << i_wrap->first
-						<< " is not a simple rebinding of a required symbol "
-						<< " because source pattern "
-						<< CCP(TO_STRING_TREE((*i_corresp_ptr)->second.source_pattern))
-						<< " is not a simple function name." << endl;
-					can_simply_rebind = false;
-				}
-				if (sink_symname)
-				{
-					if (symname_bound_to) RAISE((*i_corresp_ptr)->second.sink_expr,
-						"previous event correspondence has bound caller to different symname");
-					else symname_bound_to = sink_symname;
-				}
-				else 
-				{
-					cerr << "Detected that required symbol " << i_wrap->first
-						<< " is not a simple rebinding of a required symbol "
-						<< " because sink pattern "
-						<< CCP(TO_STRING_TREE((*i_corresp_ptr)->second.sink_expr))
-						<< " is not a simple function name." << endl;
-					can_simply_rebind = false;
-				}
-				
-				/* If a given module both requires and provides the same symbol, i.e.
-				 * if we are trying to interpose on an internal reference, we have to
-				 * emit some extra make rules. FIXME: support this! */
-				
-			} // end for each corresp
-
-			// (**WILL THIS WORK in ld?**)
-			// It's an error to have some but not all sources specifyin an arg pattern.
-			// FIXME: check for this
-
-			if (!can_simply_rebind)
-			{
-				wrapped_some = true;
-
-				// tell the linker that we're wrapping this symbol
-				linker_args.push_back("--wrap ");
-				symbols_to_protect.push_back(i_wrap->first);
-				linker_args.push_back(i_wrap->first);
-				
-				// also tell the linker that unprefixed references to the symbol
-				// should go to __real_<sym>
-				// FIXME: can't do this as at the time of processing, there is no
-				// symbol __real_<sym>. Instead must do as a separate stage,
-				// e.g. when building executable.
-				//linker_args << "--defsym " << i_wrap->first 
-				//	<< '=' << "__real_" << i_wrap->first << ' ';
-
-				/* Generate the wrapper */
 				wrap_code.emit_wrapper(i_wrap->first, i_wrap->second);
 			}
-			else
-			{
-				// don't emit wrapper, just use --defsym 
-				if (!symname_bound_to || i_wrap->first != *symname_bound_to)
-				{
-					linker_args.push_back("--defsym ");
-					linker_args.push_back(i_wrap->first  + "=" 
-						// FIXME: if the callee symname is the same as the wrapped symbol,
-						// we should use __real_; otherwise we should use
-						// the plain old callee symbol name. 
-						/*<< "__real_"*/ 
-						+ *symname_bound_to); //i_wrap->first
-				}
-				else { /* do nothing! */ }
-				
-			}
-			wrap_file.flush();
-		} // end for each wrapper
-		
-		// Now output the linker args.
-		// If wrapped some, first add the wrapper as a dependency (and an argument)
-		if (wrapped_some)
-		{
-			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< endl*/;
-			// output the first objcopy
-			out << endl << '\t' << "objcopy ";
-			for (auto i_sym = symbols_to_protect.begin();
-				i_sym != symbols_to_protect.end();
-				++i_sym)
-			{
-				out << "--redefine-sym " << *i_sym << "=__cake_protect_" << *i_sym << " ";
-			}
-			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< endl*/;
-			out << endl << '\t' << "ld -r $(LD_RELOC_FLAGS) -o " << output_module->get_filename() << ' ';
-			for (auto i_linker_arg = linker_args.begin(); 
-				i_linker_arg != linker_args.end();
-				++i_linker_arg)
-			{
-				out << *i_linker_arg << ' ';
-			}
-			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< endl*/;
-			// add the other object files to the input file list
-			for (vector<module_ptr>::iterator i = input_modules.begin();
-				i != input_modules.end(); ++i)
-			{
-				out << (*i)->get_filename() << ' ';
-			}
-			// output the second objcopy
-			out << endl << '\t' << "objcopy ";
-			for (auto i_sym = symbols_to_protect.begin();
-				i_sym != symbols_to_protect.end();
-				++i_sym)
-			{
-				out << "--redefine-sym __cake_protect_" << *i_sym << "=" << *i_sym << " ";
-			}
-			out << output_module->get_filename() << endl;
-		}  // Else just output the args
-		else 
-		{
-			out << endl << '\t' << "ld -r $(LD_RELOC_FLAGS) -o " << output_module->get_filename();
-			for (auto i_linker_arg = linker_args.begin(); 
-				i_linker_arg != linker_args.end();
-				++i_linker_arg)
-			{
-				out << *i_linker_arg << ' ';
-			}
-			out << ' ';
-			// add the other object files to the input file list
-			for (vector<module_ptr>::iterator i = input_modules.begin();
-				i != input_modules.end(); i++)
-			{
-				out << (*i)->get_filename() << ' ';
-			}
-			out << endl;
 		}
 	}
 	
@@ -3459,12 +3548,12 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			&& sink_concrete_type->get_artificial() && *sink_concrete_type->get_artificial()))
 		{
 			cerr << "Creating virtual value correspondence from " 
-				<< wrap_code.get_type_name(source_data_type)
-				<< " to " << wrap_code.get_type_name(sink_data_type)
+				<< get_type_name(source_data_type)
+				<< " to " << get_type_name(sink_data_type)
 				<< endl;
 			val_corresps.insert(make_pair(key,
 				dynamic_pointer_cast<value_conversion>(
-					make_shared<virtual_value_conversion>(wrap_code, wrap_code.m_out, basic))));
+					make_shared<virtual_value_conversion>(wrap_code, basic))));
 			return;
 		}
 	
@@ -3472,20 +3561,20 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		if (!(source_concrete_type && compiler.cxx_is_complete_type(source_concrete_type))
 		|| !(sink_concrete_type && compiler.cxx_is_complete_type(sink_concrete_type)))
 		{
-			cerr << "Warning: skipping value conversion from " << wrap_code.get_type_name(source_data_type)
-				<< " to " << wrap_code.get_type_name(sink_data_type)
+			cerr << "Warning: skipping value conversion from " << get_type_name(source_data_type)
+				<< " to " << get_type_name(sink_data_type)
 				<< " because one or other is an incomplete type." << endl;
 			//m_out << "// (skipped because of incomplete type)" << endl << endl;
 			val_corresps.insert(make_pair(key, 
 				dynamic_pointer_cast<value_conversion>(
-					make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
+					make_shared<skipped_value_conversion>(wrap_code, 
 					basic, string("incomplete type")))));
 			return;
 		}
 		
 		// now we can compute the concrete type names 
-		auto from_typename = wrap_code.get_type_name(source_concrete_type);
-		auto to_typename = wrap_code.get_type_name(sink_concrete_type);
+		auto from_typename = get_type_name(source_concrete_type);
+		auto to_typename = get_type_name(sink_concrete_type);
 
 		// skip pointers and references
 		if (source_concrete_type->get_tag() == DW_TAG_pointer_type
@@ -3499,7 +3588,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			//m_out << "// (skipped because of pointer or reference type)" << endl << endl;
 			val_corresps.insert(make_pair(key, 
 				dynamic_pointer_cast<value_conversion>(
-					make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
+					make_shared<skipped_value_conversion>(wrap_code, 
 					basic, "pointer or reference type"))));
 			return;
 		}
@@ -3513,7 +3602,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			//m_out << "// (skipped because of subroutine type)" << endl << endl;
 			val_corresps.insert(make_pair(key, 
 				dynamic_pointer_cast<value_conversion>(
-					make_shared<skipped_value_conversion>(wrap_code, wrap_code.m_out, 
+					make_shared<skipped_value_conversion>(wrap_code, 
 					basic, "subroutine type"))));
 			return;
 		}
@@ -3537,7 +3626,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				val_corresps.insert(make_pair(key, 
 					init_candidate = dynamic_pointer_cast<value_conversion>(
 						make_shared<skipped_value_conversion>(
-							wrap_code, wrap_code.m_out, basic, 
+							wrap_code,basic, 
 							"rep-compatibility and C++-assignability"
 						)
 					)
@@ -3599,7 +3688,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					val_corresps.insert(make_pair(key, 
 						init_candidate = dynamic_pointer_cast<value_conversion>(
 							make_shared<structural_value_conversion>(
-								wrap_code, wrap_code.m_out, basic, false, init_is_identical
+								wrap_code, basic, false, init_is_identical
 							)
 						)
 					));
@@ -3611,7 +3700,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 						val_corresps.insert(make_pair(key, 
 							init_candidate = dynamic_pointer_cast<value_conversion>(
 								make_shared<structural_value_conversion>(
-									wrap_code, wrap_code.m_out, new_basic, true, init_is_identical
+									wrap_code, new_basic, true, init_is_identical
 								)
 							)
 						));
@@ -3624,7 +3713,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					val_corresps.insert(make_pair(key, 
 						init_candidate = dynamic_pointer_cast<value_conversion>(
 							make_shared<primitive_value_conversion>(
-								wrap_code, wrap_code.m_out, basic, false, init_is_identical
+								wrap_code, basic, false, init_is_identical
 							)
 						)
 					));
@@ -3636,7 +3725,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 						val_corresps.insert(make_pair(key, 
 							init_candidate = dynamic_pointer_cast<value_conversion>(
 								make_shared<primitive_value_conversion>(
-									wrap_code, wrap_code.m_out, new_basic, true, init_is_identical
+									wrap_code, new_basic, true, init_is_identical
 								)
 							)
 						));
@@ -3659,7 +3748,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			//emit_reinterpret_conversion_body(source_data_type, sink_data_type);
 			val_corresps.insert(make_pair(key, 
 				init_candidate = dynamic_pointer_cast<value_conversion>(
-					make_shared<reinterpret_value_conversion>(wrap_code, wrap_code.m_out, 
+					make_shared<reinterpret_value_conversion>(wrap_code, 
 					basic))));
 		}
 		

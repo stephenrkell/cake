@@ -74,6 +74,12 @@ namespace cake
 		environment(const environment& c) : super(c) {}
 	};
 	std::ostream& operator<<(std::ostream& s, const environment& env);
+	struct output_arginfo_t
+	{
+		string argname;
+		shared_ptr<type_die> t;
+		optional<string> tn; // a boost::optional typename, if we use it
+	};
 	struct post_emit_status
 	{
 		string result_fragment;
@@ -82,11 +88,8 @@ namespace cake
 		optional<  // many expressions do not return a multivalue, but if they do...
 			pair<  // it is a pair of
 				string,  // the C++ name of the structure
-				vector<  // and a vector 
-					 pair<  // of pairs
-					 	string,  // describing the C++ field names
-						shared_ptr<type_die>  // and the DWARF types
-					> // of each component value
+				vector<  // and a vector describing the C++ field names and the DWARF types
+					output_arginfo_t// of each component value
 				> 
 			> 
 		> multivalue;
@@ -172,7 +175,7 @@ namespace cake
 		friend class link_derivation;
 	protected:
 		wrapper_file& w;
-		srk31::indenting_ostream& m_out;
+		srk31::indenting_ostream& m_out();
 		boost::shared_ptr<dwarf::spec::type_die> source_concrete_type;
 		boost::shared_ptr<dwarf::spec::type_die> sink_concrete_type;
 		std::string from_typename;
@@ -181,8 +184,8 @@ namespace cake
 		void emit_preamble();
 		void emit_postamble()
 		{
-        	m_out.dec_level();
-        	m_out << "}" << std::endl;
+        	m_out().dec_level();
+        	m_out() << "}" << std::endl;
 		}
 		
 	protected:
@@ -198,7 +201,6 @@ namespace cake
 		                         boost::shared_ptr<dwarf::spec::type_die>
 								> dep;
 		value_conversion(wrapper_file& w,
-			srk31::indenting_ostream& out,
 			const basic_value_conversion& basic);
 		virtual void emit() { emit_preamble(); emit_body(); emit_postamble(); }
 		virtual void emit_body() = 0;
@@ -223,14 +225,13 @@ namespace cake
 		const std::string reason;
 	public:
 		skipped_value_conversion(wrapper_file& w, 
-			srk31::indenting_ostream& out, 
 			const basic_value_conversion& basic, const std::string& reason) 
-		: value_conversion(w, out, basic), reason(reason) {}
+		: value_conversion(w, basic), reason(reason) {}
 		
 		void emit() { emit_body(); }
 		void emit_body()
 		{
-			m_out << "// (skipped because of " << reason << ")" << std::endl << std::endl;
+			m_out() << "// (skipped because of " << reason << ")" << std::endl << std::endl;
 		}
 		void emit_forward_declaration() {}
 	};
@@ -240,9 +241,8 @@ namespace cake
 	{
 	public:
 		reinterpret_value_conversion(wrapper_file& w,
-			srk31::indenting_ostream& out, 
 			const basic_value_conversion& basic) 
-		: value_conversion(w, out, basic) {}
+		: value_conversion(w, basic) {}
 		
 		void emit_body();
 	};
@@ -252,7 +252,6 @@ namespace cake
 	{
 	public:
 		primitive_value_conversion(wrapper_file& w,
-			srk31::indenting_ostream& out, 
 			const basic_value_conversion& basic,
 			bool make_init_conversion,
 			bool& out_init_and_update_are_identical);
@@ -330,7 +329,6 @@ namespace cake
 
 	public:
 		structural_value_conversion(wrapper_file& w,
-			srk31::indenting_ostream& out, 
 			const basic_value_conversion& basic,
 			bool make_init_conversion,
 			bool& out_init_and_update_are_identical);
@@ -349,11 +347,10 @@ namespace cake
 				);
 	public:
 		virtual_value_conversion(wrapper_file& w,
-			srk31::indenting_ostream& out, 
 			const basic_value_conversion& basic,
 			bool dummy = false) 
-		: value_conversion(w, out, basic), 
-		  structural_value_conversion(w, out, basic, false, dummy) {}
+		: value_conversion(w, basic), 
+		  structural_value_conversion(w, basic, false, dummy) {}
 		
 		void emit_body();
 		vector<dep> get_dependencies()

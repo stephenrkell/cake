@@ -38,7 +38,7 @@ namespace cake
         cxx_target& compiler;
         link_derivation& m_d;
         request& m_r;
-        indenting_ostream& m_out;
+        indenting_ostream *p_out;
         const string ns_prefix;
         int binding_count;
 
@@ -74,14 +74,14 @@ namespace cake
 //             	<< "_" << binding.first;
 //             return ident_str.str();
 //         }
-		
-		typedef codegen_context context;
 		string get_type_name(
 			shared_ptr<spec::type_die> t/*,
-				const std::string& namespace_prefix*/);
+				const std::string& namespace_prefix*/) { return m_d.get_type_name(t); }
 		string get_type_name_prefix(
 			shared_ptr<spec::type_die> t/*,
-				const std::string& namespace_prefix*/);
+				const std::string& namespace_prefix*/) { return m_d.get_type_name_prefix(t); }
+		
+		typedef codegen_context context;
 		string basic_name_for_argnum(int argnum);
 	private:
 		
@@ -237,7 +237,14 @@ namespace cake
 			antlr::tree::Tree *call_expr/*,
 			boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type*/);
 		
-		optional< pair<string, string> >
+		struct out_arg_info
+		{
+			string decl;
+			string cakename;
+			optional<unsigned> is_array;
+		};
+		
+		optional< out_arg_info >
 		is_out_arg_expr(
 			antlr::tree::Tree *argExpr, 
 			shared_ptr<formal_parameter_die> p_fp,
@@ -293,10 +300,15 @@ namespace cake
 			bool is_init);
 
     public:
-        wrapper_file(link_derivation& d, cxx_target& c, indenting_ostream& out) 
+        wrapper_file(link_derivation& d, cxx_target& c) 
         : 	compiler(c),
-        	m_d(d), m_r(d.r), m_out(out), ns_prefix("cake::" + m_d.namespace_name()), 
+        	m_d(d), m_r(d.r), p_out(&srk31::indenting_cerr), ns_prefix(m_d.get_ns_prefix()), 
             binding_count(0) {}
+		
+		void set_output_stream(srk31::indenting_ostream& s)
+		{
+			p_out = &s;
+		}
 
 		/* Main interface. Note that
          * - one wrapper may collect together logic from several interface pairings! 

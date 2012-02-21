@@ -1248,7 +1248,7 @@ namespace cake
 	return_concrete:
 		static map<
 			pair<module_ptr, dwarf::tool::cxx_compiler *>,
-			map< dwarf::tool::cxx_compiler::base_type, shared_ptr<base_type_die> >
+			map< dwarf::tool::cxx_compiler::base_type, spec::abstract_dieset::iterator >
 		> cache;
 		/* Now we handle base types. */
 		if (concrete_t->get_tag() != DW_TAG_base_type) return concrete_t;
@@ -1280,7 +1280,7 @@ namespace cake
 						auto result = our_cache.insert(
 							make_pair(
 								compiler_base_t,
-								vis_as_base
+								vis_as_base->iterator_here()
 							)
 						);
 						assert(result.second);
@@ -1291,10 +1291,12 @@ namespace cake
 				assert(i_vis != visible_grandchildren_seq->end());
 			}
 			assert(found_in_cache != our_cache.end());
+			auto found_as_type = dynamic_pointer_cast<type_die>(*found_in_cache->second);
+			assert(found_as_type);
 			cerr << "Canonicalised base type " << concrete_t->summary() 
-				<< " to " << found_in_cache->second->summary() 
+				<< " to " << found_as_type->summary() 
 				<< " (in compiler: " << compiler_base_t << ")" << endl;
-			return dynamic_pointer_cast<type_die>(found_in_cache->second);
+			return found_as_type;
 		}
 	}
 	

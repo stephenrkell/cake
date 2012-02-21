@@ -43,10 +43,13 @@ namespace cake
 		std::string unescaped_filename = unescape_string_lit(ocStrings.second);
 
 		// creating the derivation will create the output module
-		shared_ptr<derivation> pd = create_derivation(std::string(CCP(GET_TEXT(id))), 
+		string module_name = CCP(GET_TEXT(id));
+		shared_ptr<derivation> pd = create_derivation(module_name, 
 			unescaped_filename, derivedObjectExpression);
-		derivation_tbl.push_back(
-			pd
+		derivation_tbl.insert(make_pair(
+				module_name,
+				pd
+			)
 		); 
 	}
 
@@ -82,6 +85,40 @@ namespace cake
 					*this, t, module_name, output_filename);
 			}
 			default: return shared_ptr<derivation>();
+		}
+	}
+	
+	void derivation::fix_input_modules()
+	{
+		for (auto i_input = input_modules.begin();
+			i_input != input_modules.end();
+			++i_input)
+		{
+			if (dynamic_pointer_cast<derived_module>(*i_input))
+			{
+				auto found_derived_module
+				 = r.module_inverse_tbl.find(*i_input);
+				assert(found_derived_module != r.module_inverse_tbl.end());
+				auto found_input_derivation = r.derivation_tbl.find(
+					found_derived_module->second);
+
+				//std::find_if(
+				//	derivation_tbl.begin(),
+				//	derivation_tbl.end()
+				//	[found_derived_module](const pair<string, shared_ptr<derivation> >& p)
+				//	{ return p.second == found_derived_module->first find(
+				//	found_derived_module->first);
+				if (found_input_derivation != r.derivation_tbl.end())
+				{
+					found_input_derivation->second->fix_input_modules();
+					found_input_derivation->second->fix_module();
+				}
+			}
+			//cerr << "In derivation building " 
+			//	<< this->get_emitted_sourcefile_name()
+			//	<< " input module " << r.module_inverse_tbl[*i_input]
+			//	<< " has been fixed with contents as follows." << endl
+			//	<< (*i_input)->get_ds();
 		}
 	}
 }

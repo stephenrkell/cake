@@ -33,7 +33,7 @@ default: cake-generated.mk $(BASENAME)
 $(BASENAME): $(BASENAME).o
 
 # HACK: workaround missing symbol unbinding
-$(BASENAME): $(BASENAME).o
+$(BASENAME): $(BASENAME).o # FIXME: do the PIPESTATUS job on the line below
 	objdump -t $(BASENAME).o | grep __real_ | tr -s '[:blank:]' '\t' | cut -f6 | sed 's/__real_\(.*\)/-Wl,--defsym,\1=__real_\1/' | xargs \
 	$(CXX) -o $(BASENAME) $(BASENAME).o $(LDFLAGS) $(LDLIBS)
 
@@ -41,10 +41,10 @@ $(BASENAME): $(BASENAME).o
 # and appear to be up-to-date, preventing re-running of Cake. FIXME: shouldn't Make handle
 # this problem itself? I think the PIPESTATUS fix may already handle this case.
 ifeq ($(DEBUG),)
-cake-generated.mk $(BASENAME)_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
+cake-generated.mk: $(BASENAME).cake $(CAKE) $(OBJS)
 	bash -c '( $(CAKE) $(BASENAME).cake -o cake-generated.mk 1>&2 2>&3 ) 3>&1 | tee cake.log 1>&2; test "$${PIPESTATUS[*]}" == "0 0"' || (rm -f cake-generated.mk; false)
 else
-cake-generated.mk $(BASENAME)_wrap.cpp: $(BASENAME).cake $(CAKE) $(OBJS)
+cake-generated.mk: $(BASENAME).cake $(CAKE) $(OBJS)
 	gdb --eval-command "break main" --eval-command "run $(BASENAME).cake -o $@" $(CAKE) #> "$@"
 endif
 

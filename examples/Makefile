@@ -5,7 +5,7 @@ run-all:
 	for ex in $(examples); do $(MAKE) run-$$ex; done 2>Results/run-all-stderr.log | tee Results/run-all-stdout.log
 	
 run-%:
-	ex="$*"; saveddir=$$(pwd); mkdir -p $$saveddir/Results; cd $$ex && make || break; \
+	ex="$*"; saveddir=$$(pwd); mkdir -p $$saveddir/Results; cd $$ex && make clean && make || exit 42; \
 	LD_PRELOAD=$(PMIRROR_LIB)/libheap_index_fast_hooks.so ./$$ex | \
-	diff -u /dev/fd/3 /dev/fd/0 3<expected.out > $$saveddir/Results/$$ex.diff; \
+	diff -u `readlink -f expected.out` /dev/fd/0 > $$saveddir/Results/$$ex.diff; \
 	cd "$$saveddir"
