@@ -165,7 +165,7 @@ namespace cake
 	);
 	
 	bool stub_is_sane(antlr::tree::Tree *expr, module_ptr p_mod);
-	
+
     //optional<definite_member_name> 
     //dwarf_fq_member_name(dwarf::abstract::Die_abstract_base<>& d);
         

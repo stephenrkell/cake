@@ -1033,6 +1033,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			// else we use the "to" argument
 			/* IF (and only if) we are going to override this guy, 
 			 * hack its static type to be more precise than void*. 
+			 * (WHY not do this all the time?)
 			 * If we are dealing with the outward (i.e. "in" values) case, then we 
 			 * have to look ahead to the inward ("out" values),
 			 * because if we have an output-only rule, 
@@ -1047,7 +1048,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					));
 			auto ifaces = link_derivation::sorted(new_module, representative_binding.second.valid_in_module);
 			bool old_module_is_first = (old_module == ifaces.first);
-			if (will_override)
+			if (/*will_override*/ is_a_pointer )
 			{
 				*p_out << "reinterpret_cast< ";
 				// the "more precise type" is the corresponding type
@@ -1125,7 +1126,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			if (is_a_pointer && !is_virtual) *p_out << ")";
 			if (reuse_old_variable) *p_out << ", &" << *reuse_old_variable;
 			close_value_conversion();
-			if (will_override) *p_out << ")";
+			if (/* will_override */ is_a_pointer) *p_out << ")";
 			*p_out << ";" << std::endl;
 			
 			// for each Cake name bound to the current cxxname,
@@ -3056,7 +3057,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				}
 				
 				// now we're definitely an optional arg expr 
-				*p_out << decl_and_cakename->decl << /*" " << ident << ";" <<*/ endl;
+				*p_out << decl_and_cakename->decl << " " << ident << ";" << endl;
 				new_bindings.insert(make_pair(decl_and_cakename->cakename, (bound_var_info) {
 					ident,
 					ident,
@@ -3093,7 +3094,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 						get_type_name(fp_pointer_type->get_type()),
 						string("__cake_" + ident)
 					};
-					*p_out << decl_and_cakename->decl << /*" " << ident << ";" << */ endl;
+					*p_out << decl_and_cakename->decl << " " << ident << ";" << endl;
 					new_bindings.insert(make_pair(decl_and_cakename->cakename, (bound_var_info) {
 						ident,
 						ident,
@@ -3135,7 +3136,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		if (callee_subprogram->get_type() && callee_subprogram->get_type()->get_concrete_type())
 		{
 			output_arginfo.push_back(
-				(output_arginfo_t){"__cake_retval", callee_subprogram->get_type()}
+				(output_arginfo_t){"__cake_retval", callee_subprogram->get_type() }
 			);
 		}
 		*p_out << "// begin multiple-outputs data type for the function call" << endl;
@@ -3165,7 +3166,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 						name = s.str();
 					}
 					output_arginfo.push_back(
-						(output_arginfo_t){ name, pt->get_type() }
+						(output_arginfo_t){ name, pt->get_type(), *i_arg }
 					);
 					output_argnums[name] = argnum;
 				}
@@ -3527,6 +3528,35 @@ assert(false && "disabled support for inferring positional argument mappings");
 		spec::subprogram_die::formal_parameter_iterator i_fp
 		 = callee_subprogram->formal_parameter_children_begin();
 		bool ran_out_of_fps = false;
+		
+		auto emit_arg_expr_maybe_with_cast
+		 = [&p_out, &compiler, this](shared_ptr<type_die> p_t, string expr) {
+		 	bool inserting_cast = false;
+			if (p_t 
+				 && p_t->get_concrete_type()
+				 && p_t->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
+			{
+				inserting_cast = true;
+				// HACK: don't use reinterpret_cast, because sometimes we want this case
+				// to convert unspecified_wordsize_type --> void *,
+				// and we can't do that with reinterpret,
+				// but can do it with C-style casts
+				// (with the help of the "operator void *" we defined).
+//				*p_out << "reinterpret_cast< ";
+				*p_out << "((";
+				auto declarator = compiler.cxx_declarator_from_type_die(p_t,
+					optional<const string&>(), true,
+					get_type_name_prefix(p_t) + "::", false);
+				*p_out << declarator.first;
+//				*p_out << ">(";
+				*p_out << ")";
+			}
+			
+			*p_out << expr;
+			
+			if (inserting_cast) *p_out << ")";
+		};
+		
 		for (auto i_result = arg_results.begin(); 
 			i_result != arg_results.end(); ++i_result, ++i_fp)
 		{
@@ -3540,29 +3570,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 				<< (name_in_callee ? *name_in_callee : "(no name)")
 				<< " */ ";
 			// if the callee argument has a pointer type, we insert a cast
-			bool inserting_cast = false;
-			if (!ran_out_of_fps && (*i_fp)->get_type()
-				 && (*i_fp)->get_type()->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
-			{
-				inserting_cast = true;
-				// HACK: don't use reinterpret_cast, because sometimes we want this case
-				// to convert unspecified_wordsize_type --> void *,
-				// and we can't do that with reinterpret,
-				// but can do it with C-style casts
-				// (with the help of the "operator void *" we defined).
-//				*p_out << "reinterpret_cast< ";
-				*p_out << "((";
-				auto declarator = compiler.cxx_declarator_from_type_die((*i_fp)->get_type(),
-					optional<const string&>(), true,
-					get_type_name_prefix((*i_fp)->get_type()) + "::", false);
-				*p_out << declarator.first;
-//				*p_out << ">(";
-				*p_out << ")";
-			}
-			
-			*p_out << i_result->result_fragment;
-			
-			if (inserting_cast) *p_out << ")";
+			emit_arg_expr_maybe_with_cast(
+				(!ran_out_of_fps && (*i_fp)->get_type())
+					? (*i_fp)->get_type() 
+					: shared_ptr<type_die>(),
+				i_result->result_fragment
+			);
 		}
 		*p_out << ')';
 		p_out->dec_level();
@@ -3593,7 +3606,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			*p_out << out_obj_ident << " = (" << out_type_tag << "){ " << endl;
 			for (auto i_arginfo = output_arginfo.begin(); i_arginfo != output_arginfo.end(); ++i_arginfo)
 			{
-				if (i_arginfo != output_arginfo.begin()) *p_out << ", ";
+				if (i_arginfo != output_arginfo.begin()) *p_out << ", " << endl;
 				// output an lvalue holding the result
 				if (i_arginfo->argname == "__cake_retval") *p_out << raw_result_ident;
 				else
@@ -3610,9 +3623,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 					// boost::optional constructor conversion,
 					// so we have to guide it a bit. 
 					
-					if (i_arginfo->tn) *p_out << *i_arginfo->tn << "( ";
-					*p_out << "*" << arg_results_by_callee_name[i_arginfo->argname];
-					if (i_arginfo->tn) *p_out << *i_arginfo->tn << " )";
+					if (i_arginfo->tn) *p_out << *i_arginfo->tn << "( *";
+					emit_arg_expr_maybe_with_cast(
+						// this func needs the type of the fp -- will be noop for retval
+						i_arginfo->p_fp ? i_arginfo->p_fp->get_type() : shared_ptr<type_die>(),
+						arg_results_by_callee_name[i_arginfo->argname]
+					);
+					if (i_arginfo->tn) *p_out << " )";
 				}
 			}
 			*p_out << " }";

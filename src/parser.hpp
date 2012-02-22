@@ -41,6 +41,8 @@ namespace tree {
 } }
 
 #include <sstream>
+#include <vector>
+using std::vector;
 #include "util.hpp"
 #define GET_TEXT(node) (node)->getText((node))
 #define TO_STRING(node) (node)->toString((node))
@@ -223,6 +225,21 @@ namespace cake {
             return s.str();
         }
     };
+	template <typename Func>
+	void walk_ast_depthfirst(
+		antlr::tree::Tree *t, 
+		std::vector<antlr::tree::Tree *>& out,
+		const Func& is_interesting)
+	{
+		if (t)
+		{
+			if (is_interesting(t)) out.push_back(t);
+			for (unsigned i = 0U; i < GET_CHILD_COUNT(t); ++i)
+			{
+				walk_ast_depthfirst(GET_CHILD(t, i), out, is_interesting);
+			}
+		}
+	}	
 }
 
 #endif

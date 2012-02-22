@@ -16,7 +16,6 @@ namespace cake
 	using boost::optional;
 	using boost::shared_ptr;
 	using namespace dwarf;
-	using boost::shared_ptr;
 	
 	class wrapper_file;
 
@@ -77,7 +76,8 @@ namespace cake
 	struct output_arginfo_t
 	{
 		string argname;
-		shared_ptr<type_die> t;
+		shared_ptr<type_die> t; // the type of the *output value*, not the pointer (if it's an arg)
+		shared_ptr<spec::formal_parameter_die> p_fp; // optional
 		optional<string> tn; // a boost::optional typename, if we use it
 	};
 	struct post_emit_status

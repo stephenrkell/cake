@@ -1252,6 +1252,58 @@ namespace cake
 			target_field_selectors.push_back(selector);
 		}
 		
+		/* We build the set of idents used in source and sink stubs, so that we can build
+		 * a more minimal source-side environment. This is a bit of a HACK -- we
+		 * should really do a precise analysis for each rule.*/
+		set<string> source_side_idents_referenced;
+		vector<antlr::tree::Tree *> source_side_ident_contexts;
+		auto grab_idents = [&source_side_idents_referenced](antlr::tree::Tree *t) {
+			if (GET_TYPE(t) == CAKE_TOKEN(IDENT))
+			{
+				source_side_idents_referenced.insert(
+					unescape_ident(CCP(GET_TEXT(t)))
+				);
+				return true;
+			}
+			return false; 
+		};
+		for (auto i_explicit_toplevel = explicit_toplevel_mappings_vec.begin();
+				i_explicit_toplevel != explicit_toplevel_mappings_vec.end();
+				++i_explicit_toplevel)
+		{
+			// the ident-grabber function
+			walk_ast_depthfirst(
+				i_explicit_toplevel->second->stub, 
+				source_side_ident_contexts, 
+				grab_idents
+			);
+			walk_ast_depthfirst(
+				i_explicit_toplevel->second->pre_stub, 
+				source_side_ident_contexts, 
+				grab_idents
+			);
+			walk_ast_depthfirst(
+				i_explicit_toplevel->second->post_stub, 
+				source_side_ident_contexts, 
+				grab_idents
+			);
+		}
+		// Now do name-matched
+		for (auto i_name_matched = name_matched_mappings.begin();
+			i_name_matched != name_matched_mappings.end();
+			++i_name_matched) source_side_idents_referenced.insert(i_name_matched->first);
+		// Now do overall stubs
+		walk_ast_depthfirst(
+			this->source_infix_stub, 
+			source_side_ident_contexts, 
+			grab_idents
+		);
+		walk_ast_depthfirst(
+			this->sink_infix_stub, 
+			source_side_ident_contexts, 
+			grab_idents
+		);
+		
 		/* 1. Build an environment containing all the source-side fields that these depend on. */
 		wrapper_file::environment basic_env;
 		// insert the whole source object, bound by magic "__cake_from" ident
@@ -1274,14 +1326,41 @@ namespace cake
 				++i_field)
 		{
 			assert((*i_field)->get_name());
+			string field_name = *(*i_field)->get_name();
+			shared_ptr<type_die> field_type = (*i_field)->get_type();
+			
+			/* We can skip fields that are not referenced anywhere. */
+			if (source_side_idents_referenced.find(field_name)
+				 == source_side_idents_referenced.end()) continue;
+			
+			/* We only crossover if the field's type has a corresponding type
+			 * on the other side (or is a pointer, or array whose ultimate element type
+			 * has a corresponding type). */
+			auto ifaces
+			 = link_derivation::sorted(sink, source);
+			auto source_type_has_correspondence = [this, ifaces](shared_ptr<type_die> t) {
+				return this->w.m_d.val_corresp_supergroups[ifaces].find(
+				 	make_pair(this->source,
+						canonicalise_type(t, this->source, w.compiler)))
+						!= w.m_d.val_corresp_supergroups[ifaces].end();
+			};
+			
+			bool should_crossover = 
+				field_type->get_concrete_type()
+				&& ( field_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type
+				 || (field_type->get_concrete_type()->get_tag() == DW_TAG_array_type
+				   && source_type_has_correspondence(
+				   		dynamic_pointer_cast<spec::array_type_die>(field_type->get_concrete_type())
+							->ultimate_element_type()))
+				 || source_type_has_correspondence(field_type->get_concrete_type()));
 
-			cerr << "adding name " << *(*i_field)->get_name() << endl;
-			basic_env.insert(make_pair(*(*i_field)->get_name(),
+			cerr << "adding name " << field_name << endl;
+			basic_env.insert(make_pair(field_name,
 				(wrapper_file::bound_var_info) {
-					string("__cake_nonconst_from.") + *(*i_field)->get_name(), // cxx name
-					"__cake_nonconst_from." + *(*i_field)->get_name(), // typeof
+					string("__cake_nonconst_from.") + field_name, // cxx name
+					"__cake_nonconst_from." + field_name, // typeof
 					source_module,
-					false // was true / "do not crossover!" -- WHY NOT? "once only"/balanced semantics?
+					!should_crossover // was true / "do not crossover!" -- WHY NOT? "once only"/balanced semantics?
 				}));
 		}
 		// environment complete for now; create a context out of this environment

@@ -489,22 +489,6 @@ namespace cake
 		}
 	}
 	
-	template <typename Func>
-	void walk_ast_depthfirst(
-		antlr::tree::Tree *t, 
-		std::vector<antlr::tree::Tree *>& out,
-		const Func& is_interesting)
-	{
-		if (t)
-		{
-			if (is_interesting(t)) out.push_back(t);
-			for (unsigned i = 0U; i < GET_CHILD_COUNT(t); ++i)
-			{
-				walk_ast_depthfirst(GET_CHILD(t, i), out, is_interesting);
-			}
-		}
-	}
-	
 	void link_derivation::merge_implicit_dwarf_info()
 	{
 		// we walk various parts of the derivation AST and look for
@@ -1677,70 +1661,17 @@ namespace cake
 			 * given second, in first, 1<--2
 			 * given first, in second, 1-->2
 			 * given first, in second, 1<--2 */
-				wrap_file << "// unspecified_wordsize_type correspondences -- defined for each module" << endl <<
-				"    template <>"
-<< endl << "    struct corresponding_type_to_second<" 
+				string typedef_name
+				 = r.module_inverse_tbl[i_pair->first] 
+				 	+ "_" + r.module_inverse_tbl[i_pair->second] 
+					+ "_pair";
+				wrap_file << "// default corresponding_type specializations " << endl <<
+				"    typedef "
 << endl << "        component_pair<" 
 << endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
-<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
-                      << " ::cake::unspecified_wordsize_type, "
-                      //<< "0, " // RuleTag
-                      << "true" << ">" // DirectionIsFromSecondToFirst
-<< endl << "    {"
-<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_first;"
-<< endl << "         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags {"
-<< endl << "             __cake_default = 0         "
-<< endl << "         }; };"
-<< endl << "    };"
-<< endl;
-				wrap_file << 
-				"    template <>"
-<< endl << "    struct corresponding_type_to_first<" 
-<< endl << "        component_pair<" 
-<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, "
-<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, " 
-                      << " ::cake::unspecified_wordsize_type, " 
-                      //<< "0, " // RuleTag
-                      << "false" << ">" // DirectionIsFromFirstToSecond
-<< endl << "    {"
-<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_second;"
-<< endl << "         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags {"
-<< endl << "             __cake_default = 0         "
-<< endl << "         }; };"
-<< endl << "    };"
-<< endl;
-				wrap_file <<
-				"    template <>"
-<< endl << "    struct corresponding_type_to_second<" 
-<< endl << "        component_pair<" 
-<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, " 
-<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, "
-                      << " ::cake::unspecified_wordsize_type, "
-                      //<< "0, " // RuleTag
-                      << "false" << ">" // DirectionIsFromSecondToFirst
-<< endl << "    {"
-<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_first;"
-<< endl << "         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags {"
-<< endl << "             __cake_default = 0         "
-<< endl << "         }; };"
-<< endl << "    };"
-<< endl;
-				wrap_file << 
-				"    template <>"
-<< endl << "    struct corresponding_type_to_first<" 
-<< endl << "        component_pair<" 
-<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->first] << "::marker, " 
-<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker>, "
-                      << " ::cake::unspecified_wordsize_type, "
-                      //<< "0, " // RuleTag
-                      << "true" << ">" // DirectionIsFromFirstToSecond
-<< endl << "    {"
-<< endl << "         typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_second;"
-<< endl << "         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags {"
-<< endl << "             __cake_default = 0         "
-<< endl << "         }; };"
-<< endl << "    };"
-<< endl;
+<< endl << "            " << namespace_name() << "::" << r.module_inverse_tbl[i_pair->second] << "::marker> "
+				<< typedef_name << ";" << endl
+				<< "default_corresponding_type_specializations(" << typedef_name << ");" << endl;
 			//auto all_value_corresps = val_corresps.equal_range(*i_pair);
 			auto all_value_corresp_groups = val_corresp_groups[*i_pair];
 

@@ -2,6 +2,7 @@ extern "C" {
 #include "repman.h"
 }
 #include "runtime.hpp"
+#include <srk31/array.hpp>
 #include <boost/optional.hpp>
 #include <boost/type_traits/remove_const.hpp>
 #include <boost/type_traits/remove_reference.hpp>
@@ -10,31 +11,135 @@ extern "C" {
     template <
         typename ComponentPair, 
         typename InFirst, 
-//        int RuleTag,
         bool DirectionIsFromFirstToSecond
     > struct corresponding_type_to_first
     {}; /* we specialize this for various InSeconds */ 
     template <
         typename ComponentPair, 
         typename InSecond, 
-//        int RuleTag,
         bool DirectionIsFromSecondToFirst
     > struct corresponding_type_to_second
     {}; /* we specialize this for various InFirsts */ 
+	
+	// the pointer specializations
+	// FIXME: instead of "void *", is there a sane way of referencing a
+	// corresponding type as the type of the ptr? 
     template <
         typename ComponentPair, 
-        typename InFirstIsAPtr, 
-//        int RuleTag,
+        typename InFirstPtrTarget, 
         bool DirectionIsFromFirstToSecond
-    > struct corresponding_type_to_first <ComponentPair, InFirstIsAPtr*, /*RuleTag, */ DirectionIsFromFirstToSecond>
+    > struct corresponding_type_to_first <ComponentPair, InFirstPtrTarget*, DirectionIsFromFirstToSecond>
     { typedef void *__cake_default_to___cake_default_in_second; }; /* we specialize this for various InSeconds */ 
     template <
         typename ComponentPair, 
-        typename InSecondIsAPtr, 
-//        int RuleTag,
+        typename InSecondPtrTarget, 
         bool DirectionIsFromSecondToFirst
-    > struct corresponding_type_to_second<ComponentPair, InSecondIsAPtr*, /*RuleTag, */ DirectionIsFromSecondToFirst> 
+    > struct corresponding_type_to_second<ComponentPair, InSecondPtrTarget*, DirectionIsFromSecondToFirst> 
     { typedef void *__cake_default_to___cake_default_in_first; }; /* we specialize this for various InFirsts */ 
+	
+	// the array specializations
+    template <
+        typename ComponentPair, 
+        typename InFirstArrayEl, 
+		int Dim,
+        bool DirectionIsFromFirstToSecond
+    > struct corresponding_type_to_first <ComponentPair, InFirstArrayEl[Dim], DirectionIsFromFirstToSecond>
+    { typedef 
+		typename corresponding_type_to_first<
+			ComponentPair, 
+			InFirstArrayEl, 
+			DirectionIsFromFirstToSecond
+			>::__cake_default_to___cake_default_in_second __cake_default_to___cake_default_in_second[Dim];
+	}; /* we specialize this for various InSeconds */ 
+    template <
+        typename ComponentPair, 
+        typename InSecondArrayEl, 
+		int Dim,
+        bool DirectionIsFromSecondToFirst
+    > struct corresponding_type_to_second<ComponentPair, InSecondArrayEl[Dim], DirectionIsFromSecondToFirst> 
+    { typedef 
+		typename corresponding_type_to_second<
+			ComponentPair,
+			InSecondArrayEl,
+			DirectionIsFromSecondToFirst
+			>::__cake_default_to___cake_default_in_first __cake_default_to___cake_default_in_first[Dim]; 
+	}; /* we specialize this for various InFirsts */ 
+	/* NOTE: we will repeat the above specializations on a per-component-pair basis!
+	 * This is because C++ resolves partial specializations using 
+	 * So they don't really have any effect! Here are the macros we will use. */
+#define default_corresponding_type_specializations(component_pair) \
+    template < \
+        typename InFirstArrayEl, \
+		int Dim, \
+        bool DirectionIsFromFirstToSecond \
+    > struct corresponding_type_to_first <component_pair,\
+	     InFirstArrayEl[Dim], \
+	     DirectionIsFromFirstToSecond> \
+    { typedef  \
+		typename corresponding_type_to_first< \
+			component_pair,  \
+			InFirstArrayEl,  \
+			DirectionIsFromFirstToSecond \
+			>::__cake_default_to___cake_default_in_second \
+			    __cake_default_to___cake_default_in_second[Dim]; \
+         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0         \
+         }; }; \
+	}; /* we specialize this for various InSeconds */ \
+    template < \
+        typename InSecondArrayEl, \
+		int Dim, \
+        bool DirectionIsFromSecondToFirst \
+    > struct corresponding_type_to_second<component_pair, \
+	    InSecondArrayEl[Dim], \
+	    DirectionIsFromSecondToFirst>  \
+    { typedef  \
+		typename corresponding_type_to_second< \
+			component_pair, \
+			InSecondArrayEl, \
+			DirectionIsFromSecondToFirst \
+			>::__cake_default_to___cake_default_in_first \
+			    __cake_default_to___cake_default_in_first[Dim];  \
+         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0          \
+         }; }; \
+	}; /* we specialize this for various InFirsts */ \
+    template <> \
+    struct corresponding_type_to_second< \
+        component_pair, ::cake::unspecified_wordsize_type, true> \
+    { \
+         typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_first; \
+         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0          \
+         }; }; \
+    }; \
+    template <> \
+    struct corresponding_type_to_first< \
+		 component_pair, ::cake::unspecified_wordsize_type, false> \
+    { \
+         typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_second; \
+         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0         \
+         }; }; \
+    }; \
+    template <> \
+    struct corresponding_type_to_second< \
+       component_pair,  ::cake::unspecified_wordsize_type, false> \
+    { \
+         typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_first; \
+         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0         \
+         }; }; \
+    }; \
+    template <> \
+    struct corresponding_type_to_first< \
+        component_pair,  ::cake::unspecified_wordsize_type, true> \
+    { \
+         typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_second; \
+         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0          \
+         }; }; \
+    }
 
 namespace cake
 {
@@ -156,6 +261,7 @@ pair_of_mappings(long double);
 			if (p_to) *p_to = from; return from; 
         } 
     }; 
+	
 	template <typename FromIsAPtr, typename ToIsAPtr, typename FromComponent, typename ToComponent, int RuleTag>
     struct value_convert<FromIsAPtr*, ToIsAPtr*, FromComponent, ToComponent, RuleTag>
     { 
@@ -267,6 +373,27 @@ pair_of_mappings(long double);
 			return ret;
         } 
 	}; 
+	// for arrays 
+	template <typename FromArrayEl, typename ToArrayEl, int Dim, typename FromComponent, typename ToComponent, int RuleTag>
+    struct value_convert<FromArrayEl[Dim], ToArrayEl[Dim], FromComponent, ToComponent, RuleTag>
+	{
+		typename srk31::array<ToArrayEl, Dim>& operator()(const FromArrayEl (&from)[Dim],
+		                                        ToArrayEl (*p_to)[Dim] = 0) const
+		{
+			srk31::array<ToArrayEl, Dim> tmp_buf;
+			srk31::array<ToArrayEl, Dim> *p_ret
+			 = p_to ? (new (p_to) srk31::array<ToArrayEl, Dim>()) : &tmp_buf;
+			for (auto i = 0; i < Dim; ++i)
+			{
+				(*p_ret)[i]
+				 = value_convert<FromArrayEl, ToArrayEl, FromComponent, ToComponent, RuleTag>()(
+					from[i], ((ToArrayEl *) &p_to[0]) + i
+				);
+			}
+			return *p_ret;
+		}
+	};
+	
 	// conversions between wordsize integers and wordsize opaque data
     template <typename FromComponent, typename ToComponent> 
     struct value_convert<wordsize_integer_type, unspecified_wordsize_type, FromComponent, ToComponent, 0> 
