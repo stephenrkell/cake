@@ -124,7 +124,23 @@ namespace cake
 			bool direction_is_out,
 			bool do_not_sync = false
 			);
-		
+		void
+		identify_and_mark_deferred_out_bindings(
+			environment& env,
+			antlr::tree::Tree *action,
+			antlr::tree::Tree *sink_infix_stub,
+			vector<string>& out_deferred_out_bindings,
+			vector<string>& out_deferred_out_caller_cxxnames
+		);
+		void
+		reconcile_deferred_out_bindings(
+			environment& env,
+			module_ptr current_module,
+			module_ptr caller_module,
+			const vector<string>& deferred_out_bindings,
+			const vector<string>& out_deferred_out_caller_cxxnames
+		);
+
 // 		environment
 // 		do_virtual_crossover(
 // 			module_ptr old_module_context,

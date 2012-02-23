@@ -6,6 +6,7 @@ extern "C" {
 #include <boost/optional.hpp>
 #include <boost/type_traits/remove_const.hpp>
 #include <boost/type_traits/remove_reference.hpp>
+#include <boost/type_traits/remove_pointer.hpp>
 #define REP_ID(ident) (ident::marker::rep_id)
 
     template <
@@ -136,6 +137,42 @@ extern "C" {
         component_pair,  ::cake::unspecified_wordsize_type, true> \
     { \
          typedef ::cake::unspecified_wordsize_type __cake_default_to___cake_default_in_second; \
+         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0          \
+         }; }; \
+    }; /* now the "void" case */\
+    template <> \
+    struct corresponding_type_to_second< \
+       component_pair,  void, true> \
+    { \
+         typedef void __cake_default_to___cake_default_in_first; \
+         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0         \
+         }; }; \
+    }; \
+    template <> \
+    struct corresponding_type_to_first< \
+        component_pair,  void, false> \
+    { \
+         typedef void __cake_default_to___cake_default_in_second; \
+         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0          \
+         }; }; \
+    }; \
+    template <> \
+    struct corresponding_type_to_second< \
+       component_pair,  void, false> \
+    { \
+         typedef void __cake_default_to___cake_default_in_first; \
+         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0         \
+         }; }; \
+    }; \
+    template <> \
+    struct corresponding_type_to_first< \
+        component_pair,  void, true> \
+    { \
+         typedef void __cake_default_to___cake_default_in_second; \
          struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
              __cake_default = 0          \
          }; }; \

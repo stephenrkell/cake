@@ -389,22 +389,49 @@ namespace cake
 							else found_init = *i_candidate;
 						}
 					}
-					
-					// if we still don't have it, choose the rules whose
-					// declared type is the concrete type
+
+					// if we still don't have it, choose a rule relating a type
+					// with the "same" (nominally) type on the other side
 					if (!found_init) 
 					{
 						for (auto i_candidate = candidates.first;
 							i_candidate != candidates.second;
 							++i_candidate)
 						{
-							if (i_candidate->second->sink_data_type->get_concrete_type()
-							 == i_candidate->second->sink_data_type
-							 && i_candidate->second->source_data_type->get_concrete_type()
-							 == i_candidate->second->source_data_type)
+							if (data_types_are_nominally_identical(
+								i_candidate->second->sink_data_type,
+								i_candidate->second->source_data_type
+								)
+							)
 							{
-								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
-									"multiple non-init rules declared for the same concrete types");
+								if (found_init) RAISE_INTERNAL(
+									i_candidate->second->corresp,
+						"multiple non-init rules declared relating nominally identical data types");
+								else found_init = *i_candidate;
+							}
+						}
+					}
+					
+					
+					// if we still don't have it, choose the rules whose
+					// declared types (on each side) are their own concrete type
+					if (!found_init) 
+					{
+						for (auto i_candidate = candidates.first;
+							i_candidate != candidates.second;
+							++i_candidate)
+						{
+							if (data_types_are_identical(
+								i_candidate->second->sink_data_type->get_concrete_type(),
+								i_candidate->second->sink_data_type)
+							 && data_types_are_identical(
+								i_candidate->second->source_data_type->get_concrete_type(),
+								i_candidate->second->source_data_type)
+							)
+							{
+								if (found_init) RAISE_INTERNAL(
+									i_candidate->second->corresp,
+						"multiple non-init rules declared for the same concrete types");
 								else found_init = *i_candidate;
 							}
 						}
@@ -1815,6 +1842,7 @@ namespace cake
 			  "         // this supergroup/direction has " << vec.size() << " rules" << endl;
 
 					bool emitted_default_to_default = false;
+					set<string> emitted_tags_to_default;
 					for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); ++i_p_corresp)
 					{
 						// our relevance criteria ensured that 
@@ -1859,21 +1887,29 @@ namespace cake
 						if (outer_type_synonymy_chain.size() == 0
 						&&   inner_type_synonymy_chain.size() == 0) emitted_default_to_default = true;
 
-	   wrap_file << "         typedef "
-	   						// target of the typedef is always the inner type
-                    	   << get_type_name(inner_type)
-                            //	  (*i_p_corresp)->source == i_pair->first // 
-                            //    	 ? (*i_p_corresp)->source_data_type
-                            //    	  : (*i_p_corresp)->sink_data_type)
-                    	   << " "
-                    	   << ( (*i_p_corresp)->init_only ? "__init_only_" : "" )
-                    	   << ((outer_type_synonymy_chain.size() == 0) ? "__cake_default" : 
-                            	  *(*outer_type_synonymy_chain.begin())->get_name())
-                    	   << "_to_"
-                    	   << ((inner_type_synonymy_chain.size() == 0) ? "__cake_default" : 
-                            	  *(*inner_type_synonymy_chain.begin())->get_name())
-								  // always the converse of the outer module
-                    	   << "_in_" << (half_key_is_first ? "second" : "first") << ";" << endl;
+						wrap_file << "         typedef "
+							// target of the typedef is always the inner type
+							<< get_type_name(inner_type)
+							<< " "
+							<< ( (*i_p_corresp)->init_only ? "__init_only_" : "" )
+							<< ((outer_type_synonymy_chain.size() == 0) ? "__cake_default" : 
+								*(*outer_type_synonymy_chain.begin())->get_name())
+							<< "_to_"
+							<< ((inner_type_synonymy_chain.size() == 0) ? "__cake_default" : 
+								*(*inner_type_synonymy_chain.begin())->get_name())
+							// always the converse of the outer module
+							<< "_in_" << (half_key_is_first ? "second" : "first") 
+							<< ";" << endl;
+
+						if (inner_type_synonymy_chain.size() == 0 
+							&& !(*i_p_corresp)->init_only) 
+						{
+							emitted_tags_to_default.insert(
+								((outer_type_synonymy_chain.size() == 0) ? "__cake_default" : 
+								*(*outer_type_synonymy_chain.begin())->get_name())
+							);
+						}
+
 					} // end outputting typedefs
 					
 					/* For each full key containing this half key...
@@ -1920,6 +1956,29 @@ namespace cake
 						}
 					}
 					
+					// HACK: abuse the enums to make sure there is always an X-to-default
+					// mapping -- HACK AGAIN: only if unique, for now.
+					for (auto i_enum = enums.begin(); i_enum != enums.end(); ++i_enum)
+					{
+						if (*i_enum == "__cake_default"
+						|| emitted_tags_to_default.find(*i_enum)
+							!= emitted_tags_to_default.end()) continue;
+						auto enum_seq = by_enum.equal_range(*i_enum);
+						if (srk31::count(enum_seq.first, enum_seq.second) == 1)
+						{
+							wrap_file << "typedef " 
+								// we typedef the inner type, i.e. the non-half-key one
+								<< ((half_key_is_source) ? 
+										get_type_name(enum_seq.first->second->sink_data_type)
+									: 	get_type_name(enum_seq.first->second->source_data_type))
+								<< " " << *i_enum << "_to___cake_default_in_"
+								<< (half_key_is_first ? "second" : "first") 
+								<< ";" << endl;
+						}
+						else wrap_file << "// not emitting a " << *i_enum << "_to___cake_default typedef "
+							<< "because there is no unique candidate" << endl;
+					}
+					
 					for (auto i_enum = enums.begin(); i_enum != enums.end(); ++i_enum)
 					{
 						wrap_file << "         struct rule_tag_in_" << (half_key_is_first ? "second" : "first") 
@@ -1927,6 +1986,7 @@ namespace cake
 						  << "_artificial_name_" << *i_enum 
 							<< " { enum __cake_rule_tags {" << endl;
 						auto enum_seq = by_enum.equal_range(*i_enum);
+						bool emitted_default = false;
 						for (auto i_p_corresp_pair = enum_seq.first;
 							i_p_corresp_pair != enum_seq.second;
 							++i_p_corresp_pair)
@@ -1944,7 +2004,7 @@ namespace cake
 							auto artificial_name_for_the_other_die =
 								(!data_types_are_identical(the_other_die->get_concrete_type(), the_other_die)) 
 								? *the_other_die->get_name()
-								 : "__cake_default";
+								 : (emitted_default = true, "__cake_default");
 
 							assert(val_corresp_numbering.find(i_p_corresp_pair->second->shared_from_this())
 							    != val_corresp_numbering.end());
@@ -1952,109 +2012,21 @@ namespace cake
 								<< " = " 
 								<< val_corresp_numbering[(*i_p_corresp_pair).second->shared_from_this()];
 						}
+						/* Now also emit a "__cake_default" if it's unique and we haven't yet; */
+						if (srk31::count(enum_seq.first, enum_seq.second) == 1
+						 && !emitted_default)
+						{
+							auto i_p_corresp_pair = enum_seq.first;
+							wrap_file << ", " << endl;
+							auto artificial_name_for_the_other_die = "__cake_default";
+							wrap_file << artificial_name_for_the_other_die 
+								<< " = " 
+								<< val_corresp_numbering[(*i_p_corresp_pair).second->shared_from_this()]
+								<< "/* by uniqueness */";
+						}
+						
 						wrap_file << "         }; };" << endl; // ends a tag enum/struct
 					}
-
-// 					vector< val_corresp_group_key > sorted_keys_for_this_supergroup;
-// 					auto sorted_size = srk31::count(
-// 						keys_for_this_supergroup.begin(),
-// 						keys_for_this_supergroup.end()
-// 					);
-// 					sorted_keys_for_this_supergroup.resize(sorted_size);
-// 					assert(sorted_keys_for_this_supergroup.begin() + sorted_size
-// 					 == sorted_keys_for_this_supergroup.end());
-// 					std::partial_sort_copy(
-// 						keys_for_this_supergroup.begin(),
-// 						keys_for_this_supergroup.end(),
-// 						sorted_keys_for_this_supergroup.begin(),
-// 						sorted_keys_for_this_supergroup.end(),
-// 						[corresps_by_artificial_names_for_half_key_type_map](
-// 							const val_corresp_group_key& arg1,
-// 							const val_corresp_group_key& arg2
-// 						)
-// 						{
-// 							auto& 
-// 							corresps_by_artificial_names_for_half_key_type
-// 							 = corresps_by_artificial_names_for_half_key_type_map[arg1];
-// 							corresps_by_artificial_names_for_half_key_type
-// 							 = corresps_by_artificial_names_for_half_key_type_map[arg2];
-// 							 
-// 						}
-// 					);
-// 						  (val_corresp_group_key){
-// 							/* source */
-// 								direction_is_first_to_second ? first_module : i_half_key->first,
-// 							/* sink */
-// 								direction_is_first_to_second ? i_half_key->first : first_module,
-// 							/* source data type */
-// 								(*i_p_corresp)->source_data_type,
-// 							/* sink data type */
-// 								(*i_p_corresp)->sink_data_type
-// 						}];
-
-						/* We group by the half_key tagstring. */
-// 						vector< pair<const string, val_corresp *> > sorted;
-// 						auto sorted_size = srk31::count(
-// 							corresps_by_artificial_names_for_half_key_type.begin(),
-// 							corresps_by_artificial_names_for_half_key_type.end());
-// 						sorted.resize(sorted_size);
-// 						assert(sorted.end() == sorted.begin() + sorted_size);
-// 						std::partial_sort_copy(
-// 							corresps_by_artificial_names_for_half_key_type.begin(),
-// 							corresps_by_artificial_names_for_half_key_type.end(),
-// 							sorted.begin(),
-// 							sorted.begin() + sorted_size,
-// 							[](const corresps_by_artificial_names_map_t::value_type& arg1,
-// 							   const corresps_by_artificial_names_map_t::value_type& arg2)
-// 							{
-// 								return arg1.first < arg2.first;
-// 							}
-// 						);
-// 						optional<string> prev_half_key_tagstring;
-// 						for (auto i_tag_in_half_key = corresps_by_artificial_names_for_half_key_type.begin();
-// 								  i_tag_in_half_key != corresps_by_artificial_names_for_half_key_type.end();
-// 								  prev_half_key_tagstring = i_tag_in_half_key->first, 
-// 								  ++i_tag_in_half_key)
-// 						{
-// 							if (!prev_half_key_tagstring 
-// 								|| i_tag_in_half_key->first != *prev_half_key_tagstring)
-// 							{
-// 								if (prev_half_key_tagstring) wrap_file << "         }; };" << endl; // ends a tag enum/struct
-// 								wrap_file << "         struct rule_tag_in_" << (half_key_is_first ? "second" : "first") 
-// 		  << "_given_" << (half_key_is_first ? "first" : "second") 
-// 		  << "_artificial_name_" << i_tag_in_half_key->first 
-// 			<< " { enum __cake_rule_tags {" << endl;
-// 							}
-// 							
-// 							for (auto i_p_corresp = i_tag_in_half_key->second.begin(); 
-// 								i_p_corresp != i_tag_in_half_key->second.end(); ++i_p_corresp)
-// 							{
-// 								// COMPLETE HACK: skip init-only rules
-// 								if ((*i_p_corresp)->init_only) continue;
-// 
-// 								// here we want the data type in the *other* module, but not concretised
-// 								auto half_key_die = (half_key_is_source) ?
-// 									(*i_p_corresp)->source_data_type : (*i_p_corresp)->sink_data_type;
-// 								auto the_other_die = (half_key_is_source) ? 
-// 									(*i_p_corresp)->sink_data_type : (*i_p_corresp)->source_data_type;
-// 
-// 								//auto artificial_name_for_half_key_die =
-// 								//	(!data_types_are_identical(half_key_die->get_concrete_type(), half_key_die)) 
-// 								//	? *half_key_die->get_name()
-// 								//	 : "__cake_default";
-// 								auto artificial_name_for_the_other_die =
-// 									(!data_types_are_identical(the_other_die->get_concrete_type(), the_other_die)) 
-// 									? *the_other_die->get_name()
-// 									 : "__cake_default";
-// 
-// 								wrap_file << artificial_name_for_the_other_die // artificial_name_for_half_key_die 
-// 									<< " = " 
-// 									<< val_corresp_numbering[(*i_p_corresp)->shared_from_this()];
-// 								if (i_p_corresp != i_tag_in_half_key->second.end() - 1) wrap_file << "," << endl;
-// 							}
-// 						} // end for all tag enums
-// 						if (prev_half_key_tagstring) wrap_file << "         }; };" << endl; // ends a tag enum/struct
-// 					} // end for all groups in this supergroup
      wrap_file << "    };" // ends a specialization
 << endl;
 				} // end for direction (first-to-second, second-to-first)
@@ -4032,6 +4004,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		}
 		
 		set< shared_ptr<dwarf::spec::type_die> > seen_concrete_types;
+		set< shared_ptr<dwarf::spec::type_die> > seen_types;
 
 		typedef set<
 			pair< // this is any pair involving a base type -- needn't both be base
@@ -4064,7 +4037,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			bool different_modules = (iter_pair.second--,
 				iter_pair.first->second.module != iter_pair.second->second.module);
 			
-			// must be concrete, non-array, non-subroutine types!
+			// must be concretely non-void, non-array, non-subroutine types!
 			bool correspondable_types = (iter_pair.first->second.t->get_concrete_type() && 
 				iter_pair.second->second.t->get_concrete_type() &&
 				iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_array_type &&
@@ -4073,11 +4046,35 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				iter_pair.second->second.t->get_concrete_type()->get_tag() != DW_TAG_subroutine_type);
 			
 			// must not have been matched before!
-			bool not_dwarf_types_matched_before
-			 = (seen_concrete_types.find(iter_pair.first->second.t->get_concrete_type())
-					== seen_concrete_types.end()
-			&& seen_concrete_types.find(iter_pair.second->second.t->get_concrete_type()) 
-					== seen_concrete_types.end());
+			// HMM -- why not?
+			// Ditch the "concrete" requirement -- only avoid them if they 
+			// have not been matched before in a nominally identical way.
+			auto found_first_matched_before =  std::find_if(
+				seen_types.begin(), seen_types.end(),
+				[iter_pair](shared_ptr<type_die> item) {
+					return data_types_are_identical(
+						item,
+						iter_pair.first->second.t
+					);
+				}
+			);
+			auto found_second_matched_before =  std::find_if(
+				seen_types.begin(), seen_types.end(),
+				[iter_pair](shared_ptr<type_die> item) {
+					return data_types_are_identical(
+						item,
+						iter_pair.second->second.t
+					);
+				}
+			);
+				
+			bool not_dwarf_types_matched_before //= true;
+// 			 = (seen_concrete_types.find(iter_pair.first->second.t->get_concrete_type())
+// 					== seen_concrete_types.end()
+// 			&& seen_concrete_types.find(iter_pair.second->second.t->get_concrete_type()) 
+// 					== seen_concrete_types.end());
+			 = (found_first_matched_before == seen_types.end()
+			&&  found_second_matched_before == seen_types.end());
 			
 			// if base types, pair must not be equivalent to any seen before! 
 			// (else template specializations will collide)
@@ -4144,16 +4141,16 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 //						iter_pair.first->second.t->get_concrete_type()))
 //						== seen_second_base_type_pairs.end()
 				)
-			&& (!(iter_pair.first->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type &&
-				  iter_pair.second->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type)
+			&& (!(iter_pair.first->second.t->/*get_concrete_type()->*/get_tag() == DW_TAG_base_type &&
+				  iter_pair.second->second.t->/*get_concrete_type()->*/get_tag() == DW_TAG_base_type)
 				 || seen_base_base_pairs.find(
 				 	make_pair(
 						dwarf::tool::cxx_compiler::base_type(
 							dynamic_pointer_cast<dwarf::spec::base_type_die>(
-								iter_pair.first->second.t->get_concrete_type())),
+								iter_pair.first->second.t/*->get_concrete_type()*/)),
 						dwarf::tool::cxx_compiler::base_type(
 							dynamic_pointer_cast<dwarf::spec::base_type_die>(
-								iter_pair.second->second.t->get_concrete_type()))
+								iter_pair.second->second.t/*->get_concrete_type()*/))
 					))
 					== seen_base_base_pairs.end()
 				);
@@ -4185,8 +4182,11 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 							if (neither_is_builtin)
 							{
 								cerr << " and is not builtin, so adding a correspondence." << endl;
+								// 1. update our bookkeeping structures
 								seen_concrete_types.insert(iter_pair.first->second.t->get_concrete_type());
+								seen_types.insert(iter_pair.first->second.t);
 								seen_concrete_types.insert(iter_pair.second->second.t->get_concrete_type());
+								seen_types.insert(iter_pair.second->second.t);
 								if (iter_pair.first->second.t->get_tag() == DW_TAG_base_type)
 									seen_first_base_type_pairs.insert(
 										make_pair(
@@ -4202,8 +4202,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 												dynamic_pointer_cast<dwarf::spec::base_type_die>(
 													iter_pair.second->second.t->get_concrete_type())),
 											iter_pair.first->second.t->get_concrete_type()));
-								if (iter_pair.first->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type &&
-								  iter_pair.second->second.t->get_concrete_type()->get_tag() == DW_TAG_base_type)
+								if (iter_pair.first->second.t/*->get_concrete_type()*/->get_tag() == DW_TAG_base_type &&
+								  iter_pair.second->second.t/*->get_concrete_type()*/->get_tag() == DW_TAG_base_type)
 								{
 									cerr << "remembering a base-base pair " 
 										<< definite_member_name(*i_k) << "; size was " 
@@ -4211,10 +4211,10 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				 					seen_base_base_pairs.insert(make_pair(
 										dwarf::tool::cxx_compiler::base_type(
 											dynamic_pointer_cast<dwarf::spec::base_type_die>(
-												iter_pair.first->second.t->get_concrete_type())),
+												iter_pair.first->second.t/*->get_concrete_type()*/)),
 										dwarf::tool::cxx_compiler::base_type(
 											dynamic_pointer_cast<dwarf::spec::base_type_die>(
-												iter_pair.second->second.t->get_concrete_type()))
+												iter_pair.second->second.t/*->get_concrete_type()*/))
 									));
 									cerr << "; now " << seen_base_base_pairs.size() << endl;
 								}
@@ -4224,14 +4224,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 								// *** FIXME: ONLY IF not already present already...
 								// i.e. the user might have supplied their own
 
-								// We always add corresps between concrete types,
-								// i.e. dereferencing synonyms -- BUT this can
-								// introduce conflicts/ambiguities, so need to refine this later.
-								// ALSO, concrete types don't always have 
-								// ident paths from CU! i.e. can be anonymous. So
-								// instead of using ident_path_from_cu -- FIXME: what?
-
-								// two-iteration for loop
+								// 2. two-iteration for loop
 								for (pair<module_ptr, module_ptr> source_sink_pair = 
 										make_pair(ifaces.first, ifaces.second), orig_source_sink_pair = source_sink_pair;
 										source_sink_pair != pair<module_ptr, module_ptr>();
@@ -4239,64 +4232,73 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 											(source_sink_pair == orig_source_sink_pair) 
 												? make_pair(ifaces.second, ifaces.first) : make_pair(module_ptr(), module_ptr()))
 								{
-									// each of these maps a set of synonyms mapping to their concrete type
-									map<vector<string>, shared_ptr<dwarf::spec::type_die> > &
-										source_synonymy = (source_sink_pair.first == ifaces.first) ? first_synonymy : second_synonymy;
-									map<vector<string>, shared_ptr<dwarf::spec::type_die> > &
-										sink_synonymy = (source_sink_pair.second == ifaces.first) ? first_synonymy : second_synonymy;
+// 									// each of these maps a set of synonyms mapping to their concrete type
+// 									map<vector<string>, shared_ptr<dwarf::spec::type_die> > &
+// 										source_synonymy = (source_sink_pair.first == ifaces.first) ? first_synonymy : second_synonymy;
+// 									map<vector<string>, shared_ptr<dwarf::spec::type_die> > &
+// 										sink_synonymy = (source_sink_pair.second == ifaces.first) ? first_synonymy : second_synonymy;
+// 
+// 
+// 									bool source_is_synonym = false;
+// 									shared_ptr<dwarf::spec::basic_die> source_found;
+// 									bool sink_is_synonym = false;
+// 									shared_ptr<dwarf::spec::basic_die> sink_found;
+// 									/* If the s... data type is a synonym, we will set s..._type
+// 									 * to the *concrete* type and set the flag. 
+// 									 * Otherwise we will try to get the data type DIE by name lookup. */
+// 									auto source_type = (source_synonymy.find(*i_k) != source_synonymy.end()) ?
+// 											(source_is_synonym = true, source_synonymy[*i_k]) : /*, // *i_k, // */ 
+// 											dynamic_pointer_cast<dwarf::spec::type_die>(
+// 												source_found = source_sink_pair.first->get_ds().toplevel()->visible_resolve(
+// 													i_k->begin(), i_k->end()));
+// 									auto sink_type = (sink_synonymy.find(*i_k) != sink_synonymy.end()) ?
+// 											(sink_is_synonym = true, sink_synonymy[*i_k]) : /*, // *i_k, // */ 
+// 											dynamic_pointer_cast<dwarf::spec::type_die>(
+// 												sink_found = source_sink_pair.second->get_ds().toplevel()->visible_resolve(
+// 													i_k->begin(), i_k->end()));
+// 									const char *matched_name = i_k->at(0).c_str();
+// 
+// 				// 					cerr << "Two-cycle for loop: source module @" << &*source_sink_pair.first << endl;
+// 				// 					cerr << "Two-cycle for loop: sink module @" << &*source_sink_pair.second << endl;
+// 				// 					cerr << "Two-cycle for loop: source synonymy @" << &source_synonymy << endl;
+// 				// 					cerr << "Two-cycle for loop: sink synonymy @" << &sink_synonymy << endl;
+// 
+// 									// this happens if name lookup fails 
+// 									// (e.g. not visible (?))
+// 									// or doesn't yield a type
+// 									if (!source_type || !sink_type)
+// 									{
+// 										shared_ptr<dwarf::spec::basic_die> source_synonym;
+// 										shared_ptr<dwarf::spec::basic_die> sink_synonym;
+// 										if (source_is_synonym) source_synonym = source_synonymy[*i_k];
+// 										if (sink_is_synonym) sink_synonym = sink_synonymy[*i_k];
+// 
+// 										cerr << "Skipping correspondence for matched data type named " 
+// 										<< definite_member_name(*i_k)
+// 										<< " because (FIXME) the type is probably incomplete"
+// 										<< " where source " << *i_k 
+// 										<< (source_is_synonym ? " was found to be a synonym " : " was not resolved to a type ")
+// 										<< ((!source_is_synonym && source_found) ? " but was resolved to a non-type" : "")
+// 										<< " and sink " << *i_k 
+// 										<< (sink_is_synonym ? " was found to be a synonym " : " was not resolved to a type ")
+// 										<< ((!sink_is_synonym && sink_found) ? " but was resolved to a non-type" : "")
+// 										<< endl;
+// 										if (source_synonym) cerr << "source synonym: " << source_synonym
+// 											<< endl;
+// 										if (sink_synonym) cerr << "sink synonym: " << sink_synonym
+// 											<< endl;
+// 										assert(definite_member_name(*i_k).at(0) != "int");
+// 										continue;
+// 									}	
 
-
-									bool source_is_synonym = false;
-									shared_ptr<dwarf::spec::basic_die> source_found;
-									bool sink_is_synonym = false;
-									shared_ptr<dwarf::spec::basic_die> sink_found;
-									/* If the s... data type is a synonym, we will set s..._type
-									 * to the *concrete* type and set the flag. 
-									 * Otherwise we will try to get the data type DIE by name lookup. */
-									auto source_type = (source_synonymy.find(*i_k) != source_synonymy.end()) ?
-											(source_is_synonym = true, source_synonymy[*i_k]) : /*, // *i_k, // */ 
-											dynamic_pointer_cast<dwarf::spec::type_die>(
-												source_found = source_sink_pair.first->get_ds().toplevel()->visible_resolve(
-													i_k->begin(), i_k->end()));
-									auto sink_type = (sink_synonymy.find(*i_k) != sink_synonymy.end()) ?
-											(sink_is_synonym = true, sink_synonymy[*i_k]) : /*, // *i_k, // */ 
-											dynamic_pointer_cast<dwarf::spec::type_die>(
-												sink_found = source_sink_pair.second->get_ds().toplevel()->visible_resolve(
-													i_k->begin(), i_k->end()));
-									const char *matched_name = i_k->at(0).c_str();
-
-				// 					cerr << "Two-cycle for loop: source module @" << &*source_sink_pair.first << endl;
-				// 					cerr << "Two-cycle for loop: sink module @" << &*source_sink_pair.second << endl;
-				// 					cerr << "Two-cycle for loop: source synonymy @" << &source_synonymy << endl;
-				// 					cerr << "Two-cycle for loop: sink synonymy @" << &sink_synonymy << endl;
-
-									// this happens if name lookup fails 
-									// (e.g. not visible (?))
-									// or doesn't yield a type
-									if (!source_type || !sink_type)
-									{
-										shared_ptr<dwarf::spec::basic_die> source_synonym;
-										shared_ptr<dwarf::spec::basic_die> sink_synonym;
-										if (source_is_synonym) source_synonym = source_synonymy[*i_k];
-										if (sink_is_synonym) sink_synonym = sink_synonymy[*i_k];
-
-										cerr << "Skipping correspondence for matched data type named " 
-										<< definite_member_name(*i_k)
-										<< " because (FIXME) the type is probably incomplete"
-										<< " where source " << *i_k 
-										<< (source_is_synonym ? " was found to be a synonym " : " was not resolved to a type ")
-										<< ((!source_is_synonym && source_found) ? " but was resolved to a non-type" : "")
-										<< " and sink " << *i_k 
-										<< (sink_is_synonym ? " was found to be a synonym " : " was not resolved to a type ")
-										<< ((!sink_is_synonym && sink_found) ? " but was resolved to a non-type" : "")
-										<< endl;
-										if (source_synonym) cerr << "source synonym: " << source_synonym
-											<< endl;
-										if (sink_synonym) cerr << "sink synonym: " << sink_synonym
-											<< endl;
-										assert(definite_member_name(*i_k).at(0) != "int");
-										continue;
-									}	
+									auto source_type = (source_sink_pair.first == 
+										iter_pair.first->second.module)
+									?  iter_pair.first->second.t
+									:  iter_pair.second->second.t;
+									auto sink_type = (source_sink_pair.second == 
+										iter_pair.first->second.module)
+									?  iter_pair.first->second.t
+									:  iter_pair.second->second.t;
 
 									// if no previous value correspondence exists between these 
 									// name-matched types.....
@@ -4337,7 +4339,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 										<< endl;
 								} // end two-cycle for loop
 							}
-							else
+							else // if neither_is_builtin
 							{
 								cerr << " but one or other is builtin." << endl;
 							}

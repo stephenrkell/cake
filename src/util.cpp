@@ -1190,14 +1190,19 @@ namespace cake
 		// if not in the same file, not identical
 		if (!(&arg1->get_ds() == &arg2->get_ds())) return false;
 		
-		auto opt_arg1_ident_path = arg1->ident_path_from_root();
-		auto opt_arg2_ident_path = arg2->ident_path_from_root();
+		return data_types_are_nominally_identical(arg1, arg2);
+	}
+		
+	bool
+	data_types_are_nominally_identical(shared_ptr<type_die> arg1, shared_ptr<type_die> arg2)
+	{
+		if (arg1 == arg2) return true;
+		
+		auto opt_arg1_ident_path = arg1->ident_path_from_cu();
+		auto opt_arg2_ident_path = arg2->ident_path_from_cu();
 		if ((bool)opt_arg1_ident_path && (bool)opt_arg2_ident_path)
 		{
-			auto arg1_without_cu = vector<string>(++opt_arg1_ident_path->begin(), opt_arg1_ident_path->end());
-			auto arg2_without_cu = vector<string>(++opt_arg2_ident_path->begin(), opt_arg2_ident_path->end());
-			
-			if (arg1_without_cu == arg2_without_cu)
+			if (*opt_arg1_ident_path == *opt_arg2_ident_path)
 			{
 				/* We will say they are equal, but warn if not rep-compatible. */
 				if (!(arg1->is_rep_compatible(arg2) && arg2->is_rep_compatible(arg1)))

@@ -568,10 +568,33 @@ assert(false && "disabled support for inferring positional argument mappings");
 				sink, sink_infix_stub, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
 			m_d.find_type_expectations_in_stub(ctxt.env, 
 				sink, action, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
-			//auto returned_outward = do_virtual_crossover(source, new_env1, sink);
-			ctxt.env = crossover_environment_and_sync(source, new_env1, sink, constraints, false);
+			/* We also want to know whether any output bindings
+			 * -- currently marked as is_pointer_to_uninit --
+			 * will be filled by output parameters in the crossed-over stub.
+			 * If so, then we should defer allocating co-objects for them.
+			 * (This is *not* just marking them as leaf objects.)
+			 * Then, when the output is generated on stack,
+			 * we cross it over backwards.
+			 * Do we need to go through the co-object relation? YES,
+			 * because the immediate object may contain pointers that we
+			 * care about. */
+			vector<string> deferred_out_bindings;
+			vector<string> deferred_out_caller_cxxnames;
+			identify_and_mark_deferred_out_bindings(
+				new_env1,
+				action,
+				sink_infix_stub,
+				deferred_out_bindings,
+				deferred_out_caller_cxxnames
+			);
+				
+			ctxt.env = crossover_environment_and_sync(source, new_env1, sink, constraints,
+				/* direction_is_out */ false, 
+				/* do_not_sync */ false//,
+				///* skip_co_objs */ out_bindings
+				);
 
-			// FIXME: here goes the post-arrow infix stub
+			// here goes the post-arrow infix stub
 			auto status2 = 
 				(sink_infix_stub && GET_CHILD_COUNT(sink_infix_stub) > 0) ?
 					emit_stub_expression_as_statement_list(
@@ -642,9 +665,14 @@ assert(false && "disabled support for inferring positional argument mappings");
 				}
 			}
 
-			ctxt.modules.current = ctxt.modules.source;
 			//auto returned_inward = do_virtual_crossover(sink, new_env3, source);
-			ctxt.env = crossover_environment_and_sync(sink, new_env3, source, return_constraints, true);
+			reconcile_deferred_out_bindings(new_env3, 
+				sink,
+				source,
+				deferred_out_bindings, deferred_out_caller_cxxnames);
+			ctxt.modules.current = ctxt.modules.source;
+			ctxt.env = crossover_environment_and_sync(sink, new_env3, source, return_constraints, 
+				true);
 			
 			std::string final_success_fragment = status3.success_fragment;
 			
@@ -734,6 +762,124 @@ assert(false && "disabled support for inferring positional argument mappings");
 		p_out->dec_level();
 		*p_out << '}' << std::endl; // end of block
 		*p_out << "} } // end link and cake namespaces" << std::endl;
+	}
+	
+	void
+	wrapper_file::identify_and_mark_deferred_out_bindings(
+		environment& env,
+		antlr::tree::Tree *action,
+		antlr::tree::Tree *sink_infix_stub,
+		vector<string>& out_deferred_out_bindings,
+		vector<string>& out_deferred_out_caller_cxxnames
+	)
+	{
+		set<string> out_bindings;
+		vector<antlr::tree::Tree *> out_binding_contexts;
+		auto grab_out_bindings = [&out_bindings](antlr::tree::Tree *t) {
+			if (GET_TYPE(t) == CAKE_TOKEN(KEYWORD_OUT)
+			 && GET_TYPE(GET_CHILD(t, 0)) == CAKE_TOKEN(IDENT))
+			{
+				out_bindings.insert(
+					unescape_ident(CCP(GET_TEXT(GET_CHILD(t, 0))))
+				);
+				return true;
+			}
+			return false; 
+		};
+		walk_ast_depthfirst(
+			action, 
+			out_binding_contexts, 
+			grab_out_bindings
+		);
+		if (sink_infix_stub && GET_CHILD_COUNT(sink_infix_stub) > 0) walk_ast_depthfirst(
+			sink_infix_stub, 
+			out_binding_contexts, 
+			grab_out_bindings
+		);
+		// can we just use do_not_crossover for this? let's try it
+		set<string> cxxnames;
+		for (auto i_ident = out_bindings.begin();
+			i_ident != out_bindings.end(); ++i_ident)
+		{
+			auto found = env.find(*i_ident);
+			if (found != env.end())
+			{
+				// for all bindings to this cxxname, set
+				cxxnames.insert(found->second.cxx_name);
+			}
+		} 
+		// now for all cxxnames, set do_not_crossover
+		for (auto i_b = env.begin(); i_b != env.end(); ++i_b)
+		{
+			if (cxxnames.find(i_b->second.cxx_name) != cxxnames.end())
+			{
+				out_deferred_out_bindings.push_back(i_b->first);
+				out_deferred_out_caller_cxxnames.push_back(i_b->second.cxx_name);
+				i_b->second.do_not_crossover = true;
+			}
+		}
+	
+	}
+	
+	void
+	wrapper_file::reconcile_deferred_out_bindings(
+		environment& env,
+		module_ptr current_module,
+		module_ptr caller_module,
+		const vector<string>& deferred_out_bindings,
+		const vector<string>& deferred_out_caller_cxxnames
+	)
+	{
+		assert(current_module != caller_module);
+		/* We're just about to cross over an env back to the caller side. 
+		 * Currently there is no relation between the callee-output value
+		 * and any caller-side object. So the relevant correspondences
+		 * will not be run. Fix this by 
+		 * - setting up a co-object relationship between the on-stack out obj
+		 *   and the caller-passed pointer. 
+		 * - graph-walking will do the rest...? */
+		 
+		assert(deferred_out_bindings.size() == deferred_out_caller_cxxnames.size());
+		for (unsigned i = 0; i < deferred_out_bindings.size(); ++i)
+		{
+			string cakename = deferred_out_bindings.at(i);
+			string cxxname = deferred_out_caller_cxxnames.at(i);
+			auto env_found = env.find(cakename);
+			// some cakenames, like __cake_argn, we can ignore
+			if (env_found == env.end())
+			{
+				*p_out << "// Warning: was expecting cakename " << cakename 
+					<< " in env; okay if we find some other binding with its "
+						"cxxname (" << cxxname << ")" << endl;
+				continue;
+			}
+			*p_out << "// handling deferred co-objectification of " 
+				<< cakename << endl;
+				
+			auto ident = new_ident("rec");
+			*p_out << "auto " << ident << " = new_co_object_record(" 
+				<< /* initial_object */ "&" << env[cakename].cxx_name << ", "
+				<< /* initial_rep */ "REP_ID(" << m_d.name_of_module(current_module) << "), "
+				<< /* initial_alloc_by */ "ALLOC_BY_USER, "
+				<< /* is_uninit */ "false"
+				<< ");" << endl;
+			// also add the caller-side object to the group
+			*p_out << ident << "->reps[REP_ID(" << m_d.name_of_module(caller_module) << ")] = "
+				<< deferred_out_caller_cxxnames.at(i) << ";" << endl;
+			*p_out << ident << "->co_object_info[REP_ID(" 
+				<< m_d.name_of_module(caller_module) << ")] = "
+				<< "(co_object_info){ ALLOC_BY_USER, /* initialized */ 0 };" << endl;
+			// HACK: initialized == 0 here is wrong -- we actually don't know whether the
+			// pointed-to object has been initialized or not. 
+			*p_out << "ensure_co_objects_allocated(REP_ID(" 
+				<< m_d.name_of_module(current_module) << "), "
+				<< "&" << env[cakename].cxx_name << ", "
+				<< "REP_ID("
+				<< m_d.name_of_module(caller_module) << "), false);" << endl;
+			// now we REMOVE the env entry!
+			env.erase(env_found);
+			
+		}
 	}
 
 	wrapper_file::environment 
@@ -1048,9 +1194,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 					));
 			auto ifaces = link_derivation::sorted(new_module, representative_binding.second.valid_in_module);
 			bool old_module_is_first = (old_module == ifaces.first);
-			if (/*will_override*/ is_a_pointer )
+			// an approximation of non-void pointers
+			bool should_reinterpret = is_a_pointer 
+				&& representative_binding.second.cxx_typeof != "((void*)0)";
+			if (/*will_override*/ should_reinterpret )
 			{
-				*p_out << "reinterpret_cast< ";
+				*p_out << "reinterpret_cast< typename ";
 				// the "more precise type" is the corresponding type
 				// ... to that of *cur_cxxname
 				// ... when flowing from the old module to the new module
@@ -1058,7 +1207,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 				*p_out << "::cake::corresponding_type_to_"
 					<< (old_module_is_first ? "first" : "second")
 					<< "<" << m_d.component_pair_typename(ifaces) << ", "
-					<< "__typeof(*" << cur_cxxname << "), "
+					// instead of __typeof(* xxx ) ,
+					// which gives an error "not a pointer to object type" in gcc...
+					// << "__typeof(*" << cur_cxxname << "), "
+					// we use boost::remove_pointer< > :: type
+					<< "boost::remove_pointer< __typeof(" << cur_cxxname << ")>::type, "
 					<< (old_module_is_first ? /* DirectionIsFromFirstToSecond */ "true"
 					                        : /* DirectionIsFromSecondToFirst */ "true")
 					<< ">::"
@@ -1126,7 +1279,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			if (is_a_pointer && !is_virtual) *p_out << ")";
 			if (reuse_old_variable) *p_out << ", &" << *reuse_old_variable;
 			close_value_conversion();
-			if (/* will_override */ is_a_pointer) *p_out << ")";
+			if (should_reinterpret) *p_out << ")";
 			*p_out << ";" << std::endl;
 			
 			// for each Cake name bound to the current cxxname,
@@ -1841,26 +1994,26 @@ assert(false && "disabled support for inferring positional argument mappings");
 						(bound_var_info) { basic_name, // use the same name for both
 						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
 						source_module,
-						false,
+						false, // do_not_crossover
 						local_tagstring,
 						remote_tagstring, 
 						indirect_local_tagstring_in,
 						indirect_local_tagstring_out,
 						indirect_remote_tagstring_in,
 						indirect_remote_tagstring_out,
-						arg_is_outparam }));
+						arg_is_outparam /* is_pointer_to_uninit */}));
 					if (friendly_name) out_env->insert(std::make_pair(*friendly_name, 
 						(bound_var_info) { basic_name,
 						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
 						source_module,
-						false,
+						false, // do_not_crossover
 						local_tagstring,
 						remote_tagstring, 
 						indirect_local_tagstring_in,
 						indirect_local_tagstring_out,
 						indirect_remote_tagstring_in,
 						indirect_remote_tagstring_out,
-						arg_is_outparam }));
+						arg_is_outparam /* is pointer to uninit */}));
 				} // end ALIAS3(annotatedValuePattern
 				++argnum;
 				if (i_caller_arg != caller_subprogram->formal_parameter_children_end()) ++i_caller_arg;

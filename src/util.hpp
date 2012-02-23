@@ -135,6 +135,9 @@ namespace cake
 	bool
 	data_types_are_identical(shared_ptr<type_die> arg1, shared_ptr<type_die> arg2);
 
+	bool
+	data_types_are_nominally_identical(shared_ptr<type_die> arg1, shared_ptr<type_die> arg2);
+
 	shared_ptr<type_die>
 	canonicalise_type(
 		shared_ptr<type_die> p_t, 
