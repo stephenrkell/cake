@@ -102,7 +102,8 @@ namespace cake
 	struct pointer_ensurer<T*>
 	{
 		typedef T *arg_type;
-		inline void *operator()(const arg_type& obj) const { return obj; }
+		inline void *operator()(const arg_type& obj) const 
+		{ return const_cast<void *>(static_cast<const void *>(obj)); }
 	};	
 	template <>
 	struct pointer_ensurer<wordsize_integer_type>

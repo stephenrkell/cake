@@ -36,6 +36,7 @@ namespace cake
 		bool do_not_crossover;
 		
 		//shared_ptr<with_type_describing_layout_die> dwarf_origin;
+		enum { UNDEFINED = 0, IS_A_POINTER, NOT_A_POINTER } pointerness;
 		
 		/** The key used to look up value conversion. This is the name of a top-level typedef 
 		 *  in the module, or an artificial typename used in Cake source code. */
@@ -73,7 +74,7 @@ namespace cake
 		environment(const environment& c) : super(c) {}
 	};
 	std::ostream& operator<<(std::ostream& s, const environment& env);
-	struct output_arginfo_t
+	struct sig_output_arginfo_t
 	{
 		string argname;
 		shared_ptr<type_die> t; // the type of the *output value*, not the pointer (if it's an arg)
@@ -89,7 +90,7 @@ namespace cake
 			pair<  // it is a pair of
 				string,  // the C++ name of the structure
 				vector<  // and a vector describing the C++ field names and the DWARF types
-					output_arginfo_t// of each component value
+					sig_output_arginfo_t// of each component value
 				> 
 			> 
 		> multivalue;

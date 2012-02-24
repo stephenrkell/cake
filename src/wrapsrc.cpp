@@ -1074,7 +1074,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 
 			// collect pointerness
-			bool is_a_pointer = false;
+			bool is_a_pointer = precise_to_type &&
+					 precise_to_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type;
 			for (auto i_binding_name = bindings_by_cxxname[cur_cxxname].begin();
 				i_binding_name != bindings_by_cxxname[cur_cxxname].end();
 				++i_binding_name)
@@ -1082,8 +1083,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				auto i_binding = env.find(*i_binding_name);
 				assert(i_binding != env.end());
 				
-				is_a_pointer |= (precise_to_type &&
-					 precise_to_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type);
+				is_a_pointer |= (i_binding->second.pointerness == bound_var_info::IS_A_POINTER);
 			}
 			
 			// collect typeof
@@ -1211,7 +1211,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					// which gives an error "not a pointer to object type" in gcc...
 					// << "__typeof(*" << cur_cxxname << "), "
 					// we use boost::remove_pointer< > :: type
-					<< "boost::remove_pointer< __typeof(" << cur_cxxname << ")>::type, "
+					<< "REMOVE_CV(boost::remove_pointer< __typeof(" << cur_cxxname << ")>::type), "
 					<< (old_module_is_first ? /* DirectionIsFromFirstToSecond */ "true"
 					                        : /* DirectionIsFromSecondToFirst */ "true")
 					<< ">::"
@@ -1228,7 +1228,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				//rule_tag, // defaults to 0, but may have been set above
 				representative_binding, // from_artificial_tagstring is in our binding -- easy
 				direction_is_out,
-				false,
+				false, // is_indirect
 				boost::shared_ptr<dwarf::spec::type_die>(), // no precise from type
 				precise_to_type, // defaults to "no precise to type", but may have been set above
 				((is_a_pointer && !is_virtual) ? std::string("((void*)0)") : *collected_cxx_typeof), // from typeof
@@ -1293,6 +1293,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					ident,
 					new_module,
 					false,
+					env[*i_cakename].pointerness,
 					// we swap over the local and remote tagstrings
 					/* local */
 						(assert(env.find(*i_cakename) != env.end()), 
@@ -1989,12 +1990,24 @@ assert(false && "disabled support for inferring positional argument mappings");
 						indirect_remote_tagstring_in,
 						indirect_remote_tagstring_out
 					);
-
+					
+					bool is_definitely_a_pointer
+					 = indirect_local_tagstring_in
+					 || indirect_local_tagstring_out
+					 || indirect_remote_tagstring_in
+					 || indirect_remote_tagstring_out
+					 || (found_fp && found_fp->get_type() 
+					 	&& found_fp->get_type()->get_concrete_type()
+					 	&& found_fp->get_type()->get_concrete_type()->get_tag()
+							 == DW_TAG_pointer_type);
+					
 					out_env->insert(std::make_pair(basic_name, 
 						(bound_var_info) { basic_name, // use the same name for both
 						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
 						source_module,
 						false, // do_not_crossover
+						// pointerness
+						is_definitely_a_pointer ? bound_var_info::IS_A_POINTER : bound_var_info::UNDEFINED,
 						local_tagstring,
 						remote_tagstring, 
 						indirect_local_tagstring_in,
@@ -2007,6 +2020,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
 						source_module,
 						false, // do_not_crossover
+						// pointerness
+						is_definitely_a_pointer ? bound_var_info::IS_A_POINTER : bound_var_info::UNDEFINED,
 						local_tagstring,
 						remote_tagstring, 
 						indirect_local_tagstring_in,
@@ -2030,6 +2045,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
 						source_module,
 						false,
+						bound_var_info::UNDEFINED,
 						optional<string>(),
 						optional<string>(),
 						optional<string>(),
@@ -2386,6 +2402,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 				: source_binding.second.indirect_remote_tagstring_in) 
 			: source_binding.second.remote_tagstring;
 		
+		// GIANT HACK!
+		bool is_a_pointer
+			 = (source_binding.second.pointerness == bound_var_info::IS_A_POINTER)
+			|| is_indirect 
+			|| (from_typeof && *from_typeof == "((void*)0)");
+		
 // 		if (from_type)
 // 		{
 // 			from_artificial_tagstring = 
@@ -2429,76 +2451,20 @@ assert(false && "disabled support for inferring positional argument mappings");
 				+ ((to_module == ifaces.first) 
 					? ("second< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"
 						+ "::" 
-						+ make_tagstring(from_artificial_tagstring)
+						+ (is_a_pointer ? "/* pointer, so */__cake_default" : make_tagstring(from_artificial_tagstring))
 						 + "_to_" 
-						 + make_tagstring(to_artificial_tagstring)
+						 + (is_a_pointer ? "__cake_default" :  make_tagstring(to_artificial_tagstring))
 						 + "_in_first")
 					: ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"
 						+ "::" 
-						+ make_tagstring(from_artificial_tagstring)
+						+ (is_a_pointer ? "/* pointer, so */__cake_default" : make_tagstring(from_artificial_tagstring))
 						+ "_to_" 
-						+ make_tagstring(to_artificial_tagstring)
+						+ (is_a_pointer ? "__cake_default" : make_tagstring(to_artificial_tagstring))
 						+ "_in_second"));
 						// this one --^ is WHAT?       this one --^ is WHAT?
 						// answer: art.tag in source   answer: art.tag in sink
 		}
 
-		/* This is messed up.
-		 * Since we rely on __typeof, we don't know the DWARF types of
-		 * some variables. This means we can't use DWARF types to lookup
-		 * the artificial data types.
-		 * How should it work?
-		 * We generate (and number) all the rules we can.
-		 * Then we associate with each *ident* an (optional) artificial interpretation string,
-		 * as we bind it?
-		 * I think this will work, because even if we have "as" applied to arbitrary expressions,
-		 * the effect of this is just to bind a new ident and store the artificial string in *that*.
-		 * We need some way to map from __typeof() and artificial ident strings 
-		 * to rule tags at runtime. 
-		 * So our generated code will be rule_tag<T>::some_ident
-		 *                          concrete type-^   ^-- artificial tag
-		 * Seems like we can extend the corresponding_type_to_first (etc.) classes here.
-		 * What do we do for typedefs? What are their artificial tags?
-		 * Can we use the DWARF offset? i.e. typedef some_concrete_type __dwarf_typedef_at_0xbeef?
-		 * YES. Then we assign the artificial string "__dwarf_typedef_at_0xbeef" to the ident
-		 * whose type is typedef'd in the object file. 
-		 * Actually our code will look like
-		 * class rule_tag<T> { // or actually corresponding_type_to_second 
-		 *  enum { 
-		 *     some_artificial_ident = TAG; 
-		 *  // ...
-		 *   };
-		 * };*/
-		//int rule_tag; // = 0; // FIXME: handle annotations / typedefs in the *source*
-		/* How do we choose the rule tag? 
-		 * - from our source and sink types, if they are typedefs; 
-		 * - from "as" annotations in the originating rules. 
-		 *   How do we find out about these?
-		 *   - If there are any, they will be attached to bound args/values (in event corresps)
-		 *                                                or fields (in value corresps)
-		 * ... in the AST. 
-		 * The cxx types don't distinguish; by definition, they're the concrete types, which
-		 * are all the same for all values of rule_tag. */
-
-		/* What are these source_artificial_identifier and sink_artificial_identifier?
-		 * Roughly, they're the ident used with "as", or an identifier for a typedef. 
-		 * They're different across the two modules, because 
-		 * they might be corresponded explicitly
-		 * rather than by name-matching.
-		 * them. */
-
-		//optional<string> source_artificial_identifier
-		// = (from_type
-		//
-		//;// = extract_artificial_data_type(
-		//	///*source_expr*/ 0, ctxt);
-		//optional<string> sink_artificial_identifier; // = extract_artificial_data_type(
-		//	///*sink_expr*/ 0, ctxt);
-
-		// PROBLEM: we need ctxt to tell us exactly which syntactic fragment
-		// the current crossover is handling, so that we can scan the AST for
-		// which "as" expressions are relevant. And what if no "as" expressions
-		// are relevant, but instead, the DWARF typedefs bound to each identifer?
 
 		// PROBLEM: we need to propagate type information through expressions.
 		// Otherwise, how are we going to handle
@@ -2538,7 +2504,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 		//	*sink_artificial_identifier : "__cake_default";
 
 		bool target_is_in_first = (to_module == ifaces.first);
-		string rule_tag_str = std::string(" ::cake::") + "corresponding_type_to_"
+		string rule_tag_str;
+		if (is_a_pointer) rule_tag_str = "0 /* it's a pointer */";
+		else rule_tag_str = std::string(" ::cake::") + "corresponding_type_to_"
 			+ (target_is_in_first ? 
 				("second< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>")
 			  : ("first< " + component_pair_classname(ifaces) + ", " + from_typestring + ", true>"))
@@ -3173,6 +3141,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 		auto current_fp = callee_subprogram->formal_parameter_children_begin();
 		int current_argnum = 0;
 		map<int, string> output_parameter_idents;
+		map<string, int> output_parameter_argnums;
+		map<int, optional<unsigned> > output_parameter_is_array;
 		{
 			INIT;
 			FOR_ALL_CHILDREN(argsMultiValue)
@@ -3204,13 +3174,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 							);
 					assert(fp_pointer_type);
 					decl_and_cakename = (out_arg_info){
-						get_type_name(fp_pointer_type->get_type()),
+						get_type_name(fp_pointer_type->get_type()) + " " + ident + ";",
 						string("__cake_" + ident)
 					};
 				}
 				
 				// now we're definitely an optional arg expr 
-				*p_out << decl_and_cakename->decl << " " << ident << ";" << endl;
+				*p_out << decl_and_cakename->decl << /*" " << ident << ";" <<*/ endl;
 				new_bindings.insert(make_pair(decl_and_cakename->cakename, (bound_var_info) {
 					ident,
 					ident,
@@ -3218,6 +3188,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 					false
 				}));
 				output_parameter_idents[current_argnum] = ident;
+				output_parameter_argnums[ident] = current_argnum;
+				output_parameter_is_array[current_argnum] = decl_and_cakename->is_array;
 
 				// FIXME: also scan for "out_as" and set tagstrings for the binding
 				
@@ -3244,10 +3216,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 							);
 					assert(fp_pointer_type);
 					optional< out_arg_info > decl_and_cakename = (out_arg_info) {
-						get_type_name(fp_pointer_type->get_type()),
+						get_type_name(fp_pointer_type->get_type()) + " " + ident + ";",
 						string("__cake_" + ident)
 					};
-					*p_out << decl_and_cakename->decl << " " << ident << ";" << endl;
+					*p_out << decl_and_cakename->decl << /*" " << ident << ";" <<*/ endl;
 					new_bindings.insert(make_pair(decl_and_cakename->cakename, (bound_var_info) {
 						ident,
 						ident,
@@ -3255,6 +3227,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 						false
 					}));
 					output_parameter_idents[current_argnum] = ident;
+					output_parameter_argnums[ident] = current_argnum;
+					output_parameter_is_array[current_argnum]
+					 = decl_and_cakename->is_array;
+
 				}
 			
 				++current_fp; ++current_argnum;
@@ -3285,11 +3261,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 		string raw_result_ident = new_ident("result");
 		string out_obj_ident = new_ident("outobj");
 		// if we have a return value
-		vector< output_arginfo_t > output_arginfo;
+		vector< sig_output_arginfo_t > output_arginfo;
 		if (callee_subprogram->get_type() && callee_subprogram->get_type()->get_concrete_type())
 		{
 			output_arginfo.push_back(
-				(output_arginfo_t){"__cake_retval", callee_subprogram->get_type() }
+				(sig_output_arginfo_t){"__cake_retval", callee_subprogram->get_type() }
 			);
 		}
 		*p_out << "// begin multiple-outputs data type for the function call" << endl;
@@ -3319,7 +3295,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 						name = s.str();
 					}
 					output_arginfo.push_back(
-						(output_arginfo_t){ name, pt->get_type(), *i_arg }
+						(sig_output_arginfo_t){ name, pt->get_type(), *i_arg }
 					);
 					output_argnums[name] = argnum;
 				}
@@ -3364,6 +3340,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		vector< post_emit_status > arg_results;
 		vector< optional<string> > arg_names_in_callee;
 		map< string, string > arg_results_by_callee_name;
+		map< string, int > argnums_by_callee_name;
 		post_emit_status result;
 		dwarf::spec::subprogram_die::formal_parameter_iterator i_arg
 		 = callee_subprogram->formal_parameter_children_begin();
@@ -3433,6 +3410,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					
 					
 					arg_results_by_callee_name[argname] = arg_result;
+					argnums_by_callee_name[argname] = argnum;
 					goto next_arg_in_callee_sequence;
 				}
 				
@@ -3587,6 +3565,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							// store the mapping to the callee argument
 							arg_names_in_callee.push_back((*i_arg)->get_name());
 							arg_results_by_callee_name[argname] = result.result_fragment;
+							argnums_by_callee_name[argname] = argnum;
 					output_control:
 							*p_out << success_ident << " &= " << result.success_fragment << ";" << std::endl;
 							*p_out << "if (" << success_ident << ") // okay to proceed with next arg?" 
@@ -3624,6 +3603,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				arg_results.push_back(result);
 				arg_names_in_callee.push_back((*i_arg)->get_name());
 				arg_results_by_callee_name[argname] = result.result_fragment;
+				argnums_by_callee_name[argname] = argnum;
 				
 				++i_arg; ++argnum;
 			}
@@ -3683,9 +3663,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 		bool ran_out_of_fps = false;
 		
 		auto emit_arg_expr_maybe_with_cast
-		 = [&p_out, &compiler, this](shared_ptr<type_die> p_t, string expr) {
+		 = [&p_out, &compiler, this](shared_ptr<type_die> p_t, string expr,
+		 	 bool do_not_cast = false) {
 		 	bool inserting_cast = false;
-			if (p_t 
+			if (!do_not_cast	
+				 && p_t 
 				 && p_t->get_concrete_type()
 				 && p_t->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
 			{
@@ -3776,11 +3758,19 @@ assert(false && "disabled support for inferring positional argument mappings");
 					// boost::optional constructor conversion,
 					// so we have to guide it a bit. 
 					
+					// to find is_array, search for our argname in 
+					auto i_found_argnum = argnums_by_callee_name.find(
+						i_arginfo->argname);
+					assert(i_found_argnum != argnums_by_callee_name.end());
+					
 					if (i_arginfo->tn) *p_out << *i_arginfo->tn << "( *";
 					emit_arg_expr_maybe_with_cast(
 						// this func needs the type of the fp -- will be noop for retval
 						i_arginfo->p_fp ? i_arginfo->p_fp->get_type() : shared_ptr<type_die>(),
-						arg_results_by_callee_name[i_arginfo->argname]
+						arg_results_by_callee_name[i_arginfo->argname],
+						(bool) output_parameter_is_array[i_found_argnum->second] /* skip the cast if it's an array, because
+						 then the typeof will be precise enough, and if we write the
+						 cast, it will just give us element [0] i.e. the element type. */
 					);
 					if (i_arginfo->tn) *p_out << " )";
 				}
@@ -3874,7 +3864,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				string array_bound_string = unescape_ident(CCP(GET_TEXT(subscriptExpr)));
 				istringstream array_bound_stream(array_bound_string);
 				array_bound_stream >> array_bound; // HACK
-				string decl = compiler.cxx_declarator_from_type_die(pointer_target_type).first
+				string decl = get_type_name(pointer_target_type)
 					+ " " + ident 
 					+ "["
 					+ array_bound_string
@@ -3893,7 +3883,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 				if (!force_yes) return optional< out_arg_info >();
 				if (force_yes && !pointer_target_type) RAISE(argExpr, "cannot output through untyped pointer");
 				// else force_yes && pointer_target_type
-				string decl = compiler.cxx_declarator_from_type_die(pointer_target_type).first
+				string decl
+				 = get_type_name(pointer_target_type)//compiler.cxx_declarator_from_type_die(pointer_target_type).first
 					+ " " + ident + ";";
 				return (out_arg_info){ decl, unescape_ident(CCP(GET_TEXT(argExpr))) };
 			}

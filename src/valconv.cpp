@@ -452,7 +452,7 @@ namespace cake
 	primitive_value_conversion::primitive_value_conversion(wrapper_file& w,
 			const basic_value_conversion& basic,
 			bool init_only,
-			bool& init_is_identical)
+			bool& out_init_and_update_are_identical)
 		:   value_conversion(w, basic), 
 			source_module(w.m_d.module_of_die(source_data_type)),
 			target_module(w.m_d.module_of_die(sink_data_type)),
@@ -463,16 +463,16 @@ namespace cake
 		assert(init_only == basic.init_only);
 		
 		// ... unless we find out otherwise
-		init_is_identical = true; 
+		out_init_and_update_are_identical = true; 
 	
 	}
 	
 	structural_value_conversion::structural_value_conversion(wrapper_file& w,
 			const basic_value_conversion& basic,
 			bool init_only,
-			bool& init_is_identical)
+			bool& out_init_and_update_are_identical)
 		:   value_conversion(w, basic), 
-		    primitive_value_conversion(w, basic, init_only, init_is_identical)
+		    primitive_value_conversion(w, basic, init_only, out_init_and_update_are_identical)
 	{
 		/* Find explicitly assigned-to fields:
 		 * the map is from the assigned-to- field
@@ -618,7 +618,7 @@ namespace cake
 					{
 						if (!source_is_on_left) continue; // not relevant in this direction
 						// source is on left, target on right
-						init_is_identical = false;
+						out_init_and_update_are_identical = false;
 						if (!init_only) continue; // not relevant unless we're generating a distinct init rule
 						INIT;
 						BIND2(refinementRule, leftStubExpr);
@@ -660,7 +660,7 @@ namespace cake
 					{
 						if (source_is_on_left) continue; // not relevant in this direction
 						// source is on right, target on left
-						init_is_identical = false;
+						out_init_and_update_are_identical = false;
 						if (!init_only) continue; // not relevant unless we're generating a distinct init rule
 						INIT;
 						BIND2(refinementRule, leftValuePattern);
@@ -983,14 +983,15 @@ namespace cake
 					"__cake_nonconst_from" + (is_void_source ? "" : *unique_source_field_selector), // cxx name
 					"__cake_nonconst_from" + (is_void_source ? "" : *unique_source_field_selector), // typeof
 					source_module,
-					false
+					false,
 				}));
 			extra_env.insert(make_pair("__cake_here",
 				(wrapper_file::bound_var_info) {
 					"&__cake_nonconst_from" + (is_void_source ? "" : *unique_source_field_selector), // cxx name
 					"&__cake_nonconst_from" + (is_void_source ? "" : *unique_source_field_selector), // typeof
 					source_module,
-					false
+					false,
+					bound_var_info::IS_A_POINTER
 				}));
 		}
 		// we always have a "there"
@@ -999,7 +1000,8 @@ namespace cake
 				"&((*__cake_p_buf)" + target_field_selector + ")", // cxx name
 				"&((*__cake_p_buf)" + target_field_selector + ")", // typeof
 				source_module,
-				false
+				false,
+				bound_var_info::IS_A_POINTER
 			}));
 
 		// compute the merged environment
@@ -1119,7 +1121,8 @@ namespace cake
 					"&__cake_nonconst_from" + *unique_source_field_selector, // cxx name
 					"&__cake_nonconst_from" + *unique_source_field_selector, // typeof
 					target_module,
-					false
+					false,
+					bound_var_info::IS_A_POINTER
 				}));
 		} 
 
@@ -1129,7 +1132,8 @@ namespace cake
 				"&((*__cake_p_buf)" + target_field_selector + ")", // cxx name
 				"&((*__cake_p_buf)" + target_field_selector + ")", // typeof
 				target_module,
-				false
+				false,
+				bound_var_info::IS_A_POINTER
 			}));
 		// we should have "it" in the environment, just from crossover
 		assert(ctxt.env.find("__cake_it") != ctxt.env.end());
@@ -1386,14 +1390,16 @@ namespace cake
 					"&__cake_nonconst_from", // cxx name
 					"&__cake_nonconst_from", // typeof
 					source_module,
-					false
+					false,
+					bound_var_info::IS_A_POINTER
 				}));
 			extra_env.insert(make_pair("__cake_there",
 				(wrapper_file::bound_var_info) {
 					"__cake_p_buf", // cxx name
 					"__cake_p_buf", // typeof
 					source_module,
-					false
+					false,
+					bound_var_info::IS_A_POINTER
 				}));
 			auto saved_env = ctxt.env;
 			ctxt.env = extra_env;
@@ -1501,14 +1507,16 @@ namespace cake
 					"__cake_p_buf", // cxx name
 					"__cake_p_buf", // typeof
 					target_module,
-					false
+					false,
+					bound_var_info::IS_A_POINTER
 				}));
 			crossed_env.insert(make_pair("__cake_there",
 				(wrapper_file::bound_var_info) {
 					"(&__cake_nonconst_from)", // cxx name
 					"(&__cake_nonconst_from)", // typeof
 					target_module,
-					false
+					false,
+					bound_var_info::IS_A_POINTER
 				}));
 			auto saved_env = ctxt.env;
 			ctxt.env = crossed_env;

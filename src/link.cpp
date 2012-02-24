@@ -1837,12 +1837,17 @@ namespace cake
 					= (half_key_is_first) 
 					  ? all_corresps_by_artificial_names_for_first_type
 					  : all_corresps_by_artificial_names_for_second_type;
+					auto& corresps_by_artificial_names_for_the_other_type_map
+					= (half_key_is_first) 
+					  ? all_corresps_by_artificial_names_for_second_type
+					  : all_corresps_by_artificial_names_for_first_type;
 					/* Now we have all the relevant rules. Output about them. */
 					wrap_file <<
 			  "         // this supergroup/direction has " << vec.size() << " rules" << endl;
 
 					bool emitted_default_to_default = false;
-					set<string> emitted_tags_to_default;
+					set<string> emitted_outer_tags_to_default;
+					set<string> emitted_default_to_inner_tags;
 					for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); ++i_p_corresp)
 					{
 						// our relevance criteria ensured that 
@@ -1904,13 +1909,23 @@ namespace cake
 						if (inner_type_synonymy_chain.size() == 0 
 							&& !(*i_p_corresp)->init_only) 
 						{
-							emitted_tags_to_default.insert(
+							emitted_outer_tags_to_default.insert(
 								((outer_type_synonymy_chain.size() == 0) ? "__cake_default" : 
 								*(*outer_type_synonymy_chain.begin())->get_name())
 							);
 						}
-
+						if (outer_type_synonymy_chain.size() == 0 
+							&& !(*i_p_corresp)->init_only) 
+						{
+							emitted_default_to_inner_tags.insert(
+								((inner_type_synonymy_chain.size() == 0) ? "__cake_default" : 
+								*(*inner_type_synonymy_chain.begin())->get_name())
+							);
+						}
 					} // end outputting typedefs
+					
+					// compute groups of rules 
+					// by inner ("other") and outer ("half-key") tagstrings
 					
 					/* For each full key containing this half key...
 					 * output the tag enums.
@@ -1922,11 +1937,14 @@ namespace cake
 					 * we have to flip between distinct full keys
 					 * while outputting a single enum.
 					 * So, expand keys into <half_key_tagstring, full_key> -> corresp map. */
-					multimap< string, val_corresp * > by_enum;
-					set< string > enums;
-					
+
 					std::set< val_corresp_group_key>& keys_for_this_supergroup
 					 = val_corresp_group_keys_by_supergroup[*i_pair][*i_half_key];
+
+					multimap< string, val_corresp * > by_outer_tagstring;
+					set< string > outer_tagstrings;
+					multimap< string, val_corresp * > by_inner_tagstring;
+					set< string > inner_tagstrings;
 					
 					for (auto i_full_key = keys_for_this_supergroup.begin();
 						i_full_key != keys_for_this_supergroup.end();
@@ -1938,11 +1956,15 @@ namespace cake
 					
 						auto& corresps_by_artificial_names_for_half_key_type
 						 = corresps_by_artificial_names_for_half_key_type_map[*i_full_key];
+						auto& corresps_by_artificial_names_for_the_other_type
+						 = corresps_by_artificial_names_for_the_other_type_map[*i_full_key];
 						 
-						for (auto i_tag_in_half_key = corresps_by_artificial_names_for_half_key_type.begin();
-								  i_tag_in_half_key != corresps_by_artificial_names_for_half_key_type.end();
-								 /* prev_half_key_tagstring = i_tag_in_half_key->first, */
-								  ++i_tag_in_half_key)
+						for (auto i_tag_in_half_key
+							 = corresps_by_artificial_names_for_half_key_type.begin();
+							 i_tag_in_half_key 
+							 != corresps_by_artificial_names_for_half_key_type.end();
+							/* prev_half_key_tagstring = i_tag_in_half_key->first, */
+							++i_tag_in_half_key)
 						{
 							for (auto i_p_corresp = i_tag_in_half_key->second.begin(); 
 								i_p_corresp != i_tag_in_half_key->second.end(); ++i_p_corresp)
@@ -1950,48 +1972,88 @@ namespace cake
 								// COMPLETE HACK: skip init-only rules
 								if ((*i_p_corresp)->init_only) continue;
 								
-								by_enum.insert(make_pair(i_tag_in_half_key->first, *i_p_corresp));
-								enums.insert(i_tag_in_half_key->first);
+								by_outer_tagstring.insert(make_pair(i_tag_in_half_key->first, *i_p_corresp));
+								outer_tagstrings.insert(i_tag_in_half_key->first);
+							}
+						}
+						for (auto i_tag_in_other
+							 = corresps_by_artificial_names_for_the_other_type.begin();
+							 i_tag_in_other
+							 != corresps_by_artificial_names_for_the_other_type.end();
+							/* prev_half_key_tagstring = i_tag_in_half_key->first, */
+							++i_tag_in_other)
+						{
+							for (auto i_p_corresp = i_tag_in_other->second.begin(); 
+								i_p_corresp != i_tag_in_other->second.end(); ++i_p_corresp)
+							{
+								// COMPLETE HACK: skip init-only rules
+								if ((*i_p_corresp)->init_only) continue;
+								
+								by_inner_tagstring.insert(make_pair(i_tag_in_other->first, *i_p_corresp));
+								inner_tagstrings.insert(i_tag_in_other->first);
 							}
 						}
 					}
 					
-					// HACK: abuse the enums to make sure there is always an X-to-default
-					// mapping -- HACK AGAIN: only if unique, for now.
-					for (auto i_enum = enums.begin(); i_enum != enums.end(); ++i_enum)
+					// make sure there is always an X-to-default
+					// mapping, i.e. inner-to-default -- HACK: only if unique, for now.
+					for (auto i_outer = outer_tagstrings.begin(); i_outer != outer_tagstrings.end(); ++i_outer)
 					{
-						if (*i_enum == "__cake_default"
-						|| emitted_tags_to_default.find(*i_enum)
-							!= emitted_tags_to_default.end()) continue;
-						auto enum_seq = by_enum.equal_range(*i_enum);
-						if (srk31::count(enum_seq.first, enum_seq.second) == 1)
+						if (*i_outer == "__cake_default"
+						|| emitted_outer_tags_to_default.find(*i_outer)
+							!= emitted_outer_tags_to_default.end()) continue;
+						auto outer_seq = by_outer_tagstring.equal_range(*i_outer);
+						if (srk31::count(outer_seq.first, outer_seq.second) == 1)
 						{
 							wrap_file << "typedef " 
 								// we typedef the inner type, i.e. the non-half-key one
 								<< ((half_key_is_source) ? 
-										get_type_name(enum_seq.first->second->sink_data_type)
-									: 	get_type_name(enum_seq.first->second->source_data_type))
-								<< " " << *i_enum << "_to___cake_default_in_"
+										get_type_name(outer_seq.first->second->sink_data_type)
+									: 	get_type_name(outer_seq.first->second->source_data_type))
+								<< " " << *i_outer << "_to___cake_default_in_"
 								<< (half_key_is_first ? "second" : "first") 
 								<< ";" << endl;
 						}
-						else wrap_file << "// not emitting a " << *i_enum << "_to___cake_default typedef "
+						else wrap_file << "// not emitting a " << *i_outer << "_to___cake_default typedef "
+							<< "because there is no unique candidate" << endl;
+					}
+					// sim. for default-to-outer? 
+					for (auto i_inner = inner_tagstrings.begin(); i_inner != inner_tagstrings.end(); ++i_inner)
+					{
+						if (*i_inner == "__cake_default"
+						|| emitted_default_to_inner_tags.find(*i_inner)
+							!= emitted_default_to_inner_tags.end()) continue;
+						auto inner_seq = by_inner_tagstring.equal_range(*i_inner);
+						if (srk31::count(inner_seq.first, inner_seq.second) == 1)
+						{
+							wrap_file << "typedef " 
+								// we STILL (ALWAYS) typedef the inner type, i.e. the non-half-key one
+								<< ((half_key_is_source) ? 
+										get_type_name(inner_seq.first->second->sink_data_type)
+									: 	get_type_name(inner_seq.first->second->source_data_type))
+								<< 	" __cake_default_to_" << *i_inner << "_in_"
+								<< (half_key_is_first ? "second" : "first") 
+								<< ";" << endl;
+						}
+						else wrap_file << "// not emitting a __cake_default_to_" << *i_inner << " typedef "
 							<< "because there is no unique candidate" << endl;
 					}
 					
-					for (auto i_enum = enums.begin(); i_enum != enums.end(); ++i_enum)
+					for (auto i_outer = outer_tagstrings.begin(); i_outer != outer_tagstrings.end(); ++i_outer)
 					{
 						wrap_file << "         struct rule_tag_in_" << (half_key_is_first ? "second" : "first") 
 						  << "_given_" << (half_key_is_first ? "first" : "second") 
-						  << "_artificial_name_" << *i_enum 
+						  << "_artificial_name_" << *i_outer 
 							<< " { enum __cake_rule_tags {" << endl;
-						auto enum_seq = by_enum.equal_range(*i_enum);
+						
+						auto outer_seq = by_outer_tagstring.equal_range(*i_outer);
 						bool emitted_default = false;
-						for (auto i_p_corresp_pair = enum_seq.first;
-							i_p_corresp_pair != enum_seq.second;
+						set<string> emitted_inner_tagstrings;
+						for (auto i_p_corresp_pair = outer_seq.first;
+							i_p_corresp_pair != outer_seq.second;
 							++i_p_corresp_pair)
 						{
-							if (i_p_corresp_pair != enum_seq.first) wrap_file << ", " << endl;
+							if (i_p_corresp_pair != outer_seq.first) wrap_file << ", " << endl;
 							// here we want the data type in the *other* module, but not concretised
 							auto half_key_die = (half_key_is_source) ?
 								(*i_p_corresp_pair).second->source_data_type : (*i_p_corresp_pair).second->sink_data_type;
@@ -2004,19 +2066,20 @@ namespace cake
 							auto artificial_name_for_the_other_die =
 								(!data_types_are_identical(the_other_die->get_concrete_type(), the_other_die)) 
 								? *the_other_die->get_name()
-								 : (emitted_default = true, "__cake_default");
+								 : "__cake_default";
 
 							assert(val_corresp_numbering.find(i_p_corresp_pair->second->shared_from_this())
 							    != val_corresp_numbering.end());
 							wrap_file << artificial_name_for_the_other_die // artificial_name_for_half_key_die 
 								<< " = " 
 								<< val_corresp_numbering[(*i_p_corresp_pair).second->shared_from_this()];
+							emitted_inner_tagstrings.insert(artificial_name_for_the_other_die);
 						}
 						/* Now also emit a "__cake_default" if it's unique and we haven't yet; */
-						if (srk31::count(enum_seq.first, enum_seq.second) == 1
-						 && !emitted_default)
+						if (srk31::count(outer_seq.first, outer_seq.second) == 1
+						 && emitted_inner_tagstrings.find("__cake_default") == emitted_inner_tagstrings.end())
 						{
-							auto i_p_corresp_pair = enum_seq.first;
+							auto i_p_corresp_pair = outer_seq.first;
 							wrap_file << ", " << endl;
 							auto artificial_name_for_the_other_die = "__cake_default";
 							wrap_file << artificial_name_for_the_other_die 
@@ -2024,6 +2087,29 @@ namespace cake
 								<< val_corresp_numbering[(*i_p_corresp_pair).second->shared_from_this()]
 								<< "/* by uniqueness */";
 						}
+						if (*i_outer == "__cake_default")
+						{
+							/* In this case, we also go through the *inner* strings and
+							 * do likewise, so that in the enum named "...__cake_default"
+							 * we have a full set of options. */
+							for (auto i_inner = inner_tagstrings.begin(); i_inner != inner_tagstrings.end(); ++i_inner)
+							{
+								// we should skip any case we've handled already
+								if (emitted_inner_tagstrings.find(*i_inner) != emitted_inner_tagstrings.end()) continue;
+								auto inner_seq = by_inner_tagstring.equal_range(*i_inner);
+								
+								if (srk31::count(inner_seq.first, inner_seq.second) == 1)
+								{
+									auto i_p_corresp_pair = inner_seq.first;
+									auto artificial_name_for_the_other_die = *i_inner;
+									wrap_file << ", " << endl
+										<< artificial_name_for_the_other_die // artificial_name_for_half_key_die 
+										<< " = " 
+										<< val_corresp_numbering[(*i_p_corresp_pair).second->shared_from_this()];
+								}
+							}
+						}
+							
 						
 						wrap_file << "         }; };" << endl; // ends a tag enum/struct
 					}
@@ -3438,7 +3524,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 							/* .source_infix_stub = */ sink_infix_stub,
 							/* .refinement = */ refinement,
 							/* .source_is_on_left = */ source_is_on_left,
-							/* .corresp = */ corresp };
+							/* .corresp = */ corresp,
+							/* .init_only = */ init_only };
 		
 		// we *only* emit conversions between concrete types
 		auto source_concrete_type = source_data_type->get_concrete_type();
@@ -3529,7 +3616,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				val_corresps.insert(make_pair(key, 
 					init_candidate = dynamic_pointer_cast<value_conversion>(
 						make_shared<skipped_value_conversion>(
-							wrap_code,basic, 
+							wrap_code, basic, 
 							"rep-compatibility and C++-assignability"
 						)
 					)
@@ -3568,7 +3655,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		}
 
 	#define TAG_PAIR(t1, t2) ((t1)<<((sizeof (Dwarf_Half))*8) | (t2))
-		// temporary HACK
+		// temporary HACK -- emit enumerations as reinterprets, until we have tables
 		if (TAG_PAIR(source_data_type->get_concrete_type()->get_tag(), 
 				sink_data_type->get_concrete_type()->get_tag())
 			== TAG_PAIR(DW_TAG_enumeration_type, DW_TAG_enumeration_type))
@@ -3587,51 +3674,68 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				case TAG_PAIR(DW_TAG_structure_type, DW_TAG_structure_type): {
 					//emit_structural_conversion_body(source_data_type, sink_data_type,
 					//	refinement, source_is_on_left);
-					bool init_is_identical;
+					bool init_and_update_are_identical;
 					val_corresps.insert(make_pair(key, 
 						init_candidate = dynamic_pointer_cast<value_conversion>(
 							make_shared<structural_value_conversion>(
-								wrap_code, basic, false, init_is_identical
+								wrap_code, basic, /*false*/ init_only, 
+								init_and_update_are_identical
 							)
 						)
 					));
 					// if we need to generate a separate init rule, do so, overriding init_candidate
-					if (!init_is_identical)
+					if (!init_and_update_are_identical)
 					{
 						auto new_basic = basic;
-						new_basic.init_only = true; // HACK: shouldn't have this duplication of init_only
-						val_corresps.insert(make_pair(key, 
-							init_candidate = dynamic_pointer_cast<value_conversion>(
+						new_basic.init_only = !init_only; // i.e. the converse case
+						auto inserted = val_corresps.insert(make_pair(key, 
+							dynamic_pointer_cast<value_conversion>(
 								make_shared<structural_value_conversion>(
-									wrap_code, new_basic, true, init_is_identical
+									wrap_code, new_basic, !init_only, 
+									init_and_update_are_identical
 								)
 							)
 						));
+						if (!init_only)
+						{
+							// this means we've just added a candidate init rule,
+							// so override init_candidate
+							init_candidate = inserted->second;
+						}
 					}
 				} break;
 				/* If we are corresponding two base types, it's probably because we have 
 				 * some infix stub expressions or something. */
 				case TAG_PAIR(DW_TAG_base_type, DW_TAG_base_type): {
-					bool init_is_identical;
+					bool init_and_update_are_identical;
 					val_corresps.insert(make_pair(key, 
 						init_candidate = dynamic_pointer_cast<value_conversion>(
 							make_shared<primitive_value_conversion>(
-								wrap_code, basic, false, init_is_identical
+								wrap_code, basic, /* false */ init_only, 
+								init_and_update_are_identical
 							)
 						)
 					));
-					// if we need to generate a separate init rule, do so, overriding init_candidate
-					if (!init_is_identical)
+					// if we need to generate a separate init rule, do so, 
+					// overriding init_candidate
+					if (!init_and_update_are_identical)
 					{
 						auto new_basic = basic;
-						new_basic.init_only = true; // HACK: shouldn't have this duplication of init_only
-						val_corresps.insert(make_pair(key, 
-							init_candidate = dynamic_pointer_cast<value_conversion>(
+						new_basic.init_only = !init_only; // i.e. the converse case
+						auto inserted = val_corresps.insert(make_pair(key, 
+							dynamic_pointer_cast<value_conversion>(
 								make_shared<primitive_value_conversion>(
-									wrap_code, new_basic, true, init_is_identical
+									wrap_code, new_basic, !init_only, 
+									init_and_update_are_identical
 								)
 							)
 						));
+						if (!init_only)
+						{
+							// this means we've just added a candidate init rule,
+							// so override init_candidate
+							init_candidate = inserted->second;
+						}
 					}
 				} break;
 				case TAG_PAIR(DW_TAG_enumeration_type, DW_TAG_enumeration_type): {
