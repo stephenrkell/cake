@@ -8,7 +8,8 @@ extern "C" {
 //#include <boost/type_traits/remove_volatile.hpp>
 #include <boost/type_traits/remove_reference.hpp>
 #include <boost/type_traits/remove_pointer.hpp>
-#define REP_ID(ident) (ident::marker::rep_id)
+#include <boost/type_traits/is_pointer.hpp>
+#define REP_ID(ident) ident::marker::rep_id
 // don't bother with volatile for now
 #define REMOVE_CV(t_id) boost::remove_const< typename t_id >::type
 

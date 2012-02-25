@@ -58,6 +58,7 @@ void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_r
 void init_co_object_from_object(int object_rep, void *object,
 		int co_object_rep, void *co_object, int is_leaf);
 void sync_all_co_objects(int from_rep, int to_rep, ...);
+void *replace_co_object(void *existing_obj, void *new_obj, int existing_rep, int require_other_rep);
 
 /* object graph walking */
 void walk_bfs(int object_rep, void *object, int co_object_rep,

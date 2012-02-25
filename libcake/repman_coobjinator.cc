@@ -301,3 +301,23 @@ void allocate_co_object_idem(void *object, int object_rep, int co_object_rep, in
 	/* tell the image what the type of this heap object is */
 	set_co_object_type(object, object_rep, co_object, co_object_rep);
 }
+
+void *replace_co_object(void *existing_obj, 
+	void *new_obj, 
+	int existing_rep, 
+	int require_other_rep)
+{
+	struct co_object_rec *found_existing_co_object;	 
+	void *found = find_co_object(existing_obj, 
+	   	existing_rep, 
+		require_other_rep, 
+		&found_existing_co_object));
+	if (found)
+	{
+		found_existing_co_object->reps[existing_rep] = new_obj;
+		found_existing_co_object->co_object_info[existing_rep].allocated_by = ALLOC_BY_USER;
+		found_existing_co_object->co_object_info[existing_rep].initialized = 1;
+		return new_obj;
+	}
+	return existing_obj;
+}

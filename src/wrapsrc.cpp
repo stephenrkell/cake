@@ -666,13 +666,18 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 
 			//auto returned_inward = do_virtual_crossover(sink, new_env3, source);
-			reconcile_deferred_out_bindings(new_env3, 
+			auto removed_env = reconcile_deferred_out_bindings(new_env3, // <-- this is *modified* 
 				sink,
 				source,
 				deferred_out_bindings, deferred_out_caller_cxxnames);
 			ctxt.modules.current = ctxt.modules.source;
 			ctxt.env = crossover_environment_and_sync(sink, new_env3, source, return_constraints, 
 				true);
+			// we pass the old context etc. for cleanup
+			cleanup_deferred_out_bindings(removed_env,
+				sink,
+				source,
+				deferred_out_bindings, deferred_out_caller_cxxnames);
 			
 			std::string final_success_fragment = status3.success_fragment;
 			
@@ -821,7 +826,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 	
 	}
 	
-	void
+	environment
 	wrapper_file::reconcile_deferred_out_bindings(
 		environment& env,
 		module_ptr current_module,
@@ -830,6 +835,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		const vector<string>& deferred_out_caller_cxxnames
 	)
 	{
+		environment return_env;
 		assert(current_module != caller_module);
 		/* We're just about to cross over an env back to the caller side. 
 		 * Currently there is no relation between the callee-output value
@@ -877,8 +883,46 @@ assert(false && "disabled support for inferring positional argument mappings");
 				<< "REP_ID("
 				<< m_d.name_of_module(caller_module) << "), false);" << endl;
 			// now we REMOVE the env entry!
+			// Why? This is the env entry for the output object. It has now 
+			// done its bit. In particular, we *don't* want it to get caught
+			// up in the normal crossover logic. Before removal, save the binding for later cleanup.
+			return_env.insert(*env_found);
 			env.erase(env_found);
+			// When can we invalidate the co-object relationship we just created?
+			// Presumably not yet, because we have yet to sync?
 			
+		}
+		return return_env;
+	}
+	
+	void
+	wrapper_file::cleanup_deferred_out_bindings(
+		environment& env,
+		module_ptr current_module,
+		module_ptr caller_module,
+		const vector<string>& deferred_out_bindings,
+		const vector<string>& deferred_out_caller_cxxnames
+	)
+	{
+		for (unsigned i = 0; i < deferred_out_bindings.size(); ++i)
+		{
+			string cakename = deferred_out_bindings.at(i);
+			string cxxname = deferred_out_caller_cxxnames.at(i);
+			auto env_found = env.find(cakename);
+			if (env_found == env.end())
+			{
+				continue;
+			}
+			*p_out << "// handling deferred co-objectification of " 
+				<< cakename << endl;
+			
+			/* After the sync has happened... remove the 
+			 * temporary co-object relationship we created before crossover. */
+			assert(env.find(cakename) != env.end());
+			*p_out << "invalidate_co_object("
+				<< "&" << env[cakename].cxx_name << ", "
+				<< "REP_ID(" << m_d.name_of_module(current_module) << ")"
+				<< ");" << endl;
 		}
 	}
 

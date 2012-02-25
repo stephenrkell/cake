@@ -1,10 +1,13 @@
 CFLAGS += -g3 -fno-eliminate-unused-debug-types -fno-eliminate-unused-debug-symbols
 CFLAGS += -I${HOME}/opt/include
-CXXFLAGS += $(CFLAGS) -std=gnu++0x
+CXXFLAGS += -std=gnu++0x
 
 CAKE ?= ../../src/cake
 CXX ?= g++-4.5
-CXXFLAGS += -I/usr/local/include -I$(shell dirname $(CAKE))/../include -I$(shell dirname $(CAKE))/../libcake/include
+CXXFLAGS += -I/usr/local/include 
+CXXFLAGS += -I$(shell dirname $(CAKE))/../include 
+CXXFLAGS += -I$(shell dirname $(CAKE))/../libcake/include
+CXXFLAGS += -I$(shell dirname $(CAKE))/../../libsrk31c++/include
 LDFLAGS += -L/usr/local/lib -Wl,-R/usr/local/lib -L$(shell dirname $(CAKE))/../libcake -lcake -Wl,-R$(realpath $(shell dirname $(CAKE))/../libcake)
 LDLIBS += -lunwind -lunwind-ptrace -lunwind-$(shell uname -m)
 

@@ -1171,6 +1171,70 @@ namespace cake
 		}
 	}
 	
+	void 
+	primitive_value_conversion::emit_pre_stub_co_object_substitution_check(
+		codegen_context& ctxt)
+	{
+		/* Under these conditions: 
+		 * - we are an init-only rule
+		 * - our stub has yielded a pointer
+		 * - our target object is in the co-object relation
+		 * - (that's "__cake_there" for a pre-stub, "here" for a post-stub)
+		 * ... we take the pointer it returns and make it our co-object. */
+		assert(init_only);
+		auto found_it = ctxt.env.find("__cake_it");
+		assert(found_it != ctxt.env.end());
+		string it_cxxname = found_it->second.cxx_name;
+		auto found_there = ctxt.env.find("__cake_there");
+		assert(found_there != ctxt.env.end());
+		string there_cxxname = found_there->second.cxx_name;
+		m_out() << "if (boost::is_pointer<__typeof(" << it_cxxname << " )>::value)" << endl
+			<< "{" << endl;
+		m_out().inc_level();
+			/* Note: we're replacing the __p_to co-object with what the stub returned. */
+			m_out() << "replace_co_object(" 
+				<< there_cxxname << ", "
+				<< it_cxxname << ", "
+				<< "REP_ID(" << w.ns_prefix << "::" << w.m_d.name_of_module(
+					ctxt.modules.current == ctxt.modules.source 
+					? ctxt.modules.sink : ctxt.modules.source) << "), "
+				<< "REP_ID(" << w.ns_prefix << "::"
+					<< w.m_d.name_of_module(ctxt.modules.current == ctxt.modules.source 
+						? ctxt.modules.source : ctxt.modules.sink)
+				<< "));" << endl;
+		m_out().dec_level();
+		m_out() << "}" << endl;
+	}
+	void 
+	primitive_value_conversion::emit_post_stub_co_object_substitution_check(
+		codegen_context& ctxt)
+	{
+		assert(init_only);
+		auto found_it = ctxt.env.find("__cake_it");
+		assert(found_it != ctxt.env.end());
+		string it_cxxname = found_it->second.cxx_name;
+		auto found_here = ctxt.env.find("__cake_here");
+		assert(found_here != ctxt.env.end());
+		string here_cxxname = found_here->second.cxx_name;
+		m_out() << "if (boost::is_pointer<__typeof(" << it_cxxname << " )>::value)" << endl
+			<< "{" << endl;
+		m_out().inc_level();
+			/* Note: we're replacing the __p_to co-object with what the stub returned. */
+			m_out() << "replace_co_object(" 
+				<< here_cxxname << ", "
+				<< it_cxxname << ", "
+				<< "REP_ID(" << w.ns_prefix << "::" << w.m_d.name_of_module(
+					ctxt.modules.current == ctxt.modules.source 
+					? ctxt.modules.source : ctxt.modules.sink) << "), "
+				<< "REP_ID(" << w.ns_prefix << "::"
+					<< w.m_d.name_of_module(ctxt.modules.current == ctxt.modules.source 
+						? ctxt.modules.sink : ctxt.modules.source)
+				<< "));" << endl;
+		m_out().dec_level();
+		m_out() << "}" << endl;
+	
+	}
+	
 	void structural_value_conversion::emit_body()
 	{
 		emit_initial_declarations();
@@ -1407,9 +1471,16 @@ namespace cake
 				ctxt, 
 				GET_CHILD(source_infix_stub, 0)
 			);
+			// add "__cake_it"
+			ctxt.env["__cake_it"] = (wrapper_file::bound_var_info) {
+				return_status.result_fragment, // cxx name
+				return_status.result_fragment, // typeof
+				source_module,
+				false
+			};
+			if (init_only) emit_pre_stub_co_object_substitution_check(ctxt);
 			// restore previous environment + new additions
 			ctxt.env = w.merge_environment(saved_env, return_status.new_bindings);
-			// FIXME: do stuff with the success status?
 		}
 
 		/* 2. For each target field, emit its pre-stub (if any) and extend the environment with the result.
@@ -1526,8 +1597,16 @@ namespace cake
 				GET_CHILD(sink_infix_stub, 0)
 			);
 			
-			post_sink_stub_hook(ctxt.env, return_status);
+			// finally, add __cake_it
+			ctxt.env["__cake_it"] = (wrapper_file::bound_var_info) {
+				return_status.result_fragment,
+				return_status.result_fragment,
+				target_module,
+				false
+			};
 			
+			post_sink_stub_hook(ctxt.env, return_status);
+			if (init_only) emit_post_stub_co_object_substitution_check(ctxt);			
 			ctxt.env = saved_env;
 		}
 

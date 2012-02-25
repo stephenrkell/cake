@@ -326,7 +326,7 @@ namespace cake {
                 bool free_sink = false,
 				bool init_only = false,
 				bool is_compiler_generated = false);
-        void add_value_corresp(
+        val_corresp_map_t::iterator add_value_corresp(
         	module_ptr source, 
             shared_ptr<spec::type_die> source_data_type,
             antlr::tree::Tree *source_infix_stub,
@@ -338,7 +338,7 @@ namespace cake {
             antlr::tree::Tree *corresp,
 			bool init_only = false
         );
-		void add_value_corresp(
+		val_corresp_map_t::iterator add_value_corresp(
         	module_ptr source, 
         	antlr::tree::Tree *source_data_type_mn,
         	antlr::tree::Tree *source_infix_stub,
@@ -358,6 +358,8 @@ namespace cake {
 		void 
 		find_usage_contexts(const string& ident,
 			antlr::tree::Tree *t, vector<antlr::tree::Tree *>& out);
+		
+		void complete_value_corresps();
 		void assign_value_corresp_numbers();
 		void compute_init_rules();
 		void compute_wrappers();

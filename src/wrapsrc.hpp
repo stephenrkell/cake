@@ -132,8 +132,20 @@ namespace cake
 			vector<string>& out_deferred_out_bindings,
 			vector<string>& out_deferred_out_caller_cxxnames
 		);
-		void
+		
+		// this one happens post-output, pre-sync
+		environment
 		reconcile_deferred_out_bindings(
+			environment& env,
+			module_ptr current_module,
+			module_ptr caller_module,
+			const vector<string>& deferred_out_bindings,
+			const vector<string>& out_deferred_out_caller_cxxnames
+		);
+		
+		// this one happsn post-sync
+		void
+		cleanup_deferred_out_bindings(
 			environment& env,
 			module_ptr current_module,
 			module_ptr caller_module,

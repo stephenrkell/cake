@@ -265,6 +265,10 @@ namespace cake
 		virtual void emit_source_object_alias();
 		virtual void emit_target_buffer_declaration();
 		virtual void emit_initial_declarations();
+		virtual void emit_pre_stub_co_object_substitution_check(
+			codegen_context& ctxt);
+		virtual void emit_post_stub_co_object_substitution_check(
+			codegen_context& ctxt);
 		virtual void write_single_field(
 			codegen_context& ref_ctxt,
 			string target_field_selector,

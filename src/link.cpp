@@ -318,8 +318,8 @@ namespace cake
 			}
 		}
 		
-		
 		// assign numbers to value corresps
+		// -- this will add any value corresps required for completeness
 		assign_value_corresp_numbers();
 		
 		// which value corresps should we use as initialization rules?
@@ -3373,7 +3373,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 	 * It differs from the canonical version only in that 
 	 * it accepts the source and sink as definite_member_names,
 	 * not DIE pointers. */
-	void link_derivation::add_value_corresp(
+	link_derivation::val_corresp_map_t::iterator
+	link_derivation::add_value_corresp(
 		module_ptr source, 
 		antlr::tree::Tree *source_data_type_mn,
 		antlr::tree::Tree *source_infix_stub,
@@ -3406,7 +3407,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		assert(source_data_type_opt->get_concrete_type()->get_tag() != DW_TAG_pointer_type);
 		assert(sink_data_type_opt->get_concrete_type()->get_tag() != DW_TAG_pointer_type);
 		
-		add_value_corresp(source, 
+		return add_value_corresp(source, 
 			source_data_type_opt, 
 			source_infix_stub,
 			sink, 
@@ -3460,7 +3461,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 
 	
 	/* This is the "canonical" version, called from implicit name-matching */
-	void link_derivation::add_value_corresp(
+	link_derivation::val_corresp_map_t::iterator
+	link_derivation::add_value_corresp(
 		module_ptr source, 
 		shared_ptr<dwarf::spec::type_die> source_data_type,
 		antlr::tree::Tree *source_infix_stub,
@@ -3541,10 +3543,10 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				<< get_type_name(source_data_type)
 				<< " to " << get_type_name(sink_data_type)
 				<< endl;
-			val_corresps.insert(make_pair(key,
+			auto ret = val_corresps.insert(make_pair(key,
 				dynamic_pointer_cast<value_conversion>(
 					make_shared<virtual_value_conversion>(wrap_code, basic))));
-			return;
+			return ret;
 		}
 	
 		// skip incomplete (void) typedefs and other incompletes
@@ -3555,11 +3557,11 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				<< " to " << get_type_name(sink_data_type)
 				<< " because one or other is an incomplete type." << endl;
 			//m_out << "// (skipped because of incomplete type)" << endl << endl;
-			val_corresps.insert(make_pair(key, 
+			auto ret = val_corresps.insert(make_pair(key, 
 				dynamic_pointer_cast<value_conversion>(
 					make_shared<skipped_value_conversion>(wrap_code, 
 					basic, string("incomplete type")))));
-			return;
+			return ret;
 		}
 		
 		// now we can compute the concrete type names 
@@ -3576,11 +3578,11 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				<< " to " << to_typename
 				<< " because one or other is an pointer or reference type." << endl;
 			//m_out << "// (skipped because of pointer or reference type)" << endl << endl;
-			val_corresps.insert(make_pair(key, 
+			auto ret = val_corresps.insert(make_pair(key, 
 				dynamic_pointer_cast<value_conversion>(
 					make_shared<skipped_value_conversion>(wrap_code, 
 					basic, "pointer or reference type"))));
-			return;
+			return ret;
 		}
 		// skip subroutine types
 		if (source_concrete_type->get_tag() == DW_TAG_subroutine_type
@@ -3590,17 +3592,18 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				<< " to " << to_typename
 				<< " because one or other is a subroutine type." << endl;
 			//m_out << "// (skipped because of subroutine type)" << endl << endl;
-			val_corresps.insert(make_pair(key, 
+			auto ret = val_corresps.insert(make_pair(key, 
 				dynamic_pointer_cast<value_conversion>(
 					make_shared<skipped_value_conversion>(wrap_code, 
 					basic, "subroutine type"))));
-			return;
+			return ret;
 		}
 		
 		// from this point, we will generate a candidate for an init rule
 		shared_ptr<value_conversion> init_candidate;
 			
 		bool emit_as_reinterpret = false;
+		val_corresp_map_t::iterator ret; 
 		if (source_concrete_type->is_rep_compatible(sink_concrete_type)
 			&& (!refinement || GET_CHILD_COUNT(refinement) == 0)
 			&& (!source_infix_stub || GET_CHILD_COUNT(source_infix_stub) == 0)
@@ -3675,7 +3678,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					//emit_structural_conversion_body(source_data_type, sink_data_type,
 					//	refinement, source_is_on_left);
 					bool init_and_update_are_identical;
-					val_corresps.insert(make_pair(key, 
+					ret = val_corresps.insert(make_pair(key, 
 						init_candidate = dynamic_pointer_cast<value_conversion>(
 							make_shared<structural_value_conversion>(
 								wrap_code, basic, /*false*/ init_only, 
@@ -3688,7 +3691,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					{
 						auto new_basic = basic;
 						new_basic.init_only = !init_only; // i.e. the converse case
-						auto inserted = val_corresps.insert(make_pair(key, 
+						auto inserted = ret = val_corresps.insert(make_pair(key, 
 							dynamic_pointer_cast<value_conversion>(
 								make_shared<structural_value_conversion>(
 									wrap_code, new_basic, !init_only, 
@@ -3708,7 +3711,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				 * some infix stub expressions or something. */
 				case TAG_PAIR(DW_TAG_base_type, DW_TAG_base_type): {
 					bool init_and_update_are_identical;
-					val_corresps.insert(make_pair(key, 
+					ret = val_corresps.insert(make_pair(key, 
 						init_candidate = dynamic_pointer_cast<value_conversion>(
 							make_shared<primitive_value_conversion>(
 								wrap_code, basic, /* false */ init_only, 
@@ -3722,7 +3725,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					{
 						auto new_basic = basic;
 						new_basic.init_only = !init_only; // i.e. the converse case
-						auto inserted = val_corresps.insert(make_pair(key, 
+						auto inserted = ret = val_corresps.insert(make_pair(key, 
 							dynamic_pointer_cast<value_conversion>(
 								make_shared<primitive_value_conversion>(
 									wrap_code, new_basic, !init_only, 
@@ -3746,14 +3749,14 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					cerr << "Warning: didn't know how to generate conversion between "
 						<< *source_data_type << " and " << *sink_data_type << endl;
 					//RAISE_INTERNAL(corresp, "unsupported value correspondence");
-				return;
+					return val_corresps.end();
 			}
 	#undef TAG_PAIR
 		}
 		else
 		{
 			//emit_reinterpret_conversion_body(source_data_type, sink_data_type);
-			val_corresps.insert(make_pair(key, 
+			ret = val_corresps.insert(make_pair(key, 
 				init_candidate = dynamic_pointer_cast<value_conversion>(
 					make_shared<reinterpret_value_conversion>(wrap_code, 
 					basic))));
@@ -3770,6 +3773,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			init_tbl_key,
 			init_candidate
 		));
+		return ret;
 	}
 	
 	shared_ptr<type_die> 
@@ -4550,6 +4554,206 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 	//class hash<module_ptr>;
 	//class hash<shared_ptr<type_die> >;
 	
+	void link_derivation::complete_value_corresps()
+	{
+		/* We want to end up with a "complete" set of value corresps, in the sense that 
+		 * given a correspondence in one direction, we can always do something (even if
+		 * just a no-op) in the other direction. 
+		 * 
+		 * This means:
+		 * 1. if we have only an init rule in a given direction, we add an update rule;
+		 * 2. if, for a given four-tuple (val_corresp_group_key), we don't have a rule
+		 *    in one or other direction, we create one (an update rule).
+		 * 
+		 * We will probably have to do something about artificials / tagstrings in due
+		 * course, but just hit the concrete case to begin with.
+		 */
+		
+		for (auto i_pair = all_iface_pairs.begin(); i_pair != all_iface_pairs.end(); ++i_pair)
+		{
+			/* First we go through the supergroups, and make sure that for 
+			 * each source-to-sink rule,
+			 * there is some sink-to-source rule (which will be in a different supergroup). */
+			
+			map<val_corresp_group_key, bool> to_add_dir;
+			
+			auto supergroup_multimap = val_corresp_supergroups[*i_pair];
+			for (auto i_supergroup = val_corresp_supergroup_keys[*i_pair].begin();
+				i_supergroup != val_corresp_supergroup_keys[*i_pair].end(); ++i_supergroup)
+			{
+				auto rule_seq = supergroup_multimap.equal_range(*i_supergroup);
+				for (auto i_rule = rule_seq.first;
+				          i_rule != rule_seq.second;
+				          ++i_rule)
+				{
+					auto p_corresp = i_rule->second;
+					auto half_key = i_rule->first;
+					assert(half_key == *i_supergroup);
+				
+					// make the supergroup key for the *other* half of this rule
+					auto other_half_key = make_pair(
+						(p_corresp->source == half_key.first) ? p_corresp->sink : p_corresp->source,
+						canonicalise_type(
+							(p_corresp->source == half_key.first) ? p_corresp->sink_data_type : 
+								p_corresp->source_data_type,
+							(p_corresp->source == half_key.first) ? p_corresp->sink : p_corresp->source,
+							compiler
+						)
+					);
+					
+					// which direction does this rule go in?
+					bool rule_is_outer_to_inner = (p_corresp->source == half_key.first);
+					
+					// ... now check that a rule exists in the other direction
+					auto other_supergroup_seq = val_corresp_supergroups[*i_pair].equal_range(
+						other_half_key
+					);
+					
+// 					std::find(
+// 						supergroups_seq.first,  // i.e. all supergroups with this iface pair
+// 						supergroups_seq.second,
+// 						[other_half_key](const val_corresp_supergroups_tbl_t::value_type& entry) {
+// 							return entry.second.first == other_half_key;
+// 							// i.e. select the unique supergroup whose half-key is the other key
+// 							// -- this supergroup is itself a multimap
+// 						}
+// 					);
+
+					//if (found_other_supergroup != supergroups_seq.second)
+						auto i_other_rule = other_supergroup_seq.first;
+						for (;
+							i_other_rule != other_supergroup_seq.second;
+							++i_other_rule)
+						{
+							auto i_p_corresp = i_other_rule->second;
+							// we succeed if this rule maps
+							// to the half-key data type
+							// and is in the opposite direction
+							// and is not init-only
+							if (!i_p_corresp->init_only 
+							&&  (rule_is_outer_to_inner ? // if so, we want inner to outer
+									(i_p_corresp->sink == half_key.first
+								&& data_types_are_identical(
+										canonicalise_type(i_p_corresp->sink_data_type, i_p_corresp->sink, compiler),
+										canonicalise_type(half_key.second, half_key.first, compiler)))
+							: 		(i_p_corresp->source == half_key.first
+								&& data_types_are_identical(
+										canonicalise_type(i_p_corresp->source_data_type, i_p_corresp->source, compiler),
+										canonicalise_type(half_key.second, half_key.first, compiler)))
+							))
+							{
+								// okay, we found one -- can break from this loop
+								break;
+							}
+						}
+						if (i_other_rule == other_supergroup_seq.second) goto failed;
+						else continue; // get on with the next rule in the supergroup
+
+				failed:
+					cerr << "INCOMPLETENESS: we think that rule " << *p_corresp
+						<< " has no update rule in the opposite direction" << endl;
+					cerr << "Will add one." << endl;
+					auto to_add_key = (val_corresp_group_key){
+						p_corresp->sink,
+						p_corresp->source,
+						canonicalise_type(p_corresp->sink_data_type, p_corresp->sink, compiler),
+						canonicalise_type(p_corresp->source_data_type, p_corresp->source, compiler)
+					};
+					if (to_add_dir.find(to_add_key) == to_add_dir.end())
+					{
+						to_add_dir.insert(make_pair(to_add_key, !p_corresp->source_is_on_left));
+					}
+				}
+			}
+			
+			for (auto i_to_add = to_add_dir.begin(); i_to_add != to_add_dir.end(); ++i_to_add)
+			{
+				auto inserted = add_value_corresp(
+					/* module_ptr source, */i_to_add->first.source_module,
+					/* shared_ptr<dwarf::spec::type_die> source_data_type, */ i_to_add->first.source_data_type,
+					/* antlr::tree::Tree *source_infix_stub, */ 0,
+					/* module_ptr sink, */ i_to_add->first.sink_module,
+					/* shared_ptr<dwarf::spec::type_die> sink_data_type, */ i_to_add->first.sink_data_type, 
+					/* antlr::tree::Tree *sink_infix_stub, */ 0,
+					/* antlr::tree::Tree *refinement, */ 0, 
+					/* bool source_is_on_left, */ i_to_add->second /*source_is_on_left*/, // doesn't matter because we pass no ASTs
+					/* antlr::tree::Tree *corresp, */ make_simple_corresp_expression( // left, right
+						i_to_add->second /*source_is_on_left */
+							? *i_to_add->first.source_data_type->ident_path_from_cu()
+							: *i_to_add->first.sink_data_type->ident_path_from_cu(),
+						i_to_add->second /*source_is_on_left */
+							? *i_to_add->first.sink_data_type->ident_path_from_cu()
+							: *i_to_add->first.source_data_type->ident_path_from_cu()	), 
+					/* bool init_only */ false
+						);
+				cerr << "Added " << *inserted->second << endl;
+			}
+		
+			auto groups_seq = val_corresp_groups[*i_pair];
+			set<val_corresp_group_key> to_add;
+			for (auto i_group = groups_seq.begin(); i_group != groups_seq.end(); ++i_group)
+			{
+				/* Each group has a unique key,
+				 * fixing its source and sink type.
+				 * So each group is entirely first-to-second or entirely second-to-first.
+				 * We make sure there is at least one update rule. */
+				
+				optional<bool> group_is_first_to_second;
+				
+				bool group_has_update = false;
+				unsigned group_init_only_rule_count = 0;
+				
+				for (auto i_p_corresp = i_group->second.begin(); 
+					i_p_corresp != i_group->second.end(); 
+					++i_p_corresp)
+				{
+					bool this_rule_is_first_to_second
+					 = ((*i_p_corresp)->source == i_pair->first);
+					 
+					if (!group_is_first_to_second.is_initialized()) 
+					{
+						group_is_first_to_second = optional<bool>(this_rule_is_first_to_second);
+					} else assert(*group_is_first_to_second == this_rule_is_first_to_second);
+					
+					if (!(*i_p_corresp)->init_only) group_has_update = true;
+					else ++group_init_only_rule_count;
+				}
+				
+				if (!group_has_update && group_init_only_rule_count > 0)
+				{
+					cerr << "INCOMPLETENESS: we think that group <"
+						<< "source module " << name_of_module(i_group->first.source_module)
+						<< ", source concrete type " << i_group->first.source_data_type->summary()
+						<< ", sink module " << name_of_module(i_group->first.sink_module)
+						<< ", sink concrete type " << i_group->first.sink_data_type->summary()
+						<< "> has no update rule (has " << group_init_only_rule_count 
+						<< " init-only rules)." << endl;
+					cerr << "Will add one." << endl;
+					to_add.insert(i_group->first);
+				}
+			} // end for group
+				
+			for (auto i_group_key = to_add.begin(); i_group_key != to_add.end(); ++i_group_key)
+			{
+				auto inserted = add_value_corresp(
+				/* module_ptr source, */ i_group_key->source_module,
+				/* shared_ptr<dwarf::spec::type_die> source_data_type, */ i_group_key->source_data_type,
+				/* antlr::tree::Tree *source_infix_stub, */ 0,
+				/* module_ptr sink, */ i_group_key->sink_module,
+				/* shared_ptr<dwarf::spec::type_die> sink_data_type, */ i_group_key->sink_data_type, 
+				/* antlr::tree::Tree *sink_infix_stub, */ 0,
+				/* antlr::tree::Tree *refinement, */ 0, 
+				/* bool source_is_on_left, */ false, // doesn't matter because we pass no ASTs
+				/* antlr::tree::Tree *corresp, */  make_simple_corresp_expression( // left, right
+					*i_group_key->sink_data_type->ident_path_from_cu(),
+					*i_group_key->source_data_type->ident_path_from_cu()), 
+				/* bool init_only */ false
+				);
+				cerr << "Added " << *inserted->second << endl;
+			}
+		} // end for iface pair
+	}
+	
 	void link_derivation::assign_value_corresp_numbers()
 	{
 		auto hash_function = [](const val_corresp_group_key& k) {
@@ -4580,8 +4784,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			auto k = (val_corresp_group_key) {
 				p_c->source, 
 				p_c->sink, 
-				p_c->source_data_type->get_concrete_type(), 
-				p_c->sink_data_type->get_concrete_type() 
+				canonicalise_type(p_c->source_data_type, p_c->source, compiler), 
+				canonicalise_type(p_c->sink_data_type, p_c->sink, compiler)
 			};
 			auto source_k = make_pair(p_c->source,
 				canonicalise_type(p_c->source_data_type, p_c->source, compiler));
@@ -4590,10 +4794,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			
 			// 1. put it in the group table
 			auto ifaces = sorted(make_pair(p_c->source, p_c->sink));
-			
 			val_corresp_group_t& group_tbl = val_corresp_groups[ifaces];
 			vector<val_corresp *>& vec = group_tbl[k];
-			vec.push_back(p_c.get());
 			
 			// 1a. put it in the supergroup table, twice
 			// val_corresp_groups is a table of tables
@@ -4609,7 +4811,25 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			val_corresp_supergroup_keys[ifaces].insert(sink_k);
 			val_corresp_group_keys_by_supergroup[ifaces][source_k].insert(k);
 			val_corresp_group_keys_by_supergroup[ifaces][sink_k].insert(k);
-			
+		}
+		
+		// complete the set of val corresps
+		complete_value_corresps();
+		
+		// go round again, assigning numbers
+		for (auto i = val_corresps.begin(); i != val_corresps.end(); i++)
+		{
+			auto p_c = i->second;
+			auto k = (val_corresp_group_key) {
+				p_c->source, 
+				p_c->sink, 
+				p_c->source_data_type->get_concrete_type(), 
+				p_c->sink_data_type->get_concrete_type() 
+			};
+			auto ifaces = sorted(make_pair(p_c->source, p_c->sink));
+			val_corresp_group_t& group_tbl = val_corresp_groups[ifaces];
+			vector<val_corresp *>& vec = group_tbl[k];
+			vec.push_back(p_c.get());
 			// the two counts are now redundant, but sanity-check for now
 			int assigned = counts[k]++;
 			assert((signed) vec.size() == counts[k]);
