@@ -3194,9 +3194,16 @@ assert(false && "disabled support for inferring positional argument mappings");
 				INIT;
 				ALIAS2(n, argExpr);
 				string ident = new_ident("outarg");
-				if (current_fp == callee_subprogram->formal_parameter_children_end()) RAISE(
-					n, "output parameters must be described by DWARF information");
-				optional< out_arg_info > decl_and_cakename = is_out_arg_expr(
+				optional< out_arg_info > decl_and_cakename;
+				if (current_fp == callee_subprogram->formal_parameter_children_end())
+				{
+					cerr << "Warning: no DWARF info for argument " << current_argnum 
+						<< " of subprogram "
+						<< callee_subprogram->summary() 
+						<< "; assumed not to be output-only." << endl;
+					goto continue_loop;
+				}
+				decl_and_cakename = is_out_arg_expr(
 					argExpr,
 					*current_fp,
 					ident
@@ -3206,6 +3213,18 @@ assert(false && "disabled support for inferring positional argument mappings");
 					// The user didn't write "out" in their expression for this fp...
 					// ... but it might still be an output arg, if the DWARF says so.
 					if (!arg_is_output_only(*current_fp)) goto continue_loop;
+					
+					// EVEN if it's an output-only arg, we needn't interfere too much.
+					// If the user didn't write "out",
+					// it means they are taking care of the destination of this
+					// argument, by supplying an expression that points to some
+					// destination for the data.
+					// We need to remember this expressions' cxxname, so that
+					// we can put it in the outargs structure. But otherwise,
+					// we leave the user alone.
+					// HMM: is this okay?
+					goto continue_loop;
+					
 					/* Otherwise, if we get here, we have to make our own decl
 					 * from the DWARF type of the the fp. We can also make up
 					 * our own Cakename, since the user hasn't given one
@@ -3217,13 +3236,15 @@ assert(false && "disabled support for inferring positional argument mappings");
 								(*current_fp)->get_type()->get_concrete_type()
 							);
 					assert(fp_pointer_type);
-					decl_and_cakename = (out_arg_info){
-						get_type_name(fp_pointer_type->get_type()) + " " + ident + ";",
-						string("__cake_" + ident)
-					};
+					//decl_and_cakename = (out_arg_info){
+					//	get_type_name(fp_pointer_type->get_type()) + " " + ident + ";",
+					//	string("__cake_" + ident)
+					//};
 				}
 				
-				// now we're definitely an optional arg expr 
+				// now we're definitely an optional arg expr
+				//  with no user-supplied destination
+				assert(decl_and_cakename);
 				*p_out << decl_and_cakename->decl << /*" " << ident << ";" <<*/ endl;
 				new_bindings.insert(make_pair(decl_and_cakename->cakename, (bound_var_info) {
 					ident,
@@ -3231,6 +3252,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					ctxt.modules.current,
 					false
 				}));
+
 				output_parameter_idents[current_argnum] = ident;
 				output_parameter_argnums[ident] = current_argnum;
 				output_parameter_is_array[current_argnum] = decl_and_cakename->is_array;
@@ -3242,19 +3264,15 @@ assert(false && "disabled support for inferring positional argument mappings");
 				if (current_fp != callee_subprogram->formal_parameter_children_end()) ++current_fp;
 			} // end FOR_ALL_CHILDREN
 			/* As later, we might have more DWARF args than in the AST */
-			// FIXME FIXME FIXME: refactor this so that we don't duplicate code
 			while (current_fp != callee_subprogram->formal_parameter_children_end())
 			{
 				string ident = new_ident("outarg");
 				if (arg_is_output_only(*current_fp))
 				{
-					/* Otherwise, if we get here, we have to make our own decl
-					 * from the DWARF type of the the fp. We can also make up
-					 * our own Cakename, since the user hasn't given one
-					 * (they have to use "out" to bind one)
-					 * but they might later bind an identifier using the 
-					 * let (ident, ident, ...) syntax. We choose the outarg name
-					 * with the __cake_ prefix. */
+					/* Unlike the above case, it we get here it means the user
+					 * didn't say anything directly about where to put the 
+					 * output value, but they might want to reference it in a
+					 * let-multivalue expression. */
 					auto fp_pointer_type = dynamic_pointer_cast<pointer_type_die>(
 								(*current_fp)->get_type()->get_concrete_type()
 							);
@@ -3394,7 +3412,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 			INIT;
 			FOR_ALL_CHILDREN(argsMultiValue)
 			{
-				string argname = (*i_arg)->get_name() ? *(*i_arg)->get_name() : basic_name_for_argnum(argnum);
+				string argname = 
+					(i_arg != callee_subprogram->formal_parameter_children_end() 
+						&& (*i_arg)->get_name()
+					) ? *(*i_arg)->get_name() : basic_name_for_argnum(argnum);
 				// we might output zero or more arg expressions here -- tricky
 				// don't bother with these checks for now
 // 				if (i_arg == callee_subprogram->formal_parameter_children_end())

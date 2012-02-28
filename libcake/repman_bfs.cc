@@ -64,11 +64,15 @@ void walk_bfs(int object_rep, void *object, /*int object_form,*/ int co_object_r
 	if (object == 0) return;
 	
 	/* Find out object's precise DWARF type and starting address. */
-	process_image::addr_t object_actual_start_addr;
+	process_image::addr_t object_actual_start_addr = 0;
 	auto descr = pmirror::self.discover_object_descr(
 		(process_image::addr_t) object, shared_ptr<type_die>(), &object_actual_start_addr);
 	assert(descr);
 	void *object_actual_start = (void*) object_actual_start_addr;
+	/* Sanity check: assert that our object's start is non-null and within 128MB of our pointer. */
+	assert(object_actual_start 
+		&& (unsigned long) object >= (unsigned long) object_actual_start
+		&& (char*)object - (char*)object_actual_start < (1U<<27));
 	/* descr might be a subprogram... if so, nothing is adjacent, so we can null it */
 	auto dwarf_type = dynamic_pointer_cast<type_die>(descr);
 	

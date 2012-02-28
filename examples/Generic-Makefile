@@ -1,6 +1,6 @@
 CFLAGS += -g3 -fno-eliminate-unused-debug-types -fno-eliminate-unused-debug-symbols
 CFLAGS += -I${HOME}/opt/include
-CXXFLAGS += -std=gnu++0x
+CXXFLAGS += -std=gnu++0x -g3
 
 CAKE ?= ../../src/cake
 CXX ?= g++-4.5

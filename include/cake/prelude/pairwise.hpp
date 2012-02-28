@@ -13,6 +13,8 @@ extern "C" {
 // don't bother with volatile for now
 #define REMOVE_CV(t_id) boost::remove_const< typename t_id >::type
 
+namespace cake 
+{
     template <
         typename ComponentPair, 
         typename InFirst, 
@@ -29,18 +31,31 @@ extern "C" {
 	// the pointer specializations
 	// FIXME: instead of "void *", is there a sane way of referencing a
 	// corresponding type as the type of the ptr? 
+	// FIXME: do these specializations actually get hit anyway?
     template <
         typename ComponentPair, 
         typename InFirstPtrTarget, 
         bool DirectionIsFromFirstToSecond
     > struct corresponding_type_to_first <ComponentPair, InFirstPtrTarget*, DirectionIsFromFirstToSecond>
-    { typedef void *__cake_default_to___cake_default_in_second; }; /* we specialize this for various InSeconds */ 
+    {
+		typedef void *__cake_default_to___cake_default_in_second; 
+         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0          \
+         }; }; \
+		
+	}; /* we specialize this for various InSeconds */ 
     template <
         typename ComponentPair, 
         typename InSecondPtrTarget, 
         bool DirectionIsFromSecondToFirst
     > struct corresponding_type_to_second<ComponentPair, InSecondPtrTarget*, DirectionIsFromSecondToFirst> 
-    { typedef void *__cake_default_to___cake_default_in_first; }; /* we specialize this for various InFirsts */ 
+    { 
+		typedef void *__cake_default_to___cake_default_in_first; 
+         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0          \
+         }; }; \
+		
+	}; /* we specialize this for various InFirsts */ 
 	
 	// the array specializations
     template <
@@ -69,6 +84,7 @@ extern "C" {
 			DirectionIsFromSecondToFirst
 			>::__cake_default_to___cake_default_in_first __cake_default_to___cake_default_in_first[Dim]; 
 	}; /* we specialize this for various InFirsts */ 
+} // end namespace cake
 	/* NOTE: we will repeat the above specializations on a per-component-pair basis!
 	 * This is because C++ resolves partial specializations using 
 	 * So they don't really have any effect! Here are the macros we will use. */
@@ -180,7 +196,44 @@ extern "C" {
          struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
              __cake_default = 0          \
          }; }; \
-    }
+    }; \
+	/* now the "pointer-to-any" case */ \
+    template <typename PointerTarget> \
+    struct corresponding_type_to_second< \
+       component_pair, PointerTarget*, true> \
+    { \
+         typedef void *__cake_default_to___cake_default_in_first; \
+         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0         \
+         }; }; \
+    }; \
+    template <typename PointerTarget> \
+    struct corresponding_type_to_first< \
+        component_pair,  PointerTarget*, false> \
+    { \
+         typedef void *__cake_default_to___cake_default_in_second; \
+         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0          \
+         }; }; \
+    }; \
+    template <typename PointerTarget> \
+    struct corresponding_type_to_second< \
+       component_pair, PointerTarget*, false> \
+    { \
+         typedef void *__cake_default_to___cake_default_in_first; \
+         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0         \
+         }; }; \
+    }; \
+    template <typename PointerTarget> \
+    struct corresponding_type_to_first< \
+        component_pair, PointerTarget*, true> \
+    { \
+         typedef void *__cake_default_to___cake_default_in_second; \
+         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0          \
+         }; }; \
+    } /* leave off so that our instantiator has the satisfaction of ending with ';' */
 
 namespace cake
 {
@@ -217,27 +270,27 @@ namespace cake
     > struct corresponding_type_to_second 
 
 // empty mappings -- by default, there is no corresponding type
-
-template_head4_map_keyed_on_first_module(InFirst) {};
-template_head4_map_keyed_on_second_module(InSecond) {};
-	
-// mappings for pointers -- by default, all pointer types correspond to void*
-template_head4_map_keyed_on_first_module(InFirstIsAPtr)
-<ComponentPair, InFirstIsAPtr*, /*RuleTag,*/ DirectionIsFromFirstToSecond>
-: public corresponding_type_to_first<ComponentPair, void, /*RuleTag,*/
-	DirectionIsFromFirstToSecond> {
-	typedef void *__cake_default_to___cake_default_in_second;
-         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags {
-__cake_default = 0         }; };
-};	
-template_head4_map_keyed_on_second_module(InSecondIsAPtr)
-<ComponentPair, InSecondIsAPtr*, /*RuleTag,*/ DirectionIsFromSecondToFirst>
-: public corresponding_type_to_second<ComponentPair, void, /*RuleTag,*/
-	DirectionIsFromSecondToFirst> {
-typedef void *__cake_default_to___cake_default_in_first;
-         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags {
-__cake_default = 0         }; };
-};
+// 
+// template_head4_map_keyed_on_first_module(InFirst) {};
+// template_head4_map_keyed_on_second_module(InSecond) {};
+// 	
+// // mappings for pointers -- by default, all pointer types correspond to void*
+// template_head4_map_keyed_on_first_module(InFirstIsAPtr)
+// <ComponentPair, InFirstIsAPtr*, /*RuleTag,*/ DirectionIsFromFirstToSecond>
+// : public corresponding_type_to_first<ComponentPair, void, /*RuleTag,*/
+// 	DirectionIsFromFirstToSecond> {
+// 	typedef void *__cake_default_to___cake_default_in_second;
+//          struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags {
+// __cake_default = 0         }; };
+// };	
+// template_head4_map_keyed_on_second_module(InSecondIsAPtr)
+// <ComponentPair, InSecondIsAPtr*, /*RuleTag,*/ DirectionIsFromSecondToFirst>
+// : public corresponding_type_to_second<ComponentPair, void, /*RuleTag,*/
+// 	DirectionIsFromSecondToFirst> {
+// typedef void *__cake_default_to___cake_default_in_first;
+//          struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags {
+// __cake_default = 0         }; };
+// };
 
 // mappings for base types -- by default, all base types correspond to themselves
 #define pair_of_mappings(base_type) \
@@ -246,7 +299,7 @@ template_head3_map_keyed_on_first_module \
 : public corresponding_type_to_first<ComponentPair, void, /*RuleTag,*/ \
 	DirectionIsFromFirstToSecond> { \
 	typedef base_type __cake_default_to___cake_default_in_second; \
-         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+    struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
 __cake_default = 0         }; }; \
 };	 \
 template_head3_map_keyed_on_second_module \
@@ -254,7 +307,7 @@ template_head3_map_keyed_on_second_module \
 : public corresponding_type_to_second<ComponentPair, void, /*RuleTag,*/ \
 	DirectionIsFromSecondToFirst> { \
 	typedef base_type __cake_default_to___cake_default_in_first; \
-         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+    struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
 __cake_default = 0         }; }; \
 }
 

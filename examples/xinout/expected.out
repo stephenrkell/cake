@@ -12,3 +12,4 @@ Locking an object in locked_on_return.
 Unlocking object at 0xd9c7f0
 Received retval 0.
 Lockable object at 0xd9c7f0 is now in state unlocked
+Exited with status 0

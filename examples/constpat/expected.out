@@ -3,3 +3,4 @@ wider_still(56, 78, 0) gave us: narrowish(56, 78)
 wider_still(90, 10, 2) gave us: fell through to the real wider_still!
 sometimes(100) gave us: not_always(42)
 stringlit("hello") gave us: take_string(greetings)
+Exited with status 0

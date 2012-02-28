@@ -307,11 +307,11 @@ void *replace_co_object(void *existing_obj,
 	int existing_rep, 
 	int require_other_rep)
 {
-	struct co_object_rec *found_existing_co_object;	 
+	struct co_object_group *found_existing_co_object;	 
 	void *found = find_co_object(existing_obj, 
 	   	existing_rep, 
 		require_other_rep, 
-		&found_existing_co_object));
+		&found_existing_co_object);
 	if (found)
 	{
 		found_existing_co_object->reps[existing_rep] = new_obj;

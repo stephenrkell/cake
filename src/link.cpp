@@ -4145,11 +4145,13 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			bool different_modules = (iter_pair.second--,
 				iter_pair.first->second.module != iter_pair.second->second.module);
 			
-			// must be concretely non-void, non-array, non-subroutine types!
+			// must be concretely non-void, non-array, non-pointer, non-subroutine types!
 			bool correspondable_types = (iter_pair.first->second.t->get_concrete_type() && 
 				iter_pair.second->second.t->get_concrete_type() &&
 				iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_array_type &&
 				iter_pair.second->second.t->get_concrete_type()->get_tag() != DW_TAG_array_type &&
+				iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_pointer_type &&
+				iter_pair.second->second.t->get_concrete_type()->get_tag() != DW_TAG_pointer_type &&
 				iter_pair.first->second.t->get_concrete_type()->get_tag() != DW_TAG_subroutine_type &&
 				iter_pair.second->second.t->get_concrete_type()->get_tag() != DW_TAG_subroutine_type);
 			

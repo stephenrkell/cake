@@ -422,7 +422,7 @@ conv_func_t get_init_func(int from_rep, int to_rep, void *source_object, void *t
 	
 	std::cerr << "Getting init func from object: ";
 	self.print_object(std::cerr, source_object);
-	std::cerr << *discovered_source
+	std::cerr << discovered_source->summary()
 		<< " to object: ";
 	self.print_object(std::cerr, target_object);
 	std::cerr << " (NEW INIT)"
