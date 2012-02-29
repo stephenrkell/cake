@@ -49,8 +49,11 @@ namespace cake
 		BIND3(t, objname, IDENT);
 		BIND3(t, prefix, STRING_LIT);
 
-		auto found = r.module_tbl.find(CCP(GET_TEXT(component)));
+		string input_module_name = CCP(GET_TEXT(component));
+		auto found = r.module_tbl.find(input_module_name);
 		assert(found != r.module_tbl.end());
+		assert(found->first == input_module_name);
+		m_depended_upon_module_names.push_back(input_module_name);
 		input_modules.push_back(found->second);
 
 		this->objtype = unescape_ident(CCP(GET_TEXT(objtype)));
@@ -60,10 +63,6 @@ namespace cake
 		cerr << "instantiate " << module_name << ": "
 			<< "output filename = " << output_filename << ", "
 			<< "output cxx filename = " << output_cxx_filename << "." << endl;
-	}
-	void instantiate_derivation::init()
-	{
-		// don't think we need this
 	}
 		
 	void instantiate_derivation::write_makerules(std::ostream& out)
@@ -127,7 +126,7 @@ namespace cake
 						);
 	}
 	
-	void instantiate_derivation::fix_module()
+	void instantiate_derivation::init()
 	{
 		
 		// create the state in the output module
@@ -198,7 +197,7 @@ namespace cake
 	
 	void instantiate_derivation::write_cxx()
 	{
-		this->fix_module();
+		//this->fix_module();
 		auto output_cxx_file = unique_ptr<std::ofstream>(
 			new std::ofstream(output_cxx_filename)
 		);

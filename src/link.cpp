@@ -119,19 +119,15 @@ namespace cake
 			cerr << "Link expression at " << t << " links modules: ";
 			FOR_ALL_CHILDREN(identList)
 			{
-				cerr << CCP(GET_TEXT(n)) << " ";
-				request::module_tbl_t::iterator found = r.module_tbl.find(
-					string(CCP(GET_TEXT(n))));
+				string module_name = CCP(GET_TEXT(n));
+				cerr << module_name << " ";
+				request::module_tbl_t::iterator found = r.module_tbl.find(module_name);
 				if (found == r.module_tbl.end()) RAISE(n, "module not defined!");
 				input_modules.push_back(found->second);
+				m_depended_upon_module_names.push_back(module_name);
 			}
 			cerr << endl;
 		}
-	}
-	
-	void link_derivation::fix_module()
-	{
-		// do nothing -- we did it in "init"
 	}
 	
 	link_derivation::~link_derivation() 
@@ -327,6 +323,9 @@ namespace cake
 		
 		// generate wrappers
 		compute_wrappers();
+		
+		// which wrappers are actually needed?
+		compute_wrappers_needed_and_linker_args();
 		
 	}
 	
@@ -1219,11 +1218,7 @@ namespace cake
 //         return s.str();
 // 	}
 
-	int link_derivation::compute_wrappers_needed_and_linker_args(
-		map<wrappers_map_t::key_type, bool>& wrappers_needed,
-		vector<string>& linker_args,
-		vector<string>& symbols_to_protect
-	)
+	int link_derivation::compute_wrappers_needed_and_linker_args()
 	{
 		bool wrapped_some = false;
 		int num_wrappers = 0;
@@ -1384,6 +1379,9 @@ namespace cake
 			//wrap_file.flush();
 		} // end for each wrapper
 		
+		assert(num_wrappers == wrappers_needed.size());
+		// temporary HACK: this isn't always true, but during testing, it should be		
+		assert(num_wrappers > 0);
 		return num_wrappers;
 	}
 
@@ -1400,15 +1398,10 @@ namespace cake
 		//out << "-include " << wrap_file_makefile_name << ".d" << endl;
 
 		write_object_dependency_makerules(out);
-
-		vector<string> linker_args;
-		vector<string> symbols_to_protect;
-		int num_wrappers = compute_wrappers_needed_and_linker_args(this->wrappers_needed, 
-			linker_args, symbols_to_protect);
 		
 		// Now output the linker args.
 		// If wrapped some, first add the wrapper as a dependency (and an argument)
-		if (num_wrappers > 0)
+		if (wrappers_needed.size() > 0)
 		{
 			out << "$(patsubst %.cpp,%.o," << wrap_file_name << ") " /*<< endl*/;
 			// output the first objcopy
@@ -1466,14 +1459,6 @@ namespace cake
 	
 	void link_derivation::write_cxx()
 	{
-		this->fix_module();
-		// reproduce the state we built when we generated the makefiles
-		// (i.e. this is nowa separate run of Cake...)
-		vector<string> linker_args;
-		vector<string> symbols_to_protect;
-		int num_wrappers = compute_wrappers_needed_and_linker_args(this->wrappers_needed, 
-			linker_args, symbols_to_protect);
-
 		std::ofstream raw_wrap_file(wrap_file_name);
 		indenting_ostream wrap_file(raw_wrap_file);
 		wrap_code.set_output_stream(wrap_file);
@@ -1541,6 +1526,8 @@ namespace cake
 						// preexisting DIEs too?
 						if ((*i_die)->get_offset() > (*i_mod)->greatest_preexisting_offset())
 						{
+							wrap_file << "/* 0x" << std::hex << (*i_die)->get_offset() 
+							<< std::dec << " */" << endl;
 							compiler.dispatch_to_model_emitter(wrap_file, i_die.base().base());
 						}
 					}
@@ -1715,6 +1702,11 @@ namespace cake
 			{
 				const val_corresp_group_key& k = i_corresp_group->first;
 				vector<val_corresp *>& vec = i_corresp_group->second;
+				cerr << "Group (size " << vec.size() 
+					<< "): source module " << name_of_module(k.source_module)
+					<< ", source type " << k.source_data_type->summary()
+					<< ", sink module " << name_of_module(k.sink_module)
+					<< ", sink type " << k.sink_data_type->summary() << endl;
 				
 				// collect mappings of artificial type names (tags) in this group
 				map<string, vector< val_corresp *> >& corresps_by_artificial_names_for_first_type
@@ -1723,26 +1715,42 @@ namespace cake
 				 = all_corresps_by_artificial_names_for_second_type[k];
 				for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); ++i_p_corresp)
 				{
-					// is this correspondence defined using an artificial source name?
-					auto source = (*i_p_corresp)->source_data_type;
-					auto sink = (*i_p_corresp)->sink_data_type;
+					cerr << "Corresp : " << **i_p_corresp << endl;
+					auto source_type = (*i_p_corresp)->source_data_type;
+					auto sink_type = (*i_p_corresp)->sink_data_type;
 					// for this corresp, is the source module the first in our iface_pair?
 					bool source_is_first = (k.source_module == i_pair->first);
-					for (auto current = source; current; current = (current == source) ? sink : shared_ptr<type_die>())
+					// two-iteration for-loop
+					for (auto current_type = source_type; current_type; 
+						current_type = (current_type == source_type) ? sink_type : shared_ptr<type_die>())
 					{
-						bool current_is_first = (current == source) ? source_is_first : !source_is_first;
+						bool current_is_first = (current_type == source_type) ? source_is_first : !source_is_first;
 						map<string, vector< val_corresp *> >& current_map = 
-							(current_is_first) ? corresps_by_artificial_names_for_first_type
-							                   : corresps_by_artificial_names_for_second_type;
+							current_is_first ? corresps_by_artificial_names_for_first_type
+							                 : corresps_by_artificial_names_for_second_type;
 						// is this data type artificial?
-						if (current->get_concrete_type() != current)
+						cerr << ((current_type == source_type) ? "Tag: source" : "Tag: sink") 
+							<< " type has ";
+						if (current_type->get_concrete_type() != current_type)
 						{
 							// HOW do we encode "as"? Answer: by creating an artificial typedef 
 							// Get the name. HACK: unqualified, for now
-							assert(current->get_name());
-							current_map[*current->get_name()].push_back(*i_p_corresp);
+							assert(current_type->get_name());
+							cerr << " artificial tag " << *current_type->get_name() << endl;
+							current_map[*current_type->get_name()].push_back(*i_p_corresp);
 						}
-						else current_map["__cake_default"].push_back(*i_p_corresp);
+						else 
+						{
+							cerr << " no artificial tag (a.k.a. __cake_default)" << endl;
+							current_map[string("__cake_default")].push_back(*i_p_corresp);
+							assert(current_map.find(string("__cake_default")) != current_map.end());
+						}
+						/* NOTE: this *doesn't* guarantee that we have a __cake_default entry
+						 * in the map -- we will only have the entries that had correspondences
+						 * defined.
+						 
+						 * In the case of "char" though, we should have a correspondence
+						 * defined, without artificial names. HMM. */
 					}
 				}
 			}
@@ -2039,6 +2047,13 @@ namespace cake
 							<< "because there is no unique candidate" << endl;
 					}
 					
+					// NO -- actually we can't assume a default is already in there,
+					// e.g. when we have an anonymous struct that is typedef'd to something
+					// that then gets name-matched.
+					//assert(outer_tagstrings.find("__cake_default") != outer_tagstrings.end());
+					// BUT we should ensure that even if default isn't there,
+					// we emita default case! 
+					
 					for (auto i_outer = outer_tagstrings.begin(); i_outer != outer_tagstrings.end(); ++i_outer)
 					{
 						wrap_file << "         struct rule_tag_in_" << (half_key_is_first ? "second" : "first") 
@@ -2075,7 +2090,7 @@ namespace cake
 								<< val_corresp_numbering[(*i_p_corresp_pair).second->shared_from_this()];
 							emitted_inner_tagstrings.insert(artificial_name_for_the_other_die);
 						}
-						/* Now also emit a "__cake_default" if it's unique and we haven't yet; */
+						/* Now also emit a "__cake_default" enum element if it's unique and we haven't yet; */
 						if (srk31::count(outer_seq.first, outer_seq.second) == 1
 						 && emitted_inner_tagstrings.find("__cake_default") == emitted_inner_tagstrings.end())
 						{
@@ -2090,7 +2105,8 @@ namespace cake
 						if (*i_outer == "__cake_default")
 						{
 							/* In this case, we also go through the *inner* strings and
-							 * do likewise, so that in the enum named "...__cake_default"
+							 * do likewise, so that 
+							 * in the enum named "..._artificial_name___cake_default"
 							 * we have a full set of options. */
 							for (auto i_inner = inner_tagstrings.begin(); i_inner != inner_tagstrings.end(); ++i_inner)
 							{
@@ -4758,29 +4774,31 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 	
 	void link_derivation::assign_value_corresp_numbers()
 	{
-		auto hash_function = [](const val_corresp_group_key& k) {
-//		struct h
-//		{ unsigned operator()(const key& k) const {
-			//hash<module_ptr> h1;
-			//hash<shared_ptr<type_die> > h2;
-			
-			// try to force instantiation of these functions
-			//&hash<module_ptr>::operator() ;
-			//&hash<shared_ptr<type_die> >::operator() ; 
-			
-			// return h1(k.source_module) ^ h1(k.sink_module) ^ h2(k.source_type) ^ h2(k.sink_type);
-			
-			// HACK: avoid probable g++ bug (link error for these instances of hash::operator())
-			return reinterpret_cast<unsigned long>(k.source_module.get())
-				^  reinterpret_cast<unsigned long>(k.sink_module.get())
-				^  reinterpret_cast<unsigned long>(k.source_data_type.get())
-				^  reinterpret_cast<unsigned long>(k.sink_data_type.get());
-//		} } hash_function;
-		};
+// 		auto hash_function = [](const val_corresp_group_key& k) {
+// //		struct h
+// //		{ unsigned operator()(const key& k) const {
+// 			//hash<module_ptr> h1;
+// 			//hash<shared_ptr<type_die> > h2;
+// 			
+// 			// try to force instantiation of these functions
+// 			//&hash<module_ptr>::operator() ;
+// 			//&hash<shared_ptr<type_die> >::operator() ; 
+// 			
+// 			// return h1(k.source_module) ^ h1(k.sink_module) ^ h2(k.source_type) ^ h2(k.sink_type);
+// 			
+// 			// HACK: avoid probable g++ bug (link error for these instances of hash::operator())
+// 			return reinterpret_cast<unsigned long>(k.source_module.get())
+// 				^  reinterpret_cast<unsigned long>(k.sink_module.get())
+// 				^  reinterpret_cast<unsigned long>(k.source_data_type.get())
+// 				^  reinterpret_cast<unsigned long>(k.sink_data_type.get());
+// //		} } hash_function;
+// 		};
+// 		
+// 		unordered_map<val_corresp_group_key, int, __typeof(hash_function)> counts(100, hash_function);
+
+		map<val_corresp_group_key, int> counts;
 		
-		unordered_map<val_corresp_group_key, int, __typeof(hash_function)> counts(100, hash_function);
-		
-		for (auto i = val_corresps.begin(); i != val_corresps.end(); i++)
+		for (auto i = val_corresps.begin(); i != val_corresps.end(); ++i)
 		{
 			auto p_c = i->second;
 			auto k = (val_corresp_group_key) {
@@ -4798,7 +4816,15 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			auto ifaces = sorted(make_pair(p_c->source, p_c->sink));
 			val_corresp_group_t& group_tbl = val_corresp_groups[ifaces];
 			vector<val_corresp *>& vec = group_tbl[k];
-			
+			cerr << "Group (previous size " << vec.size() 
+					<< "): source module " << name_of_module(k.source_module)
+					<< ", source type " << k.source_data_type->summary()
+					<< ", sink module " << name_of_module(k.sink_module)
+					<< ", sink type " << k.sink_data_type->summary() 
+					<< " gaining a corresp: " << *p_c << endl;
+
+			vec.push_back(p_c.get());
+				
 			// 1a. put it in the supergroup table, twice
 			// val_corresp_groups is a table of tables
 			// ifaces -> key -> corresps
@@ -4808,7 +4834,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			val_corresp_supergroup_t& supergroup_tbl = val_corresp_supergroups[ifaces];
 			supergroup_tbl.insert(make_pair(source_k, p_c.get()));
 			supergroup_tbl.insert(make_pair(sink_k, p_c.get()));
-
+			
 			val_corresp_supergroup_keys[ifaces].insert(source_k);
 			val_corresp_supergroup_keys[ifaces].insert(sink_k);
 			val_corresp_group_keys_by_supergroup[ifaces][source_k].insert(k);
@@ -4819,30 +4845,46 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		complete_value_corresps();
 		
 		// go round again, assigning numbers
-		for (auto i = val_corresps.begin(); i != val_corresps.end(); i++)
+		for (auto i = val_corresps.begin(); i != val_corresps.end(); ++i)
 		{
 			auto p_c = i->second;
 			auto k = (val_corresp_group_key) {
 				p_c->source, 
 				p_c->sink, 
-				p_c->source_data_type->get_concrete_type(), 
-				p_c->sink_data_type->get_concrete_type() 
+				canonicalise_type(p_c->source_data_type, p_c->source, compiler), 
+				canonicalise_type(p_c->sink_data_type, p_c->sink, compiler)
 			};
 			auto ifaces = sorted(make_pair(p_c->source, p_c->sink));
 			val_corresp_group_t& group_tbl = val_corresp_groups[ifaces];
 			vector<val_corresp *>& vec = group_tbl[k];
-			vec.push_back(p_c.get());
+
 			// the two counts are now redundant, but sanity-check for now
 			int assigned = counts[k]++;
-			assert((signed) vec.size() == counts[k]);
 			
-			//cerr << "Assigned number " << assigned
-			//	<< " to rule relating source data type "
-			//	<< p_c->source_data_type
-			//	<< " with sink data type "
-			//	<< p_c->sink_data_type
-			//	<< " where counts[...] is now " << counts[k] << endl;
+// 			cerr << "Assigned number " << assigned
+// 				<< " to rule relating source data type "
+// 				<< p_c->source_data_type->summary()
+// 				<< " with sink data type "
+// 				<< p_c->sink_data_type->summary()
+// 				<< " where counts[...] is now " << counts[k] << endl;
 			val_corresp_numbering.insert(make_pair(p_c, assigned));
+		}
+		
+		// finally, sanity check
+		for (auto i = val_corresps.begin(); i != val_corresps.end(); ++i)
+		{
+			auto p_c = i->second;
+			auto k = (val_corresp_group_key) {
+				p_c->source, 
+				p_c->sink, 
+				canonicalise_type(p_c->source_data_type, p_c->source, compiler), 
+				canonicalise_type(p_c->sink_data_type, p_c->sink, compiler)
+			};
+			auto ifaces = sorted(make_pair(p_c->source, p_c->sink));
+			val_corresp_group_t& group_tbl = val_corresp_groups[ifaces];
+			vector<val_corresp *>& vec = group_tbl[k];
+		
+			assert((signed) vec.size() == counts[k]);
 		}
 	}
 

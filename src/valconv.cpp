@@ -117,7 +117,12 @@ namespace cake
             << ">" << endl;
 	}	
 	
-	/* In the virtual case, we might want to emit a reference type as the return type. */
+	/* In the virtual case, we might want to emit a reference type as the return type. 
+	 * This is because
+	 * in the uio case, and maybe others, we really have the stub function (uio_setup)
+	 * allocate the co-object. But, to avoid engaging the co-object runtime
+	 * (WHY?)
+	 * */
 	void virtual_value_conversion::emit_header(optional<string> return_typename, 
 		bool emit_struct_keyword/* = true */, bool emit_template_prefix/* = true */,
 		bool emit_return_typename/* = true*/)
@@ -1235,6 +1240,55 @@ namespace cake
 	
 	}
 	
+	bool
+	structural_value_conversion::should_crossover_source_field(
+			shared_ptr<member_die> p_field
+	)
+	{
+		assert(p_field->get_type());
+		return source_type_has_correspondence(p_field->get_type()->get_concrete_type());
+	}
+	bool
+	virtual_value_conversion::should_crossover_source_field(
+			shared_ptr<member_die> p_field
+		)
+	{
+		assert(p_field->get_name());
+		string field_name = *p_field->get_name();
+		shared_ptr<type_die> field_type = p_field->get_type();
+		// we allow references too, because we're virtual
+		return this->structural_value_conversion::should_crossover_source_field(p_field)
+			|| (field_type->get_concrete_type()->get_tag() == DW_TAG_reference_type
+				&& source_type_has_correspondence(
+					dynamic_pointer_cast<spec::reference_type_die>(field_type->get_concrete_type())
+							->get_type()));
+	}
+	
+	bool structural_value_conversion::source_type_has_correspondence(
+		shared_ptr<type_die> t
+	)
+	{
+		auto ifaces = link_derivation::sorted(sink, source);
+		
+		// all void types have a correspondence, trivially
+		if (!t) return true;
+		
+		// all pointer types have a correspondence, perhaps trivially
+		if (t->get_concrete_type()->get_tag() == DW_TAG_pointer_type) return true;
+		
+		// array types have a corresondence if their ultimate element type does
+		if (t->get_concrete_type()->get_tag() == DW_TAG_array_type
+				&& source_type_has_correspondence(
+					dynamic_pointer_cast<spec::array_type_die>(t->get_concrete_type())
+						->ultimate_element_type())) return true;
+		
+		// otherwise, we have to look 'em up
+		return this->w.m_d.val_corresp_supergroups[ifaces].find(
+			make_pair(this->source,
+				canonicalise_type(t, this->source, w.compiler)))
+				!= w.m_d.val_corresp_supergroups[ifaces].end();
+	}
+	
 	void structural_value_conversion::emit_body()
 	{
 		emit_initial_declarations();
@@ -1406,21 +1460,7 @@ namespace cake
 			 * has a corresponding type). */
 			auto ifaces
 			 = link_derivation::sorted(sink, source);
-			auto source_type_has_correspondence = [this, ifaces](shared_ptr<type_die> t) {
-				return this->w.m_d.val_corresp_supergroups[ifaces].find(
-				 	make_pair(this->source,
-						canonicalise_type(t, this->source, w.compiler)))
-						!= w.m_d.val_corresp_supergroups[ifaces].end();
-			};
-			
-			bool should_crossover = 
-				field_type->get_concrete_type()
-				&& ( field_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type
-				 || (field_type->get_concrete_type()->get_tag() == DW_TAG_array_type
-				   && source_type_has_correspondence(
-				   		dynamic_pointer_cast<spec::array_type_die>(field_type->get_concrete_type())
-							->ultimate_element_type()))
-				 || source_type_has_correspondence(field_type->get_concrete_type()));
+			bool should_crossover = should_crossover_source_field(*i_field);
 
 			cerr << "adding name " << field_name << endl;
 			basic_env.insert(make_pair(field_name,

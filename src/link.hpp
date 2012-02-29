@@ -268,6 +268,7 @@ namespace cake {
 		typedef unsigned long module_tag_t;
 		
 	private:
+	
 		antlr::tree::Tree *ast;
 		antlr::tree::Tree *refinement_ast;
 		
@@ -290,8 +291,16 @@ namespace cake {
         // to list of correspondences
 		typedef map<string, ev_corresp_pair_ptr_list> wrappers_map_t;
 		wrappers_map_t wrappers;
+		
 		map<string, bool> wrappers_needed;
-        string output_namespace; // namespace in which code is emitted
+		vector<string> linker_args;
+		vector<string> symbols_to_protect;
+
+
+		int compute_wrappers_needed_and_linker_args();
+        
+		
+		string output_namespace; // namespace in which code is emitted
 
         string wrap_file_makefile_name;
         string wrap_file_name;
@@ -368,11 +377,8 @@ namespace cake {
 
 		string get_emitted_sourcefile_name();
 //		void output_static_co_objects(); 
-		int compute_wrappers_needed_and_linker_args(
-			map<wrappers_map_t::key_type, bool>& wrappers_needed,
-			vector<string>& linker_args,
-			vector<string>& symbols_to_protect);
 
+		
 	public:
 		pair<
 			val_corresp_map_t::iterator,
@@ -386,7 +392,6 @@ namespace cake {
 		typedef link_derivation::val_corresp_map_t::value_type ent;
 		void write_makerules(std::ostream& out);	
 		void init();
-		void fix_module();
 		void write_cxx();
 		string get_type_name(
 			shared_ptr<spec::type_die> t/*,
@@ -395,7 +400,7 @@ namespace cake {
 			shared_ptr<spec::type_die> t/*,
 				const std::string& namespace_prefix*/);
 		string get_ns_prefix();
-		vector<string> dependencies() { return vector<string>(); }
+		vector<string> dependencies() { return m_depended_upon_module_names; }
         link_derivation(cake::request& r, antlr::tree::Tree *t, 
         	const string& id, const string& output_filename);
         virtual ~link_derivation();

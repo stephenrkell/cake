@@ -66,6 +66,13 @@ namespace cake
 		const char *out_filename;
 		std::ofstream maybe_out_stream;
 		std::ostream *p_out;
+		
+		/* data structure instances */
+        typedef std::map<std::string, module_ptr> module_tbl_t;
+        typedef std::map<module_ptr, std::string> module_inverse_tbl_t;
+   		module_tbl_t module_tbl;
+        module_inverse_tbl_t module_inverse_tbl;
+        typedef module_tbl_t::value_type module_tbl_entry_t;
 
 		/* Parsing apparatus */		
 		//antlr::ANTLRInputStream *stream;
@@ -82,19 +89,16 @@ namespace cake
 		
 		/* AST traversal */		
 		void depthFirst(antlr::tree::Tree *t);
+		
+		// the name of the toplevel derivation
+		string start_derivation;
+		
 	public:
 		// main Cake modes of operation
 		void do_derivation(const string& derived_module_name);
 		void write_headers(const string& module_name);
 		void write_makerules();
 	private:
-		/* data structure instances */
-        typedef std::map<std::string, module_ptr> module_tbl_t;
-        typedef std::map<module_ptr, std::string> module_inverse_tbl_t;
-   		module_tbl_t module_tbl;
-        module_inverse_tbl_t module_inverse_tbl;
-        typedef module_tbl_t::value_type module_tbl_entry_t;
-		
 		/* cxx generation */
 		cake_cxx_target compiler; // FIXME: can we merge cake_cxx_target and dwarfidl_cxx_target?
 
@@ -143,12 +147,8 @@ namespace cake
 		shared_ptr<derivation> create_derivation(const std::string&, const std::string&, antlr::tree::Tree *t);	
 		shared_ptr<derived_module> create_derived_module(derivation& d, 
 			const std::string& id, const std::string& filename);
-		// derivations may have to happen in some order -- that doesn't mean
-		// we have to process them in that order, although it might if we
-		// end up supporting a derivation algebra (see below) since we might
-		// have to compute an "exists" block for intermediate results.
-		void compute_derivation_dependencies();
-		void sort_derivations();
+		
+		void recursively_init_derivations(derivation_tbl_t::iterator i_d);
 					
 	public:
 		request(const char *cakefile, const char *makefile, const char *outfile);
@@ -168,6 +168,7 @@ namespace cake
 	protected:
 		virtual void write_object_dependency_makerules(std::ostream& out);
 		virtual string get_emitted_sourcefile_name() = 0;
+		vector<string> m_depended_upon_module_names;
 		
 	public:
 		derivation(request& r, antlr::tree::Tree *t)
@@ -176,10 +177,8 @@ namespace cake
 		virtual void init() = 0;
 		virtual const std::string& namespace_name() = 0;
 		virtual void write_makerules(std::ostream& out) = 0;
-		virtual void fix_input_modules();
-		virtual void fix_module() = 0;
 		virtual void write_cxx() = 0;
-		virtual std::vector<std::string> dependencies() = 0;
+		vector<string> dependencies() { return m_depended_upon_module_names; }
         module_ptr get_output_module() { return output_module; }
 	};
 	

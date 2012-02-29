@@ -1298,9 +1298,9 @@ namespace cake
 			assert(found_in_cache != our_cache.end());
 			auto found_as_type = dynamic_pointer_cast<type_die>(*found_in_cache->second);
 			assert(found_as_type);
-			cerr << "Canonicalised base type " << concrete_t->summary() 
-				<< " to " << found_as_type->summary() 
-				<< " (in compiler: " << compiler_base_t << ")" << endl;
+			//cerr << "Canonicalised base type " << concrete_t->summary() 
+			//	<< " to " << found_as_type->summary() 
+			//	<< " (in compiler: " << compiler_base_t << ")" << endl;
 			return found_as_type;
 		}
 	}

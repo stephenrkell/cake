@@ -153,14 +153,17 @@ namespace cake
 				(dies.map_end() == dies.map_begin()) ? 0UL : (--dies.map_end())->first),
 			private_offsets_next(m_greatest_preexisting_offset + 1) {}
 		
-	protected:
-		std::set<Dwarf_Off> touched_dies;
 		void updated_dwarf()
 		{
 			m_greatest_preexisting_offset = 
 				(dies.map_end() == dies.map_begin()) ? 0UL : (--dies.map_end())->first;
 			private_offsets_next = m_greatest_preexisting_offset + 1;
+			cerr << "Greatest preexisting offset for module " << filename
+				<< " is now 0x" << std::hex << m_greatest_preexisting_offset
+				<< std::dec << std::endl;
 		}
+	protected:
+		std::set<Dwarf_Off> touched_dies;
 		
 	public:
 		vector< shared_ptr<type_die> > 

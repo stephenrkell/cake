@@ -1118,8 +1118,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 
 			// collect pointerness
-			bool is_a_pointer = precise_to_type &&
+			bool is_a_pointer = !is_virtual && precise_to_type &&
 					 precise_to_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type;
+			if (is_a_pointer) cerr << "Cxxname " << cur_cxxname 
+				<< " is a pointer because of precise_to_type " << precise_to_type->summary()
+				<< endl;
 			for (auto i_binding_name = bindings_by_cxxname[cur_cxxname].begin();
 				i_binding_name != bindings_by_cxxname[cur_cxxname].end();
 				++i_binding_name)
@@ -1127,7 +1130,14 @@ assert(false && "disabled support for inferring positional argument mappings");
 				auto i_binding = env.find(*i_binding_name);
 				assert(i_binding != env.end());
 				
-				is_a_pointer |= (i_binding->second.pointerness == bound_var_info::IS_A_POINTER);
+				// if any binding says we're a pointer, then we are....
+				bool this_binding_pointerness = (i_binding->second.pointerness == bound_var_info::IS_A_POINTER);
+				if (this_binding_pointerness) cerr << "Cxxname " << cur_cxxname << " is a pointer because of binding "
+					<< *i_binding_name << endl;
+				is_a_pointer |= this_binding_pointerness;
+				
+				// BUT this is a problem for virtual objs, which are not pointers,
+				// but may still have lingering pointer bindings (from the underlying arg)
 			}
 			
 			// collect typeof
@@ -1162,7 +1172,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 			
 			shared_ptr<type_die> saved_precise_to_type = precise_to_type;
-			if (is_a_pointer && is_virtual && precise_to_type)
+			if (is_virtual && precise_to_type)
 			{
 				// ditch the precise to-type -- this allows us to get a non-pointer
 				// out of the value_convert and then fix things up by taking its address.
@@ -1349,7 +1359,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					/* remote local out   */ env[*i_cakename].indirect_local_tagstring_out
 				};
 				// if we are xovering the address of a virtual d.t. inst, fix this up
-				if (is_a_pointer && is_virtual && saved_precise_to_type)
+				if (is_virtual && saved_precise_to_type)
 				{
 					// also create a pointer alias
 					ostringstream s; s << "vxover_replace_with_" << ident.length() << "_" << ident;
@@ -1543,11 +1553,18 @@ assert(false && "disabled support for inferring positional argument mappings");
 				// NOTE that whether ther actually *is* an effective override
 				// depends on whether the rule tag selected by the two tagstrings
 				// actually is different from the default -- and a similar for init
+				
+				// NOTE: we're applying "*" to the bound cxxname, so 
+				// we no longer know anything about its pointerness.
+				// In fact, it should *not* be a pointer....
+				auto modified_binding = *i_binding;
+				modified_binding.second.pointerness = bound_var_info::UNDEFINED;
+				
 				auto funcname = make_value_conversion_funcname(
 						link_derivation::sorted(make_pair(old_module, new_module)),
-						*i_binding,
+						modified_binding,
 						direction_is_out,
-						true, // is_indirect
+						true, // is_indirect ,i.e. use the indirect tagstrings
 						shared_ptr<spec::type_die>(),
 						shared_ptr<spec::type_die>(),
 						"*" + i_cxxname->first, // must NOT be void* --> requires precise static typing
@@ -2147,6 +2164,24 @@ assert(false && "disabled support for inferring positional argument mappings");
 					// We will manage its crossover
 					found->second.do_not_crossover = true;
 					found->second.crossover_by_wrapper = true;
+					found->second.pointerness = bound_var_info::NOT_A_POINTER;
+				
+				// Now delete any other bindings of this cakename, because they will
+				// have wrong info.
+				++found;
+				while (found != out_env->end())
+				{
+					if (found->first == *i_virt->overall_cake_name)
+					{
+						cerr << "Removing non-virtual binding of " << 
+							*i_virt->overall_cake_name
+							<< " to " << found->second.cxx_name << endl;
+						found = out_env->erase(found);
+					}
+					else ++found;
+				}
+				
+				
 				//}
 				
 				// begin declaration of virtual struct
@@ -2203,23 +2238,24 @@ assert(false && "disabled support for inferring positional argument mappings");
 					assert(member_type_as_reference_type);
 					cerr << "Member type-of-reference-target: " 
 						<< *member_type_as_reference_type->get_type()->get_concrete_type() << endl;
+					// we reinterpret-cast pointer references to make sure they compile
 					bool do_reinterpret
 					 = (member_type_as_reference_type->get_type()->get_concrete_type()->get_tag()
 						== DW_TAG_pointer_type);
 					if (do_reinterpret)
 					{
-						*p_out << "*reinterpret_cast< "
+						*p_out << "reinterpret_cast< "
 						// HACK: we might not have added this type until after the .o.hpp #includes,
 						// so write out its declarator directly.
 							//<< ns_prefix << "::" << m_d.name_of_module(source_module) << "::"
-							<< get_type_name(member_type_as_reference_type->get_type()) << "&"
+							<< get_type_name(member_type_as_reference_type->get_type()) //<< "&"
 							//	compiler.cxx_declarator_from_type_die(
 							//		member_type_as_reference_type->get_concrete_type(),
 							//		optional<const string &>(),
 							//		true,
 							//		optional<const string &>(),
 							//		false)
-							<< "*>(&";
+							<< " &>(";
 					}
 					
 					// if this binding is indirect, dereference it.
@@ -2449,7 +2485,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		// GIANT HACK!
 		bool is_a_pointer
 			 = (source_binding.second.pointerness == bound_var_info::IS_A_POINTER)
-			|| is_indirect 
+			/*|| is_indirect */
 			|| (from_typeof && *from_typeof == "((void*)0)");
 		
 // 		if (from_type)

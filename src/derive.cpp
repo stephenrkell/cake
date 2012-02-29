@@ -88,37 +88,38 @@ namespace cake
 		}
 	}
 	
-	void derivation::fix_input_modules()
-	{
-		for (auto i_input = input_modules.begin();
-			i_input != input_modules.end();
-			++i_input)
-		{
-			if (dynamic_pointer_cast<derived_module>(*i_input))
-			{
-				auto found_derived_module
-				 = r.module_inverse_tbl.find(*i_input);
-				assert(found_derived_module != r.module_inverse_tbl.end());
-				auto found_input_derivation = r.derivation_tbl.find(
-					found_derived_module->second);
-
-				//std::find_if(
-				//	derivation_tbl.begin(),
-				//	derivation_tbl.end()
-				//	[found_derived_module](const pair<string, shared_ptr<derivation> >& p)
-				//	{ return p.second == found_derived_module->first find(
-				//	found_derived_module->first);
-				if (found_input_derivation != r.derivation_tbl.end())
-				{
-					found_input_derivation->second->fix_input_modules();
-					found_input_derivation->second->fix_module();
-				}
-			}
-			//cerr << "In derivation building " 
-			//	<< this->get_emitted_sourcefile_name()
-			//	<< " input module " << r.module_inverse_tbl[*i_input]
-			//	<< " has been fixed with contents as follows." << endl
-			//	<< (*i_input)->get_ds();
-		}
-	}
+// 	void derivation::fix_input_modules()
+// 	{
+// 		for (auto i_input = input_modules.begin();
+// 			i_input != input_modules.end();
+// 			++i_input)
+// 		{
+// 			(*i_input)->updated_dwarf(); // set greatest_preexisting_offset
+// 			if (dynamic_pointer_cast<derived_module>(*i_input))
+// 			{
+// 				auto found_derived_module
+// 				 = r.module_inverse_tbl.find(*i_input);
+// 				assert(found_derived_module != r.module_inverse_tbl.end());
+// 				auto found_input_derivation = r.derivation_tbl.find(
+// 					found_derived_module->second);
+// 
+// 				//std::find_if(
+// 				//	derivation_tbl.begin(),
+// 				//	derivation_tbl.end()
+// 				//	[found_derived_module](const pair<string, shared_ptr<derivation> >& p)
+// 				//	{ return p.second == found_derived_module->first find(
+// 				//	found_derived_module->first);
+// 				if (found_input_derivation != r.derivation_tbl.end())
+// 				{
+// 					found_input_derivation->second->fix_input_modules(); // recurse
+// 					found_input_derivation->second->fix_module();
+// 				}
+// 			}
+// 			//cerr << "In derivation building " 
+// 			//	<< this->get_emitted_sourcefile_name()
+// 			//	<< " input module " << r.module_inverse_tbl[*i_input]
+// 			//	<< " has been fixed with contents as follows." << endl
+// 			//	<< (*i_input)->get_ds();
+// 		}
+// 	}
 }

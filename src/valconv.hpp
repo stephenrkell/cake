@@ -15,6 +15,7 @@ namespace cake
 	using std::vector;
 	using boost::optional;
 	using boost::shared_ptr;
+	using dwarf::spec::member_die;
 	using namespace dwarf;
 	
 	class wrapper_file;
@@ -331,6 +332,13 @@ namespace cake
 			const environment& env, 
 			const post_emit_status& return_status
 		) {}
+		
+		virtual bool
+		should_crossover_source_field(
+			shared_ptr<member_die> p_field
+		);
+		
+		bool source_type_has_correspondence(shared_ptr<type_die> t);
 
 	public:
 		structural_value_conversion(wrapper_file& w,
@@ -367,6 +375,10 @@ namespace cake
 		void emit_signature(bool emit_return_type /* = true */, 
 			bool emit_default_argument /* = true */);
 		bool treat_target_type_as_user_allocated();
+		bool
+		should_crossover_source_field(
+			shared_ptr<member_die> p_field
+		);
 	};
 	
 } // end namespace cake

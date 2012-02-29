@@ -3,11 +3,17 @@
 #include <cassert>
 #include <cstring>
 #include <cstdio>
+#include <set>
+#include <algorithm>
+#include <iterator>
 #include "request.hpp"
 #include "parser.hpp"
 #include "util.hpp"
 #include <srk31/indenting_ostream.hpp>
 #include <dwarfpp/cxx_dependency_order.hpp>
+
+using std::set;
+using std::string;
 
 namespace cake
 {
@@ -18,7 +24,8 @@ namespace cake
 					const_cast<char*>(cakefile)), ANTLR3_ENC_UTF8)),
 			out_filename(makefile),
 			maybe_out_stream(makefile ? makefile : "/dev/null"),
-			p_out(makefile ? &maybe_out_stream : &std::cout)
+			p_out(makefile ? &maybe_out_stream : &std::cout),
+			module_tbl()
 	{
 		if (!in_fileobj) throw cake::SemanticError("error opening input file");
 		if (!makefile && !maybe_out_stream) throw cake::SemanticError("error opening output file");
@@ -42,14 +49,74 @@ namespace cake
 		
 		// no need to topsort derive dependencies any more --
 		// we use Make's topsort for this
+		// -- hmm, is this true? Since the initial pass of Cake, which writes
+		// makerules, still has to write makerules for *all* modules, 
 		
 		// initialize derivations
+		//  -- we do this in a depthfirst post-order walk of the derivation tree
+		// (NOTE: we might want to support a derivation DAG in future)
+		// starting where? we need the derivation that has no parent
+		set<string> depended_upon_module_names;
+		set<string> derived_module_names;
 		for (derivation_tbl_t::iterator pd = derivation_tbl.begin(); 
 			pd != derivation_tbl.end(); ++pd)
 		{
-			pd->second->fix_input_modules();
-			pd->second->init();
+			derived_module_names.insert(pd->first);
+			auto depended_upon = pd->second->dependencies();
+			std::copy(depended_upon.begin(), depended_upon.end(), 
+				std::inserter(depended_upon_module_names, depended_upon_module_names.begin()));
 		}
+		// the name of the starting derivation is the set difference 
+		// derived_module_names - depended_upon_module_names
+		// and should be unique!
+		set<string> singleton_start_derivation;
+		std::set_difference(derived_module_names.begin(), derived_module_names.end(),
+		                    depended_upon_module_names.begin(), depended_upon_module_names.end(),
+		                    std::inserter(singleton_start_derivation, 
+		                        singleton_start_derivation.begin()));
+		if (singleton_start_derivation.size() != 1) RAISE(ast, "no unique toplevel derivation");
+
+		this->start_derivation = *singleton_start_derivation.begin();
+
+		auto found_start_derivation = derivation_tbl.find(start_derivation);
+		assert(found_start_derivation != derivation_tbl.end());
+		
+		recursively_init_derivations(found_start_derivation);
+// 		
+// 		for (derivation_tbl_t::iterator pd = derivation_tbl.begin(); 
+// 			pd != derivation_tbl.end(); ++pd)
+// 		{
+// 			
+// 			pd->second->init();
+// 			//pd->second->fix_input_modules();
+// 		}
+	}
+	
+	void 
+	request::recursively_init_derivations(
+		derivation_tbl_t::iterator i_d
+	)
+	{
+		auto dependencies = i_d->second->dependencies();
+		for (auto i_dep = dependencies.begin(); i_dep != dependencies.end(); ++i_dep)
+		{	
+			derivation_tbl_t::iterator found = derivation_tbl.find(*i_dep);
+			if (found != derivation_tbl.end())
+			{
+				recursively_init_derivations(found);
+			}
+			// regardless of what kind of module it is, 
+			else
+			{
+				assert(module_tbl.find(*i_dep) != module_tbl.end());
+				module_tbl[*i_dep]->updated_dwarf();
+				// it's an existing module -- do nothing
+			}
+		}
+		// regardless of whether we have dependencies, we initialise ourselves
+		i_d->second->init();
+		i_d->second->get_output_module()->updated_dwarf(); // HACK: this doesn't belong here
+		
 	}
 	
 	void request::depthFirst(antlr::tree::Tree *t)
@@ -67,7 +134,7 @@ namespace cake
 	
 	void request::write_makerules()
 	{
-		// output makerules *and* source code for each derive
+		// output makerules for each derive
 		for (derivation_tbl_t::iterator pd = derivation_tbl.begin(); 
 			pd != derivation_tbl.end(); ++pd)
 		{
@@ -100,7 +167,7 @@ namespace cake
 			{
 				auto found_deriv = derivation_tbl.find(module_name);
 				assert(found_deriv != derivation_tbl.end());
-				found_deriv->second->fix_module();
+				//found_deriv->second->fix_module();
 			}
 			
 			string headers_out_filename = //outfile ? outfile : 
@@ -122,7 +189,7 @@ namespace cake
 		if (found == derivation_tbl.end()) RAISE(ast, "no such derivation");
 		else
 		{
-			found->second->fix_module();
+			//found->second->fix_module();
 			found->second->write_cxx();
 		}
 	}
@@ -147,8 +214,6 @@ namespace cake
 			add_derivation(n);
 		}
 	}
-	
-	void request::sort_derivations() {}
 		
 	void derivation::write_object_dependency_makerules(std::ostream& out)
 	{

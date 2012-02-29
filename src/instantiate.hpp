@@ -45,7 +45,6 @@ namespace cake {
 			const string& output_filename
 			);
 		void init();
-		void fix_module();
 		void write_makerules(std::ostream& out);
 		void write_cxx();
 		const string& namespace_name() { return output_namespace; }
