@@ -15,6 +15,7 @@ using boost::shared_ptr;
 using boost::optional;
 using std::endl;
 using std::cerr;
+using std::clog;
 using std::ostream;
 using std::ostringstream;
 using std::string;
@@ -1853,7 +1854,7 @@ namespace cake
 					wrap_file <<
 			  "         // this supergroup/direction has " << vec.size() << " rules" << endl;
 
-					bool emitted_default_to_default = false;
+					val_corresp *emitted_default_to_default = /*false */ 0;
 					set<string> emitted_outer_tags_to_default;
 					set<string> emitted_default_to_inner_tags;
 					for (auto i_p_corresp = vec.begin(); i_p_corresp != vec.end(); ++i_p_corresp)
@@ -1888,9 +1889,30 @@ namespace cake
 							<< ", inner type: " << *inner_type
 							<< endl;
 
-	   wrap_file << "         // from corresp at " << *i_p_corresp << " " << **i_p_corresp << ", rule " << CCP(TO_STRING_TREE((*i_p_corresp)->corresp)) << endl;
-	   wrap_file << "         // inner type name " << (inner_type->get_name() ? *inner_type->get_name() : "(no name)") 
-   					<< ", outer type name " << (outer_type->get_name() ? *outer_type->get_name() : "(no name)")  << endl;
+						wrap_file << "         // from corresp at " << *i_p_corresp << " " << **i_p_corresp 
+							<< ", rule " << CCP(TO_STRING_TREE((*i_p_corresp)->corresp)) << endl;
+						wrap_file << "         // inner type name " 
+							<< (inner_type->get_name() ? *inner_type->get_name() : "(no name)") 
+							<< ", outer type name " 
+							<< (outer_type->get_name() ? *outer_type->get_name() : "(no name)")  
+							<< endl;
+						wrap_file.flush();
+						
+						// HACK: repeat for debugging
+						clog << "         // from corresp at " << *i_p_corresp << " " << **i_p_corresp 
+							<< ", rule " << CCP(TO_STRING_TREE((*i_p_corresp)->corresp)) << endl;
+						clog << "         // inner type name " 
+							<< (inner_type->get_name() ? *inner_type->get_name() : "(no name)") 
+							<< ", outer type name " 
+							<< (outer_type->get_name() ? *outer_type->get_name() : "(no name)")  
+							<< endl;
+						if (outer_type_synonymy_chain.size() == 0
+						&&    inner_type_synonymy_chain.size() == 0
+						&&    !(*i_p_corresp)->init_only 
+						&&    emitted_default_to_default)
+						{
+							clog << "Previous corresp was: " << *emitted_default_to_default << endl;
+						}
 
 						assert(outer_type_synonymy_chain.size() != 0
 						||    inner_type_synonymy_chain.size() != 0
@@ -1898,7 +1920,8 @@ namespace cake
 						||    !emitted_default_to_default);
 
 						if (outer_type_synonymy_chain.size() == 0
-						&&   inner_type_synonymy_chain.size() == 0) emitted_default_to_default = true;
+						&&   inner_type_synonymy_chain.size() == 0
+						&& !(*i_p_corresp)->init_only) emitted_default_to_default = *i_p_corresp;
 
 						wrap_file << "         typedef "
 							// target of the typedef is always the inner type
@@ -4705,6 +4728,18 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					/* bool init_only */ false
 						);
 				cerr << "Added " << *inserted->second << endl;
+				// we also have to add it to the other tables
+				auto p_c = inserted->second;
+				auto info = get_table_info_for_corresp(p_c);
+				info.group.push_back(p_c.get());
+
+				info.supergroup_tbl.insert(make_pair(info.source_k, p_c.get()));
+				info.supergroup_tbl.insert(make_pair(info.sink_k, p_c.get()));
+
+				val_corresp_supergroup_keys[info.ifaces].insert(info.source_k);
+				val_corresp_supergroup_keys[info.ifaces].insert(info.sink_k);
+				val_corresp_group_keys_by_supergroup[info.ifaces][info.source_k].insert(info.k);
+				val_corresp_group_keys_by_supergroup[info.ifaces][info.sink_k].insert(info.k);
 			}
 		
 			auto groups_seq = val_corresp_groups[*i_pair];
@@ -4768,10 +4803,43 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				/* bool init_only */ false
 				);
 				cerr << "Added " << *inserted->second << endl;
+				auto p_c = inserted->second;
+				auto info = get_table_info_for_corresp(p_c);
+				info.group.push_back(p_c.get());
+
+				info.supergroup_tbl.insert(make_pair(info.source_k, p_c.get()));
+				info.supergroup_tbl.insert(make_pair(info.sink_k, p_c.get()));
+
+				val_corresp_supergroup_keys[info.ifaces].insert(info.source_k);
+				val_corresp_supergroup_keys[info.ifaces].insert(info.sink_k);
+				val_corresp_group_keys_by_supergroup[info.ifaces][info.source_k].insert(info.k);
+				val_corresp_group_keys_by_supergroup[info.ifaces][info.sink_k].insert(info.k);
 			}
 		} // end for iface pair
 	}
-	
+		
+	link_derivation::table_info_for_corresp
+	link_derivation::get_table_info_for_corresp(shared_ptr<val_corresp> p_c)
+	{
+		auto ifaces = sorted(make_pair(p_c->source, p_c->sink));
+		auto k = (val_corresp_group_key) {
+				p_c->source, 
+				p_c->sink, 
+				canonicalise_type(p_c->source_data_type, p_c->source, compiler), 
+				canonicalise_type(p_c->sink_data_type, p_c->sink, compiler)
+			};
+		return (table_info_for_corresp) {
+			/* iface_pair ifaces; */ ifaces,
+			/* val_corresp_group_key k; */ k,
+			/* val_corresp_group_t& group; */ val_corresp_groups[ifaces][k],
+			/* val_corresp_supergroup_key source_key; */ make_pair(p_c->source,
+					canonicalise_type(p_c->source_data_type, p_c->source, compiler)),
+			/* val_corresp_supergroup_key sink_key; */ make_pair(p_c->sink, 
+					canonicalise_type(p_c->sink_data_type, p_c->sink, compiler)),
+			/* val_corresp_supergroup_t& supergroup_tbl; */ val_corresp_supergroups[ifaces]
+		};
+	}
+
 	void link_derivation::assign_value_corresp_numbers()
 	{
 // 		auto hash_function = [](const val_corresp_group_key& k) {
@@ -4801,44 +4869,32 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		for (auto i = val_corresps.begin(); i != val_corresps.end(); ++i)
 		{
 			auto p_c = i->second;
-			auto k = (val_corresp_group_key) {
-				p_c->source, 
-				p_c->sink, 
-				canonicalise_type(p_c->source_data_type, p_c->source, compiler), 
-				canonicalise_type(p_c->sink_data_type, p_c->sink, compiler)
-			};
-			auto source_k = make_pair(p_c->source,
-				canonicalise_type(p_c->source_data_type, p_c->source, compiler));
-			auto sink_k = make_pair(p_c->sink, 
-				canonicalise_type(p_c->sink_data_type, p_c->sink, compiler));
+			auto info = get_table_info_for_corresp(p_c);
 			
 			// 1. put it in the group table
-			auto ifaces = sorted(make_pair(p_c->source, p_c->sink));
-			val_corresp_group_t& group_tbl = val_corresp_groups[ifaces];
-			vector<val_corresp *>& vec = group_tbl[k];
-			cerr << "Group (previous size " << vec.size() 
-					<< "): source module " << name_of_module(k.source_module)
-					<< ", source type " << k.source_data_type->summary()
-					<< ", sink module " << name_of_module(k.sink_module)
-					<< ", sink type " << k.sink_data_type->summary() 
+			cerr << "Group (previous size " << info.group.size() 
+					<< "): source module " << name_of_module(info.k.source_module)
+					<< ", source type " << info.k.source_data_type->summary()
+					<< ", sink module " << name_of_module(info.k.sink_module)
+					<< ", sink type " << info.k.sink_data_type->summary() 
 					<< " gaining a corresp: " << *p_c << endl;
-
-			vec.push_back(p_c.get());
-				
+			
+			// here we increase the size of info.vec by one
+			info.group.push_back(p_c.get());
+			
 			// 1a. put it in the supergroup table, twice
 			// val_corresp_groups is a table of tables
 			// ifaces -> key -> corresps
 			// val_corresp_supergroups is also a table of tables
 			// ifaces -> half_key -> corresps
 			// BUT each corresp can be found under multiple half-keys! Two, to be precise
-			val_corresp_supergroup_t& supergroup_tbl = val_corresp_supergroups[ifaces];
-			supergroup_tbl.insert(make_pair(source_k, p_c.get()));
-			supergroup_tbl.insert(make_pair(sink_k, p_c.get()));
+			info.supergroup_tbl.insert(make_pair(info.source_k, p_c.get()));
+			info.supergroup_tbl.insert(make_pair(info.sink_k, p_c.get()));
 			
-			val_corresp_supergroup_keys[ifaces].insert(source_k);
-			val_corresp_supergroup_keys[ifaces].insert(sink_k);
-			val_corresp_group_keys_by_supergroup[ifaces][source_k].insert(k);
-			val_corresp_group_keys_by_supergroup[ifaces][sink_k].insert(k);
+			val_corresp_supergroup_keys[info.ifaces].insert(info.source_k);
+			val_corresp_supergroup_keys[info.ifaces].insert(info.sink_k);
+			val_corresp_group_keys_by_supergroup[info.ifaces][info.source_k].insert(info.k);
+			val_corresp_group_keys_by_supergroup[info.ifaces][info.sink_k].insert(info.k);
 		}
 		
 		// complete the set of val corresps
@@ -4859,6 +4915,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			vector<val_corresp *>& vec = group_tbl[k];
 
 			// the two counts are now redundant, but sanity-check for now
+			// here we increase counts[k] by one
 			int assigned = counts[k]++;
 			
 // 			cerr << "Assigned number " << assigned

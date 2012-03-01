@@ -105,18 +105,17 @@ namespace cake
 			{
 				recursively_init_derivations(found);
 			}
-			// regardless of what kind of module it is, 
-			else
-			{
-				assert(module_tbl.find(*i_dep) != module_tbl.end());
-				module_tbl[*i_dep]->updated_dwarf();
-				// it's an existing module -- do nothing
-			}
 		}
 		// regardless of whether we have dependencies, we initialise ourselves
 		i_d->second->init();
-		i_d->second->get_output_module()->updated_dwarf(); // HACK: this doesn't belong here
-		
+		// doing this might affect *our* dependencies too, so ->update_dwarf() them
+		for (auto i_dep = dependencies.begin(); i_dep != dependencies.end(); ++i_dep)
+		{	
+			assert(module_tbl.find(*i_dep) != module_tbl.end());
+			module_tbl[*i_dep]->updated_dwarf();
+		}
+		// finally, update our own output DWARF 
+		i_d->second->get_output_module()->updated_dwarf(); 
 	}
 	
 	void request::depthFirst(antlr::tree::Tree *t)
@@ -162,14 +161,6 @@ namespace cake
 		if (found == module_tbl.end()) RAISE(ast, "no such module");
 		else 
 		{
-			// HACK: if it's a derivation, fix the module
-			if (dynamic_pointer_cast<derived_module>(found->second))
-			{
-				auto found_deriv = derivation_tbl.find(module_name);
-				assert(found_deriv != derivation_tbl.end());
-				//found_deriv->second->fix_module();
-			}
-			
 			string headers_out_filename = //outfile ? outfile : 
 				(found->second->get_filename() + ".hpp");
 			std::ofstream out(headers_out_filename.c_str());
@@ -177,6 +168,13 @@ namespace cake
 			dwarfidl_cxx_target headers_target(" ::cake::unspecified_wordsize_type",
 				indenting_out, 
 				dwarf::tool::cxx_compiler::default_compiler_argv(true)); // use CXXFLAGS
+			
+			// we should agree on what the greatest preexisting offset is
+			auto module_top_offset = found->second->greatest_preexisting_offset();
+			auto dieset_top_offset
+			 = (--dynamic_cast<encap::dieset&>(found->second->get_ds()).map_end())
+			 	->second->get_offset();
+			assert(module_top_offset == dieset_top_offset);
 			
 			headers_target.emit_all_decls(found->second->get_ds().toplevel());
 		}

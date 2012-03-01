@@ -764,8 +764,8 @@ namespace cake
 				if (found != source_as_struct->member_children_end())
 				{
 					cerr << "Matched a name " << *(*i_member)->get_name()
-						<< " in DIEs " << *source_as_struct
-						<< " and " << *sink_data_type
+						<< " in DIEs " << source_as_struct->summary()
+						<< " and " << sink_data_type->summary()
 						<< endl;
 					name_matched_mappings.insert(make_pair(
 						*(*i_member)->get_name(),
@@ -794,8 +794,8 @@ namespace cake
 				else
 				{
 					cerr << "Didn't match name " << *(*i_member)->get_name()
-						<< " from DIE " << *sink_data_type
-						<< " in DIE " << *source_as_struct
+						<< " from DIE " << sink_data_type->summary()
+						<< " in DIE " << source_as_struct->summary()
 						<< endl;
 				}
 			}

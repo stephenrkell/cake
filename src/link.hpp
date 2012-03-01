@@ -222,6 +222,18 @@ namespace cake {
 		map<iface_pair, map< val_corresp_supergroup_key, set< val_corresp_group_key > > >
 		val_corresp_group_keys_by_supergroup;
 		
+		struct table_info_for_corresp
+		{
+			iface_pair ifaces;
+			val_corresp_group_key k;
+			vector<val_corresp *>& group;
+			val_corresp_supergroup_key source_k;
+			val_corresp_supergroup_key sink_k;
+			val_corresp_supergroup_t& supergroup_tbl;
+		};
+		table_info_for_corresp
+		get_table_info_for_corresp(shared_ptr<val_corresp> p_c);
+		
 		optional<link_derivation::val_corresp_map_t::iterator>
 		find_value_correspondence(
 			module_ptr source, shared_ptr<spec::type_die> source_type,
@@ -267,14 +279,16 @@ namespace cake {
 		
 		typedef unsigned long module_tag_t;
 		
+		
+		
 	private:
 	
 		antlr::tree::Tree *ast;
 		antlr::tree::Tree *refinement_ast;
 		
-    	// correspondences
-    	ev_corresp_map_t ev_corresps;
-        val_corresp_map_t val_corresps;
+		// correspondences
+		ev_corresp_map_t ev_corresps;
+		val_corresp_map_t val_corresps;
 		
 		// maps remembering which functions have been handled by explicit correspondences,
 		// to avoid generating implicit correspondences
