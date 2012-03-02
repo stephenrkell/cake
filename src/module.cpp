@@ -250,10 +250,39 @@ namespace cake
 		{
 			case TAG_AND_TOKEN(0, MEMBERSHIP_CLAIM):
 			{
-				/* This is a claim about some top-level member that doesn't exist.
-				 * Not supported for now, but (FIXME) wanted before too long. */
-				goto not_supported;
-			}
+				/* Instead of doing this here, we rely on eval_claim_depthfirst
+				 * to find the first CU and recursively eval the claim on that,
+				 * hence only calling out to this handler once it finds the part
+				 * of the claim that isn't satisfied. */
+				assert(false);
+// 				/* This is a claim about some top-level member that doesn't exist.
+// 				 * We choose the first compile_unit and recurse. */
+// 				auto p_toplevel = dynamic_pointer_cast<encap::file_toplevel_die>(falsifier);
+// 				if (!p_toplevel 
+// 					|| p_toplevel->compile_unit_children_begin()
+// 					== p_toplevel->compile_unit_children_end())
+// 				{
+// 					goto not_supported;
+// 				}
+// 				else 
+// 				{
+// 					auto first_cu = *p_toplevel->compile_unit_children_begin();
+// 					/* Rather than recursing directly using ourselves, we use 
+// 					 * eval_claim_depthfirst to cut */
+// 					return declare_handler(
+// 						falsifiable, 
+// 						dynamic_pointer_cast<spec::basic_die>(first_cu),
+// 						missing, 
+// 						p_resolver);
+// 				}
+			} break;
+// 			case TAG_AND_TOKEN(DW_TAG_compile_unit, MEMBERSHIP_CLAIM):
+// 			{
+// 				assert(missing);
+// 				// we really should be a compile_unit
+// 				auto p_cu = dynamic_pointer_cast<encap::compile_unit_die>(falsifier);
+// 				assert(p_cu);
+// 			}
 			case TAG_AND_TOKEN(DW_TAG_subprogram, MULTIVALUE):
 			{
 				// This means that some element in the MULTIVALUE
@@ -532,10 +561,6 @@ namespace cake
 					debug_out << "Changing handler to " << CCP(GET_TEXT(strength)) << std::endl;
 					recursive_event_handler = handler_for_claim_strength(strength);
 					} goto recursively_AND_subclaims;
-				/* We have one case for each dwarfidl head node. */ 
-				#define CASE(token) case CAKE_TOKEN(token): { \
-			    	 \
-				}
 				default: {
 					/* Let's enumerate the pairings of tag and token that might work. */
 					switch(TAG_AND_TOKEN(p_d->get_tag(), GET_TYPE(claim)))
@@ -757,36 +782,26 @@ namespace cake
 							}
 						}
 						case TAG_AND_TOKEN(0, MEMBERSHIP_CLAIM): {
-							INIT;
-							BIND2(claim, name);
-							if (GET_TYPE(name) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
-							{
-
-								// if it succeeds, we have to substitute the resolver...
-								struct cu_resolver : public name_resolver_t
-								{
-									shared_ptr<spec::compile_unit_die> p_cu;
-									cu_resolver(shared_ptr<spec::compile_unit_die> arg)
-									 : p_cu(arg) {}
-
-									shared_ptr<basic_die> 
-									resolve(const definite_member_name& mn)
-									{
-										return p_cu->resolve(mn.begin(), mn.end());
-									}
-								} cu_resolver(dynamic_pointer_cast<spec::compile_unit_die>(p_d));
-
-								auto dmn = read_definite_member_name(name);
-								if (dmn.size() > 0 && dynamic_pointer_cast<spec::with_named_children_die>(p_d) 
-									&& dynamic_pointer_cast<spec::with_named_children_die>(p_d)->named_child(*dmn.begin()) 
-									&&
-									(assert(false), eval_claim_depthfirst( 
-										claim, // FIXME: this is WRONG! Make a new claim that lacks the first name component
-										p_d,
-										&cu_resolver,
-										handler
-									))) RETURN_VALUE_IS( true );
-							}
+// 							INIT;
+// 							BIND2(claim, name);
+// 							if (GET_TYPE(name) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
+// 							{
+// 								/* This is where we allow the option of resolving names
+// 								 * against visible CU-toplevel members instead of
+// 								 * starting with the CU names themselves. 
+// 								 * The CU-resolver needs a specific CU. */
+// 
+// 								auto dmn = read_definite_member_name(name);
+// 								if (dmn.size() > 0 && dynamic_pointer_cast<spec::with_named_children_die>(p_d) 
+// 									&& dynamic_pointer_cast<spec::with_named_children_die>(p_d)->named_child(*dmn.begin()) 
+// 									&&
+// 									(assert(false), eval_claim_depthfirst( 
+// 										claim, // FIXME: this is WRONG! Make a new claim that lacks the first name component
+// 										p_d,
+// 										&cu_resolver,
+// 										handler
+// 									))) RETURN_VALUE_IS( true );
+// 							}
 							goto try_all_cus;
 						}
 						default:
@@ -797,16 +812,51 @@ namespace cake
 							assert(p_d->get_offset() == 0UL);
 							auto p_toplevel = dynamic_pointer_cast<spec::file_toplevel_die>(p_d);
 							assert(p_toplevel);
+							struct cu_resolver : public name_resolver_t
+							{
+								shared_ptr<spec::compile_unit_die> p_cu;
+								cu_resolver(shared_ptr<spec::compile_unit_die> arg)
+								 : p_cu(arg) {}
+
+								shared_ptr<basic_die> 
+								resolve(const definite_member_name& mn)
+								{
+									return p_cu->resolve(mn.begin(), mn.end());
+								}
+							};// cu_resolver(dynamic_pointer_cast<spec::compile_unit_die>(p_d));
 
 							// we iteratively OR the claims across all CUs
 							for (auto i_cu = p_toplevel->compile_unit_children_begin();
 								i_cu != p_toplevel->compile_unit_children_end(); ++i_cu)
 							{
-								if (!eval_claim_depthfirst(claim, *i_cu, p_resolver, handler)) continue;
+								cu_resolver this_cu_resolver(*i_cu);
+								if (!eval_claim_depthfirst(claim, 
+									dynamic_pointer_cast<spec::basic_die>(*i_cu), 
+									&this_cu_resolver, 
+									&cake::module_described_by_dwarf::do_nothing_handler)) continue;
 								else RETURN_VALUE_IS( true );
 							}
-							RETURN_VALUE_IS( (this->*handler)(claim, p_d, 0, p_resolver) );
-							assert(false);
+							// if we got here, all CUs failed. 
+							// make the call on the first CU
+							if (p_toplevel->compile_unit_children_begin() ==
+								p_toplevel->compile_unit_children_end()) RAISE(
+									claim, "no compile units");
+							auto first_cu = *p_toplevel->compile_unit_children_begin();
+							/* Note that when we go through each CU, some of them may come
+							 * closer to satisfying the decl than others. We should really fix the
+							 * "closest" one. For now, we just try them all in turn. */
+
+							for (auto i_cu = p_toplevel->compile_unit_children_begin();
+								i_cu != p_toplevel->compile_unit_children_end(); ++i_cu)
+							{
+								if( eval_claim_depthfirst(claim,
+										dynamic_pointer_cast<spec::basic_die>(*i_cu), 
+										p_resolver,
+										handler
+									)) RETURN_VALUE_IS(true);
+							}
+							RETURN_VALUE_IS(false);
+							//assert(false);
 						}
 						abort: RAISE_INTERNAL(claim, "not supported");
 					}
@@ -849,6 +899,7 @@ namespace cake
 	return_label:		
 		if (handler != &cake::module_described_by_dwarf::do_nothing_handler) debug_out 
         	<< "Result of evaluating claim " << CCP(GET_TEXT(claim)) 
+			<< " on " << p_d->summary()
             << " was " << retval << std::endl;
 		// if (!retval)
 		// {

@@ -2401,177 +2401,173 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		// We make two passes, to accommodate the lower priority of ident-pattern rules.
 		// In the first pass, we remember pattern rules.
 		std::vector<antlr::tree::Tree *> deferred;
-		INIT;
+		{ INIT;
 		FOR_ALL_CHILDREN(corresps)
 		{
-			switch(GET_TYPE(n))
+			SELECT_ONLY(EVENT_CORRESP);
+			assert(GET_TYPE(n) == CAKE_TOKEN(EVENT_CORRESP));
+
+			INIT;
+			BIND2(n, correspHead);
+
+			/* We filter out the ident-pattern rules here, and defer processing. */
+			if (
+				(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
+				&& GET_TYPE(GET_CHILD(GET_CHILD(correspHead, 0), 1)) == CAKE_TOKEN(KEYWORD_PATTERN))
+			||  (GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
+				&& GET_TYPE(GET_CHILD(GET_CHILD(correspHead, 3), 1)) == CAKE_TOKEN(KEYWORD_PATTERN))
+			||  (GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
+				&& (GET_TYPE(GET_CHILD(GET_CHILD(correspHead, 0), 1)) == CAKE_TOKEN(KEYWORD_PATTERN)
+				  || GET_TYPE(GET_CHILD(GET_CHILD(correspHead, 3), 1)) == CAKE_TOKEN(KEYWORD_PATTERN)))
+			)
 			{
-				case CAKE_TOKEN(EVENT_CORRESP):
-				{
-					INIT;
-					BIND2(n, correspHead);
-
-					/* We filter out the ident-pattern rules here, and defer processing. */
-					if (
-						(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
-						&& GET_TYPE(GET_CHILD(GET_CHILD(correspHead, 0), 1)) == CAKE_TOKEN(KEYWORD_PATTERN))
-					||  (GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
-						&& GET_TYPE(GET_CHILD(GET_CHILD(correspHead, 3), 1)) == CAKE_TOKEN(KEYWORD_PATTERN))
-					||  (GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
-						&& (GET_TYPE(GET_CHILD(GET_CHILD(correspHead, 0), 1)) == CAKE_TOKEN(KEYWORD_PATTERN)
-						  || GET_TYPE(GET_CHILD(GET_CHILD(correspHead, 3), 1)) == CAKE_TOKEN(KEYWORD_PATTERN)))
-					)
-					{
-						// it's a pattern rule that we need to expand separately, later
-						deferred.push_back(n);
-					}
-					else
-					{
-						process_non_ident_pattern_event_corresp(left, right, n, false);
-					}
-				}
-				break;
-				case CAKE_TOKEN(KEYWORD_VALUES):
-				{
-					INIT;
-					// we may have multiple value corresps here
-					FOR_ALL_CHILDREN(n)
-					{
-						ALIAS2(n, correspHead);
-						assert(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
-							|| GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW_Q)
-							|| GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
-							|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
-							|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW_Q)
-							|| GET_TYPE(correspHead) == CAKE_TOKEN(NAMED_VALUE_CORRESP));
-
-						string ruleName;
-						if (GET_TYPE(correspHead) == CAKE_TOKEN(NAMED_VALUE_CORRESP))
-						{
-							if (GET_CHILD_COUNT(correspHead) != 2) RAISE_INTERNAL(correspHead,
-								"named rules must be a simple pair");
-							auto ruleNameIdent = GET_CHILD(correspHead, 1); 
-							if (GET_TYPE(ruleNameIdent) != CAKE_TOKEN(IDENT))
-							{ RAISE_INTERNAL(ruleNameIdent, "must be a simple ident"); }
-							ruleName = CCP(GET_TEXT(ruleNameIdent));
-							// HACK: move down one
-							correspHead = GET_CHILD(correspHead, 0);
-						}
-						assert(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
-							|| GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW_Q)
-							|| GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
-							|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
-							|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW_Q));
-
-						switch(GET_TYPE(correspHead))
-						{
-							case CAKE_TOKEN(BI_DOUBLE_ARROW):
-							{
-								INIT;
-								/* The BI_DOUBLE_ARROW is special because 
-								* - it might have multivalue children (for many-to-many)
-								* - it should not have nonempty infix stubs
-									(because these would be ambiguous) */
-								BIND2(correspHead, leftValDecl);
-								BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
-								BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
-								if (GET_CHILD_COUNT(leftInfixStub)
-								|| GET_CHILD_COUNT(rightInfixStub) > 0)
-								{
-									RAISE(correspHead, 
-									"infix stubs are ambiguous for bidirectional value correspondences");
-								}
-								BIND2(correspHead, rightValDecl);
-								BIND3(correspHead, valueCorrespondenceRefinement, 
-									VALUE_CORRESPONDENCE_REFINEMENT);
-								// we don't support many-to-many yet
-								assert(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
-								&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE));
-								ALIAS3(leftValDecl, leftMember, NAME_AND_INTERPRETATION);
-								ALIAS3(rightValDecl, rightMember, NAME_AND_INTERPRETATION);
-								// each add_value_corresp call denotes a 
-								// value conversion function that needs to be generated
-								add_value_corresp(left, GET_CHILD(leftMember, 0), leftInfixStub,
-									right, GET_CHILD(rightMember, 0), rightInfixStub,
-									valueCorrespondenceRefinement, true, correspHead);
-								add_value_corresp(right, GET_CHILD(rightMember, 0), rightInfixStub,
-									left, GET_CHILD(leftMember, 0), leftInfixStub, 
-									valueCorrespondenceRefinement, false, correspHead);
-
-							}
-							break;
-							case CAKE_TOKEN(LR_DOUBLE_ARROW):
-							case CAKE_TOKEN(RL_DOUBLE_ARROW):
-							case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
-							case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
-							{
-								INIT;
-								BIND2(correspHead, leftValDecl);
-								BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
-								BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
-								BIND2(correspHead, rightValDecl);
-								BIND3(correspHead, valueCorrespondenceRefinement, 
-									VALUE_CORRESPONDENCE_REFINEMENT);
-								// many-to-many not allowed
-								if(!(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
-								&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE)))
-								{ RAISE(correspHead, "many-to-many value correspondences must be bidirectional"); }
-
-								// one of these is a valuePattern, so will be a NAME_AND_INTERPRETATION;
-								// the other is a stub expression, so need not have an interpretation.
-								ALIAS2(leftValDecl, leftMember);
-								ALIAS2(rightValDecl, rightMember);
-								bool init_only = false;
-								bool left_is_pattern = false;
-								bool right_is_pattern = false;
-								switch(GET_TYPE(correspHead))
-								{
-									case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
-										init_only = true;
-									case CAKE_TOKEN(LR_DOUBLE_ARROW):
-										// the valuePattern is the left-hand one
-										assert(GET_TYPE(leftMember) == CAKE_TOKEN(NAME_AND_INTERPRETATION));
-										add_value_corresp(left, GET_CHILD(leftMember, 0), leftInfixStub,
-											right, rightMember, rightInfixStub,
-											valueCorrespondenceRefinement, true, correspHead,
-											init_only);
-										left_is_pattern = true;
-										goto record_touched;
-									case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
-										init_only = true;
-									case CAKE_TOKEN(RL_DOUBLE_ARROW):
-										// the valuePattern is the right-hand one
-										assert(GET_TYPE(rightMember) == CAKE_TOKEN(NAME_AND_INTERPRETATION));
-										add_value_corresp(right, GET_CHILD(rightMember, 0), rightInfixStub,
-											left, leftMember, leftInfixStub, 
-											valueCorrespondenceRefinement, false, correspHead,
-											init_only);
-										right_is_pattern = true;
-										goto record_touched;
-									record_touched:
-										touched_data_types[left].insert(
-											read_definite_member_name(left_is_pattern ? 
-												(GET_CHILD(leftMember, 0)) : leftMember));
-										touched_data_types[right].insert(
-											read_definite_member_name(right_is_pattern ? 
-												(GET_CHILD(rightMember, 0)): rightMember));
-										break;
-									default: assert(false);
-								}
-							}
-							break;
-							default: assert(false);
-						} // end switch on correspHead type
-					} // end FOR_ALL_CHILDREN
-				} // end case VALUES
-				break;
-				default: RAISE(n, "expected an event correspondence or a value correspondence block");
-			} // end switch
-		} // end FOR_ALL_CHILDREN
-		
+				// it's a pattern rule that we need to expand separately, later
+				deferred.push_back(n);
+			}
+			else
+			{
+				process_non_ident_pattern_event_corresp(left, right, n, false);
+			}
+		}}
 		/* Now process deferred ident-pattern rules. */
 		expand_patterns_and_process(left, right, deferred);
-		
+		{ INIT;
+		FOR_ALL_CHILDREN(corresps)
+		{
+			SELECT_ONLY(KEYWORD_VALUES);
+			assert(GET_TYPE(n) == CAKE_TOKEN(KEYWORD_VALUES));
+
+			INIT;
+			// we may have multiple value corresps here
+			FOR_ALL_CHILDREN(n)
+			{
+				ALIAS2(n, correspHead);
+				assert(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
+					|| GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW_Q)
+					|| GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
+					|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
+					|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW_Q)
+					|| GET_TYPE(correspHead) == CAKE_TOKEN(NAMED_VALUE_CORRESP));
+
+				string ruleName;
+				if (GET_TYPE(correspHead) == CAKE_TOKEN(NAMED_VALUE_CORRESP))
+				{
+					if (GET_CHILD_COUNT(correspHead) != 2) RAISE_INTERNAL(correspHead,
+						"named rules must be a simple pair");
+					auto ruleNameIdent = GET_CHILD(correspHead, 1); 
+					if (GET_TYPE(ruleNameIdent) != CAKE_TOKEN(IDENT))
+					{ RAISE_INTERNAL(ruleNameIdent, "must be a simple ident"); }
+					ruleName = CCP(GET_TEXT(ruleNameIdent));
+					// HACK: move down one
+					correspHead = GET_CHILD(correspHead, 0);
+				}
+				assert(GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW)
+					|| GET_TYPE(correspHead) == CAKE_TOKEN(LR_DOUBLE_ARROW_Q)
+					|| GET_TYPE(correspHead) == CAKE_TOKEN(BI_DOUBLE_ARROW)
+					|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW)
+					|| GET_TYPE(correspHead) == CAKE_TOKEN(RL_DOUBLE_ARROW_Q));
+
+				switch(GET_TYPE(correspHead))
+				{
+					case CAKE_TOKEN(BI_DOUBLE_ARROW):
+					{
+						INIT;
+						/* The BI_DOUBLE_ARROW is special because 
+						* - it might have multivalue children (for many-to-many)
+						* - it should not have nonempty infix stubs
+							(because these would be ambiguous) */
+						BIND2(correspHead, leftValDecl);
+						BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
+						BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
+						if (GET_CHILD_COUNT(leftInfixStub)
+						|| GET_CHILD_COUNT(rightInfixStub) > 0)
+						{
+							RAISE(correspHead, 
+							"infix stubs are ambiguous for bidirectional value correspondences");
+						}
+						BIND2(correspHead, rightValDecl);
+						BIND3(correspHead, valueCorrespondenceRefinement, 
+							VALUE_CORRESPONDENCE_REFINEMENT);
+						// we don't support many-to-many yet
+						assert(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
+						&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE));
+						ALIAS3(leftValDecl, leftMember, NAME_AND_INTERPRETATION);
+						ALIAS3(rightValDecl, rightMember, NAME_AND_INTERPRETATION);
+						// each add_value_corresp call denotes a 
+						// value conversion function that needs to be generated
+						add_value_corresp(left, GET_CHILD(leftMember, 0), leftInfixStub,
+							right, GET_CHILD(rightMember, 0), rightInfixStub,
+							valueCorrespondenceRefinement, true, correspHead);
+						add_value_corresp(right, GET_CHILD(rightMember, 0), rightInfixStub,
+							left, GET_CHILD(leftMember, 0), leftInfixStub, 
+							valueCorrespondenceRefinement, false, correspHead);
+
+					}
+					break;
+					case CAKE_TOKEN(LR_DOUBLE_ARROW):
+					case CAKE_TOKEN(RL_DOUBLE_ARROW):
+					case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
+					case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
+					{
+						INIT;
+						BIND2(correspHead, leftValDecl);
+						BIND3(correspHead, leftInfixStub, INFIX_STUB_EXPR);
+						BIND3(correspHead, rightInfixStub, INFIX_STUB_EXPR);
+						BIND2(correspHead, rightValDecl);
+						BIND3(correspHead, valueCorrespondenceRefinement, 
+							VALUE_CORRESPONDENCE_REFINEMENT);
+						// many-to-many not allowed
+						if(!(GET_TYPE(leftValDecl) != CAKE_TOKEN(MULTIVALUE)
+						&& GET_TYPE(rightValDecl) != CAKE_TOKEN(MULTIVALUE)))
+						{ RAISE(correspHead, "many-to-many value correspondences must be bidirectional"); }
+
+						// one of these is a valuePattern, so will be a NAME_AND_INTERPRETATION;
+						// the other is a stub expression, so need not have an interpretation.
+						ALIAS2(leftValDecl, leftMember);
+						ALIAS2(rightValDecl, rightMember);
+						bool init_only = false;
+						bool left_is_pattern = false;
+						bool right_is_pattern = false;
+						switch(GET_TYPE(correspHead))
+						{
+							case CAKE_TOKEN(LR_DOUBLE_ARROW_Q):
+								init_only = true;
+							case CAKE_TOKEN(LR_DOUBLE_ARROW):
+								// the valuePattern is the left-hand one
+								assert(GET_TYPE(leftMember) == CAKE_TOKEN(NAME_AND_INTERPRETATION));
+								add_value_corresp(left, GET_CHILD(leftMember, 0), leftInfixStub,
+									right, rightMember, rightInfixStub,
+									valueCorrespondenceRefinement, true, correspHead,
+									init_only);
+								left_is_pattern = true;
+								goto record_touched;
+							case CAKE_TOKEN(RL_DOUBLE_ARROW_Q):
+								init_only = true;
+							case CAKE_TOKEN(RL_DOUBLE_ARROW):
+								// the valuePattern is the right-hand one
+								assert(GET_TYPE(rightMember) == CAKE_TOKEN(NAME_AND_INTERPRETATION));
+								add_value_corresp(right, GET_CHILD(rightMember, 0), rightInfixStub,
+									left, leftMember, leftInfixStub, 
+									valueCorrespondenceRefinement, false, correspHead,
+									init_only);
+								right_is_pattern = true;
+								goto record_touched;
+							record_touched:
+								touched_data_types[left].insert(
+									read_definite_member_name(left_is_pattern ? 
+										(GET_CHILD(leftMember, 0)) : leftMember));
+								touched_data_types[right].insert(
+									read_definite_member_name(right_is_pattern ? 
+										(GET_CHILD(rightMember, 0)): rightMember));
+								break;
+							default: assert(false);
+						}
+					}
+					break;
+					default: assert(false);
+				} // end switch on values correspHead type
+			} // end FOR_ALL_CHILDREN of VALUES
+		}} // end FOR_ALL_CHILDREN of pairwise
 	}
 	
 	void link_derivation::expand_patterns_and_process(
@@ -3308,19 +3304,28 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					cerr << "Enclosing CU: " << created->enclosing_compile_unit()->summary()
 						<< endl;
 				}
-				else
+				else // not a vconstruct case
 				{
 					// artificial data type: now handle implicit indirection (pointerness)
+					assert(is_type->get_concrete_type());
 					if (is_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type
 						&& GET_TYPE(target_type_in_ast) != CAKE_TOKEN(KEYWORD_PTR))
 					{
 						// the DWARF context wants a pointer, and our AST doesn't
 						// say it's a pointer. Infer that it *is* a pointer.
 						// The typedef should alias the pointed-to type.
-						shared_ptr<pointer_type_die> is_pointer_type = dynamic_pointer_cast<pointer_type_die>(is_type);
-						assert(is_pointer_type);
+						shared_ptr<pointer_type_die> is_pointer_type
+						 = dynamic_pointer_cast<pointer_type_die>(is_type->get_concrete_type());
 						shared_ptr<type_die> pointed_to_type = is_pointer_type->get_type();
-						assert(pointed_to_type);
+						cerr << "Found alias of void pointer type: " << is_pointer_type->summary()
+							<< endl;
+						if (!pointed_to_type)
+						{
+							cerr << "Found alias of void pointer type: " << is_pointer_type->summary()
+								<< endl;
+							 RAISE(target_type_in_ast,
+								"cannot apply indirect interpretation on void pointer type");
+						}
 						is_type = pointed_to_type;
 					}
 					// converse case: the DWARF context doesn't want a pointer,

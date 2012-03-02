@@ -4,6 +4,7 @@
 #include <sstream>
 #include <cstdlib>
 #include <cctype>
+#include <boost/algorithm/string.hpp>
 #include "request.hpp"
 #include "util.hpp"
 //#include "treewalk_helpers.hpp"
@@ -349,7 +350,7 @@ namespace cake
 		char buf[bufsize];
 		auto i_c = arg.begin();
 		char *p_c = &buf[0];
-		assert(*i_c && (isalpha(*i_c) || (*i_c == '_')));
+		assert(*i_c && (isalnum(*i_c) || (*i_c == '_')));
 		do 
 		{
 			if (!isalnum(*i_c) && (*i_c != '_')) *p_c++ = '\\';
@@ -453,6 +454,7 @@ namespace cake
 		auto unescaped_name = unescape_ident(raw_event_dmn.at(0));
 		ostringstream out;
 		enum { NORMAL, ESCAPE } state = NORMAL; 
+		enum { NO_CHANGE, TOUPPER, TOLOWER } case_state = NO_CHANGE;
 		for (auto i_c = unescaped_name.begin(); 
 			i_c != unescaped_name.end(); 
 			++i_c)
@@ -463,21 +465,31 @@ namespace cake
 					if (state == NORMAL) { state = ESCAPE; break; }
 					else                 { out << '\\'; state = NORMAL; break; }
 				default:
-					if (state == NORMAL) { out << *i_c; break; }
+					if (state == NORMAL) 
+					{ out << 
+						((case_state == NO_CHANGE) ? (char)*i_c
+						:(case_state == TOUPPER) ? (char)toupper(*i_c)
+						:(case_state == TOLOWER) ? (char)tolower(*i_c) : (assert(false), (char)0)); 
+						break; }
 					else {
 						string tmp;
 						state = NORMAL;
 						switch (*i_c)
 						{
-					#define CASE(n) case (n): tmp = ""; tmp.assign(match[n - '0'].first, match[n - '0'].second); \
-						out << tmp; break;
+					#define CASE(n) case (n): tmp = ""; \
+						tmp.assign(match[n - '0'].first, match[n - '0'].second); \
+						out << ((case_state == NO_CHANGE) ? tmp \
+						:(case_state == TOUPPER) ? boost::to_upper_copy(tmp) \
+						:(case_state == TOLOWER) ? boost::to_lower_copy(tmp) : (assert(false), "")); \
+						state = NORMAL; break;
 							CASE('0') CASE('1') CASE('2') CASE('3') CASE('4') 
 							CASE('5') CASE('6') CASE('7') CASE('8') CASE('9')
-							case 'U':
-							case 'E':
-							case 'L': assert(false); // FIXME
-							default: RAISE(t, "unrecognised escape");
 					#undef CASE
+							// now do the casing
+							case 'U': case_state = TOUPPER; state = NORMAL; break;
+							case 'E': case_state = NO_CHANGE; state = NORMAL; break;
+							case 'L': case_state = TOLOWER; state = NORMAL; break;
+							default: RAISE(t, "unrecognised escape");
 						}
 					}
 					break;

@@ -44,7 +44,6 @@ namespace cake
 		//extract_inlines();
 		//build_inlines();
 		extract_exists();
-		extract_supplementary();
 		extract_derivations();
 		
 		// no need to topsort derive dependencies any more --
@@ -80,7 +79,8 @@ namespace cake
 
 		auto found_start_derivation = derivation_tbl.find(start_derivation);
 		assert(found_start_derivation != derivation_tbl.end());
-		
+
+		// this now deals with supplementary too
 		recursively_init_derivations(found_start_derivation);
 // 		
 // 		for (derivation_tbl_t::iterator pd = derivation_tbl.begin(); 
@@ -90,6 +90,7 @@ namespace cake
 // 			pd->second->init();
 // 			//pd->second->fix_input_modules();
 // 		}
+
 	}
 	
 	void 
@@ -109,9 +110,11 @@ namespace cake
 		// regardless of whether we have dependencies, we initialise ourselves
 		i_d->second->init();
 		// doing this might affect *our* dependencies too, so ->update_dwarf() them
+		// -- we merge supplementary stuff here too
 		for (auto i_dep = dependencies.begin(); i_dep != dependencies.end(); ++i_dep)
 		{	
 			assert(module_tbl.find(*i_dep) != module_tbl.end());
+			extract_supplementary(*i_dep);
 			module_tbl[*i_dep]->updated_dwarf();
 		}
 		// finally, update our own output DWARF 

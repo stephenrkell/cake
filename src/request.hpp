@@ -140,7 +140,7 @@ namespace cake
 		void extract_exists();
 		void add_exists(antlr::tree::Tree *n);
         
-		void extract_supplementary();
+		void extract_supplementary(const string& target_module);
         
 		void extract_derivations();
 		void add_derivation(antlr::tree::Tree *n);
