@@ -490,14 +490,15 @@ namespace cake
 						}
 					}
 										
-					// if we still don't have it, prefer primitive rules
+					// if we still don't have it, prefer primitive (i.e. not structural) rules
 					if (!found_init) 
 					{
 						for (auto i_candidate = candidates.first;
 							i_candidate != candidates.second;
 							++i_candidate)
 						{
-							if (dynamic_pointer_cast<primitive_value_conversion>(i_candidate->second))
+							// HACK: want a better is-a test here
+							if (!dynamic_pointer_cast<structural_value_conversion>(i_candidate->second))
 							{
 								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
 									"multiple primitive rules for the same concrete types");

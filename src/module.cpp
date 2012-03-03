@@ -237,7 +237,7 @@ namespace cake
 		debug_out << "DECLARE found falsifiable claim at token " //<< CCP(falsifiable->getText())
 			<< CCP(TO_STRING_TREE(falsifiable))
 			<< ", " << *falsifier << endl
-			<< "Missing hint: " << (missing ? CCP(TO_STRING_TREE(missing)) : "(none given)") << endl
+			<< "Hinted missing element: " << (missing ? CCP(TO_STRING_TREE(missing)) : "(none given)") << endl
 			<< "Proceeding to add module info, if we know how." << std::endl;
 
 		assert(falsifier);
@@ -276,13 +276,62 @@ namespace cake
 // 						p_resolver);
 // 				}
 			} break;
-// 			case TAG_AND_TOKEN(DW_TAG_compile_unit, MEMBERSHIP_CLAIM):
-// 			{
-// 				assert(missing);
-// 				// we really should be a compile_unit
-// 				auto p_cu = dynamic_pointer_cast<encap::compile_unit_die>(falsifier);
-// 				assert(p_cu);
-// 			}
+			case TAG_AND_TOKEN(DW_TAG_compile_unit, MEMBERSHIP_CLAIM):
+			{
+				assert(missing);
+				
+				// we really should be a compile_unit
+				auto p_cu = dynamic_pointer_cast<encap::compile_unit_die>(falsifier);
+				assert(p_cu);
+				
+				INIT;
+				BIND2(falsifiable, name);
+				BIND2(falsifiable, el);
+				assert(missing == el);
+				auto mn_to_create = read_definite_member_name(name);
+				assert(mn_to_create.size() == 1);
+				string name_to_create = mn_to_create.at(0); // unescape_ident(CCP(GET_TEXT(name)));
+				
+				// we create the missing thing, and give it the name the claim demands
+				// NOTE: ideally we would create a thing with a temporary name,
+				// by recursively calling ourselves with a "_ : ..."; claim,
+				// then just handle the name thing here. 
+				// but for now, just do both stages right here.
+				// What toplevel things do we know how to create?
+				switch(GET_TYPE(el))
+				{
+					case CAKE_TOKEN(KEYWORD_CLASS_OF): {
+						/* This means we should create a type. */
+						INIT;
+						BIND3(el, descr, VALUE_DESCRIPTION);
+						assert(GET_CHILD_COUNT(descr) > 0);
+						auto child_descr = GET_CHILD(descr, 0);
+						shared_ptr<type_die> t = create_dwarf_type(child_descr);
+						if (!t) goto bad_descr; // goes for void too, since we can't name it
+						shared_ptr<encap::basic_die> encap_t
+						 = dynamic_pointer_cast<encap::basic_die>(t);
+						assert(encap_t);
+						encap_t->set_name(name_to_create);
+						cerr << "Added DWARF type: " << *t << endl;
+						assert(eval_claim_depthfirst(
+								el,
+								t,
+								p_resolver,
+								&module_described_by_dwarf::do_nothing_handler
+							)
+						);
+						return true;
+					}
+					bad_descr:
+					default: cerr << "Don't know how to create a DIE satisfying "
+						<< CCP(GET_TEXT(falsifiable)) << endl;
+					goto not_supported;
+				}
+				
+				// should not get here
+				assert(false);
+				
+			} break;
 			case TAG_AND_TOKEN(DW_TAG_subprogram, MULTIVALUE):
 			{
 				// This means that some element in the MULTIVALUE
@@ -640,6 +689,18 @@ namespace cake
 								RETURN_VALUE_IS ( (this->*handler)(claim, p_d, 0, p_resolver) );
 							}
 						}
+						case TAG_AND_TOKEN(DW_TAG_structure_type, VALUE_DESCRIPTION): {
+							INIT;
+							BIND2(claim, typeDescr);
+							bool success = (GET_TYPE(typeDescr) == CAKE_TOKEN(KEYWORD_OBJECT));
+							FOR_ALL_CHILDREN(typeDescr)
+							{
+								success &= true;
+								// check members here
+								assert(false);
+							}
+							RETURN_VALUE_IS(success);
+						} break;
 						case TAG_AND_TOKEN(DW_TAG_typedef, VALUE_DESCRIPTION): {
 							INIT;
 							BIND2(claim, typeDescr);
@@ -668,10 +729,11 @@ namespace cake
 							if (success) RETURN_VALUE_IS(true);
 							else RETURN_VALUE_IS( (this->*handler)(claim, p_d, 0, p_resolver) );
 						}
+						case TAG_AND_TOKEN(DW_TAG_structure_type, KEYWORD_CLASS_OF): 
 						case TAG_AND_TOKEN(DW_TAG_typedef, KEYWORD_CLASS_OF): {
 							INIT;
 							BIND2(claim, typeDescription);
-							auto is_typedef = dynamic_pointer_cast<spec::typedef_die>(p_d);
+							//auto is_typedef = dynamic_pointer_cast<spec::typedef_die>(p_d);
 							return eval_claim_depthfirst(
 								typeDescription,
 								p_d,
@@ -858,7 +920,10 @@ namespace cake
 							RETURN_VALUE_IS(false);
 							//assert(false);
 						}
-						abort: RAISE_INTERNAL(claim, "not supported");
+						abort: 
+							cerr << "Claim: " << CCP(TO_STRING_TREE(claim)) << endl;
+							cerr << *p_d << endl;
+							RAISE_INTERNAL(claim, "not supported");
 					}
 					debug_out << "Unsupported claim head node: " << CCP(GET_TEXT(claim)) << std::endl;
 					RAISE_INTERNAL(claim, "unsupported claim head node");
@@ -875,7 +940,7 @@ namespace cake
 							p_d,
 							p_resolver,
 							recursive_event_handler);
-						if (!retval) cerr << "Recursive ANDing of claims failed at this point." << endl;
+						if (!retval) cerr << "Iterative ANDing of claim group failed at this point." << endl;
 						/* Note: if a subclaim is found to be false, the handler will be called *before*
 						 * we get a false result. So potentially there is another bite at the cherry here --
 						 * we might locally fail to override some DWARF data, but then get the chance
@@ -1208,10 +1273,21 @@ namespace cake
 				// error: we can't create a named type without its definition
 				throw Not_supported("creating named type without definition");
 			
-			case CAKE_TOKEN(KEYWORD_OBJECT): 
+			case CAKE_TOKEN(KEYWORD_OBJECT): {
 				// dependencies are the type of each member
 				// FIXME: recursive data types require special support to avoid infinite loops here
-				assert(false);
+				auto created =
+					dwarf::encap::factory::for_spec(
+						dwarf::spec::DEFAULT_DWARF_SPEC
+					).create_die(DW_TAG_structure_type,
+						first_encap_cu,
+						opt<string>() // no name
+					);
+				auto created_as_structure_type = dynamic_pointer_cast<encap::structure_type_die>(created);
+				// FIXME: handle members here
+				return dynamic_pointer_cast<spec::type_die>(created_as_structure_type);
+			}	
+			assert(false);
 			case CAKE_TOKEN(KEYWORD_PTR): {
 				auto pointed_to = ensure_dwarf_type(GET_CHILD(t, 0));
 				assert(pointed_to);
@@ -1228,9 +1304,10 @@ namespace cake
 			}
 			// void is not reified in DWARF
 			case CAKE_TOKEN(KEYWORD_VOID): return shared_ptr<spec::type_die>(); 
+			// NOTE: the caller needs to check whether they passed void to distinguish these cases!
+			case CAKE_TOKEN(FUNCTION_ARROW): return shared_ptr<spec::type_die>(); // error
 			case CAKE_TOKEN(ARRAY): assert(false); // for now
 			case CAKE_TOKEN(KEYWORD_ENUM): assert(false); // for now
-			case CAKE_TOKEN(FUNCTION_ARROW): assert(false); // for now
 			default: assert(false);
 		}
 	}
@@ -1331,7 +1408,13 @@ namespace cake
 			case CAKE_TOKEN(DEFINITE_MEMBER_NAME): {
 				auto mn = read_definite_member_name(name);
 				auto found = p_d->resolve(mn.begin(), mn.end());
-				return found && eval_claim_depthfirst(subclaim, found, p_resolver, handler);
+				if (found) return eval_claim_depthfirst(subclaim, found, p_resolver, handler);
+				else
+				{
+					// the "not found" case: we call the handler
+					// which we hope will create the relevant thing
+					return (this->*handler)( claim, p_d, subclaim, p_resolver);
+				}
 			}
 			case CAKE_TOKEN(INDEFINITE_MEMBER_NAME):
 			case CAKE_TOKEN(ANY_VALUE): {

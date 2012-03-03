@@ -101,20 +101,22 @@ namespace cake
 		auto dependencies = i_d->second->dependencies();
 		for (auto i_dep = dependencies.begin(); i_dep != dependencies.end(); ++i_dep)
 		{	
+			// -- we merge supplementary stuff here
 			derivation_tbl_t::iterator found = derivation_tbl.find(*i_dep);
 			if (found != derivation_tbl.end())
 			{
 				recursively_init_derivations(found);
 			}
+			extract_supplementary(*i_dep);
 		}
+		
 		// regardless of whether we have dependencies, we initialise ourselves
 		i_d->second->init();
+		
 		// doing this might affect *our* dependencies too, so ->update_dwarf() them
-		// -- we merge supplementary stuff here too
 		for (auto i_dep = dependencies.begin(); i_dep != dependencies.end(); ++i_dep)
 		{	
 			assert(module_tbl.find(*i_dep) != module_tbl.end());
-			extract_supplementary(*i_dep);
 			module_tbl[*i_dep]->updated_dwarf();
 		}
 		// finally, update our own output DWARF 
