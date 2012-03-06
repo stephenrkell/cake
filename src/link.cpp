@@ -412,26 +412,21 @@ namespace cake
 						}
 					}
 					
-					
-					// if we still don't have it, choose the rules whose
-					// declared types (on each side) are their own concrete type
+
+					// if we still don't have it, prefer rules between like-named types
 					if (!found_init) 
 					{
 						for (auto i_candidate = candidates.first;
 							i_candidate != candidates.second;
 							++i_candidate)
 						{
-							if (data_types_are_identical(
-								i_candidate->second->sink_data_type->get_concrete_type(),
-								i_candidate->second->sink_data_type)
-							 && data_types_are_identical(
-								i_candidate->second->source_data_type->get_concrete_type(),
-								i_candidate->second->source_data_type)
-							)
+							if (i_candidate->second->sink_data_type->get_name()
+								&& i_candidate->second->source_data_type->get_name()
+								&& *i_candidate->second->sink_data_type->get_name()
+								== *i_candidate->second->source_data_type->get_name())
 							{
-								if (found_init) RAISE_INTERNAL(
-									i_candidate->second->corresp,
-						"multiple non-init rules declared for the same concrete types");
+								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
+									"multiple primitive rules for the same concrete types");
 								else found_init = *i_candidate;
 							}
 						}
@@ -470,25 +465,6 @@ namespace cake
 							}
 						}
 					}
-
-					// if we still don't have it, prefer rules between like-named types
-					if (!found_init) 
-					{
-						for (auto i_candidate = candidates.first;
-							i_candidate != candidates.second;
-							++i_candidate)
-						{
-							if (i_candidate->second->sink_data_type->get_name()
-								&& i_candidate->second->source_data_type->get_name()
-								&& *i_candidate->second->sink_data_type->get_name()
-								== *i_candidate->second->source_data_type->get_name())
-							{
-								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
-									"multiple primitive rules for the same concrete types");
-								else found_init = *i_candidate;
-							}
-						}
-					}
 										
 					// if we still don't have it, prefer primitive (i.e. not structural) rules
 					if (!found_init) 
@@ -506,6 +482,54 @@ namespace cake
 							}
 						}
 					}
+					
+					// if we still don't have it, prefer trivial structural rules
+					if (!found_init) 
+					{
+						for (auto i_candidate = candidates.first;
+							i_candidate != candidates.second;
+							++i_candidate)
+						{
+							auto as_structural
+							 = dynamic_pointer_cast<structural_value_conversion>(i_candidate->second);
+							// HACK: want a better is-a test here
+							if (as_structural
+								 && (!as_structural->source_infix_stub || GET_CHILD_COUNT(as_structural->source_infix_stub) == 0)
+								 && (!as_structural->sink_infix_stub ||  GET_CHILD_COUNT(as_structural->sink_infix_stub) == 0)
+								 && (!as_structural->refinement ||  GET_CHILD_COUNT(as_structural->refinement) == 0)
+								)
+							{
+								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
+									"multiple trivial structural rules for the same concrete types");
+								else found_init = *i_candidate;
+							}
+						}
+					}
+					
+					// if we still don't have it, choose the rules whose
+					// declared types (on each side) are their own concrete type
+					if (!found_init) 
+					{
+						for (auto i_candidate = candidates.first;
+							i_candidate != candidates.second;
+							++i_candidate)
+						{
+							if (data_types_are_identical(
+								i_candidate->second->sink_data_type->get_concrete_type(),
+								i_candidate->second->sink_data_type)
+							 && data_types_are_identical(
+								i_candidate->second->source_data_type->get_concrete_type(),
+								i_candidate->second->source_data_type)
+							)
+							{
+								if (found_init) RAISE_INTERNAL(
+									i_candidate->second->corresp,
+						"multiple non-init rules declared for the same concrete types");
+								else found_init = *i_candidate;
+							}
+						}
+					}
+					
 					
 					if (!found_init) RAISE_INTERNAL(
 						candidates.first->second->corresp,
@@ -1912,14 +1936,21 @@ namespace cake
 						&&    !(*i_p_corresp)->init_only 
 						&&    emitted_default_to_default)
 						{
-							clog << "Previous corresp was: " << *emitted_default_to_default << endl;
+							/* Actually this can happen
+							 * if we have correspondences defined to two completely different
+							 * concrete types -- they will both be "default". 
+							 * We simply accept that one will hide the other. */
+							clog << "Corresp: " << *emitted_default_to_default << endl;
+							clog << "Hides: " << **i_p_corresp << endl;
+							clog << "when corresponding from outer type " << outer_type->summary();
+							clog << " since both have default-to-default tagstrings." << endl;
+							continue;
 						}
 
 						assert(outer_type_synonymy_chain.size() != 0
 						||    inner_type_synonymy_chain.size() != 0
 						||    (*i_p_corresp)->init_only 
 						||    !emitted_default_to_default);
-
 						if (outer_type_synonymy_chain.size() == 0
 						&&   inner_type_synonymy_chain.size() == 0
 						&& !(*i_p_corresp)->init_only) emitted_default_to_default = *i_p_corresp;
@@ -3439,13 +3470,17 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		auto source_data_type_opt = dynamic_pointer_cast<dwarf::spec::type_die>(
 			source->get_ds().toplevel()->visible_resolve(
 			source_mn.begin(), source_mn.end()));
-		if (!source_data_type_opt) RAISE(corresp, "could not resolve source data type");
+		if (!source_data_type_opt) {
+			RAISE(corresp, "could not resolve source data type");
+		}
 		assert(module_of_die(source_data_type_opt) == source);
 		auto sink_mn = read_definite_member_name(sink_data_type_mn);
 		auto sink_data_type_opt = dynamic_pointer_cast<dwarf::spec::type_die>(
 			sink->get_ds().toplevel()->visible_resolve(
 			sink_mn.begin(), sink_mn.end()));
-		if (!sink_data_type_opt) RAISE(corresp, "could not resolve sink data type");
+		if (!sink_data_type_opt) {
+			RAISE(corresp, "could not resolve sink data type");
+		}
 		assert(module_of_die(sink_data_type_opt) == sink);
 		
 		// we should never have corresps between pointer types

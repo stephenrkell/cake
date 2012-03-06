@@ -12,6 +12,9 @@ using namespace dwarf::spec;
 using boost::shared_ptr;
 using std::ostringstream;
 using std::istringstream;
+using std::cerr;
+using std::endl;
+using std::clog;
 
 namespace cake
 {
@@ -2928,8 +2931,60 @@ assert(false && "disabled support for inferring positional argument mappings");
 			// these have short-circuit semantics
 			case CAKE_TOKEN(LOGICAL_AND):
 			case CAKE_TOKEN(LOGICAL_OR):
+				assert(false);
 			
 			case CAKE_TOKEN(CONDITIONAL): // $cond $caseTrue $caseFalse 
+			{
+				auto resultCond = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 0));
+				
+				/* We have a problem: how to unify the typeofs for the two
+				 * arms?
+				 * We do this by 
+				 * - avoiding opening a new scope for the results of the cond/t/f
+				 *   (it's okay if they open scopes to eval subexpressions) 
+				 * - using a "default_value_with_type<>() helper template
+				 * - thread through a "guard" fragment to eval_stub_expression_as_statement_list
+				 *   -- if this fragment is false, it will just yield the default value
+				 * - FIXME: implement this
+				 */
+				
+				*p_out << "if (" << resultCond.success_fragment << ")" << endl
+					<< "{";
+				p_out->inc_level();
+				*p_out << endl << "if (" << resultCond.result_fragment << ")"
+					<< endl << "{";
+				p_out->inc_level();
+				
+				auto resultTrue = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 1));
+				
+				p_out->dec_level();
+				*p_out << "}" << endl
+					<< "else" << endl << "{";
+				p_out->inc_level();
+				
+				auto resultFalse = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 2));
+				
+				p_out->dec_level();
+				*p_out << "} /* end else */" << endl;
+				p_out->dec_level();
+				*p_out << "} /* end if condition succeeded */" << endl;
+				
+				RETURN_VALUE(((post_emit_status) { 
+				/* result fragment */ "(void)0", // FIXME: implement the actual 
+				/* success fragment */
+					"(" + resultCond.success_fragment 
+						+ " && (" + resultCond.result_fragment 
+							+ " ? (" + resultTrue.success_fragment 
+							+ ") : (" + resultFalse.success_fragment + ")))",
+						// no *new* failures added, so delegate failure
+					environment() }));
+			}
 			
 			case CAKE_TOKEN(KEYWORD_FN):
 				assert(false);
@@ -3239,6 +3294,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 						<< "; assumed not to be output-only." << endl;
 					goto continue_loop;
 				}
+				if (!(*current_fp)->get_type())
+				{
+					cerr << "Warning: no type info for argument " << **current_fp
+						<< "; assumed not to be output-only." << endl;
+					goto continue_loop;
+				}				
 				decl_and_cakename = is_out_arg_expr(
 					argExpr,
 					*current_fp,
@@ -3309,6 +3370,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 					 * didn't say anything directly about where to put the 
 					 * output value, but they might want to reference it in a
 					 * let-multivalue expression. */
+					clog << *current_fp;
+					clog.flush();
+					assert(*current_fp);
+					assert((*current_fp)->get_type());
 					auto fp_pointer_type = dynamic_pointer_cast<pointer_type_die>(
 								(*current_fp)->get_type()->get_concrete_type()
 							);

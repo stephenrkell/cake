@@ -25,6 +25,7 @@ using std::string;
 using std::pair;
 using std::make_pair;
 using std::cerr;
+using std::clog;
 using std::endl;
 
 namespace cake
@@ -1243,17 +1244,25 @@ namespace cake
 		 * level. */
 		
 		auto concrete_t = p_t->get_concrete_type();
+		clog << "Canonicalising concrete type " << concrete_t->summary() << endl;
 		if (!concrete_t) goto return_concrete; // void is already canonicalised
 		else
 		{
-			auto opt_ident_path = concrete_t->ident_path_from_root();
+			Dwarf_Off concrete_off = concrete_t->get_offset();
+			auto opt_ident_path = concrete_t->ident_path_from_cu();
+			if (!opt_ident_path) clog << "No name path, so cannot canonicalise further." << endl;
 			if (opt_ident_path)
 			{
 				auto resolved = p_mod->get_ds().toplevel()->visible_resolve(
 					opt_ident_path->begin(), opt_ident_path->end()
 				);
-				if (resolved && dynamic_pointer_cast<type_die>(resolved)) 
+				clog << "Name path: " << definite_member_name(*opt_ident_path) << endl;
+				if (!resolved) clog << "BUG: failed to resolve this name path." << endl;
+				//if (resolved && dynamic_pointer_cast<type_die>(resolved)) 
+				assert(resolved);
+				if (dynamic_pointer_cast<type_die>(resolved))
 				{
+					Dwarf_Off new_off = resolved->get_offset();
 					concrete_t = dynamic_pointer_cast<type_die>(resolved)
 						->get_concrete_type();
 				}
@@ -1263,6 +1272,7 @@ namespace cake
 		}
 	
 	return_concrete:
+		clog << "Most canonical concrete type is " << concrete_t->summary() << endl;
 		static map<
 			pair<module_ptr, dwarf::tool::cxx_compiler *>,
 			map< dwarf::tool::cxx_compiler::base_type, spec::abstract_dieset::iterator >

@@ -20,6 +20,7 @@ using boost::shared_ptr;
 using boost::optional;
 using boost::dynamic_pointer_cast;
 using std::string;
+using std::vector;
 using dwarf::spec::opt;
 using dwarf::spec::basic_die;
 using dwarf::spec::type_die;
@@ -322,9 +323,35 @@ namespace cake
 						);
 						return true;
 					}
+					case CAKE_TOKEN(VALUE_DESCRIPTION): {
+						/* This means we are creating an object (variable or function). */
+						INIT;
+						BIND2(el, valueDescrHead);
+						switch (GET_TYPE(valueDescrHead))
+						{
+							case CAKE_TOKEN(FUNCTION_ARROW): {
+								auto encap_subp = dwarf::encap::factory::for_spec(
+									dwarf::spec::DEFAULT_DWARF_SPEC
+								).create_die(DW_TAG_subprogram,
+									dynamic_pointer_cast<encap::basic_die>(falsifier),
+									opt<string>(name_to_create)
+								);
+								assert(encap_subp);
+								cerr << "Added DWARF subprogram: " << *encap_subp << endl;
+								// recurse to sort out the arguments
+								return eval_claim_depthfirst(
+										el, // i.e. the VALUE_DESCRIPTION
+										dynamic_pointer_cast<spec::subprogram_die>(encap_subp),
+										p_resolver,
+										&module_described_by_dwarf::declare_handler
+									);
+							}
+							default: goto bad_descr;
+						}
+					}
 					bad_descr:
 					default: cerr << "Don't know how to create a DIE satisfying "
-						<< CCP(GET_TEXT(falsifiable)) << endl;
+						<< CCP(TO_STRING_TREE(falsifiable)) << endl;
 					goto not_supported;
 				}
 				
@@ -906,8 +933,55 @@ namespace cake
 							auto first_cu = *p_toplevel->compile_unit_children_begin();
 							/* Note that when we go through each CU, some of them may come
 							 * closer to satisfying the decl than others. We should really fix the
-							 * "closest" one. For now, we just try them all in turn. */
-
+							 * "closest" one. For now, we approximate this as follows. 
+							 * - if we are a MEMBERSHIP_CLAIM,
+							     and a CU satisfies the bare membership claim
+							     (i.e. has a member of that name) but not its subclaims
+							     (i.e. the named member doesn't satsify the whole claim)
+							     then we run the handler on that CU first. */
+							
+							if (GET_TYPE(claim) == CAKE_TOKEN(MEMBERSHIP_CLAIM))
+							{
+								std::ostringstream s;
+								s << read_definite_member_name(GET_CHILD(claim, 0))
+									<< ": _";
+								string simpler_claim_text = s.str();
+								auto simpler_claim = build_ast(
+									GET_FACTORY(claim),
+									CAKE_TOKEN(MEMBERSHIP_CLAIM),
+									simpler_claim_text,
+									/*(vector<antlr::tree::Tree *>)*/{
+										GET_CHILD(claim, 0),
+										build_ast(
+											GET_FACTORY(claim),
+											CAKE_TOKEN(ANY_VALUE),
+											"_",
+											/*(vector<antlr::tree::Tree *>)*/{}
+										)
+									}
+								);
+								for (auto i_cu = p_toplevel->compile_unit_children_begin();
+									i_cu != p_toplevel->compile_unit_children_end(); ++i_cu)
+								{
+									if ( eval_claim_depthfirst(simpler_claim,
+											dynamic_pointer_cast<spec::basic_die>(*i_cu), 
+											p_resolver,
+											&cake::module_described_by_dwarf::do_nothing_handler
+										)) 
+									{
+										/* okay -- we commit to this CU */
+										RETURN_VALUE_IS(
+											eval_claim_depthfirst(claim,
+												dynamic_pointer_cast<spec::basic_die>(*i_cu), 
+												p_resolver,
+												handler
+											)
+										);
+									}
+								}
+							}
+							// if we got here, either it's not a membership claim
+							// or no CU passed the "has this member" test. 
 							for (auto i_cu = p_toplevel->compile_unit_children_begin();
 								i_cu != p_toplevel->compile_unit_children_end(); ++i_cu)
 							{
