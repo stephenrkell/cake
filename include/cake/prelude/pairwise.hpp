@@ -86,10 +86,33 @@ namespace cake
 	}; /* we specialize this for various InFirsts */ 
 } // end namespace cake
 	/* NOTE: we will repeat the above specializations on a per-component-pair basis!
-	 * This is because C++ resolves partial specializations using 
+	 * This is because C++ resolves partial specializations using some left-to-right precedence
+	 * (HMM: read up on the actual rules)
 	 * So they don't really have any effect! Here are the macros we will use. */
 #define default_corresponding_type_specializations(component_pair) \
+    template < /* This is the "unknown type" case: we define a type-to-void corresp */\
+        typename InFirst, \
+        bool DirectionIsFromFirstToSecond \
+    > struct corresponding_type_to_first <component_pair,\
+	     InFirst, \
+	     DirectionIsFromFirstToSecond> \
+    { typedef void __cake_default_to___cake_default_in_second; \
+         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0         \
+         }; }; \
+	};  \
     template < \
+        typename InSecond, \
+        bool DirectionIsFromSecondToFirst \
+    > struct corresponding_type_to_second<component_pair, \
+	    InSecond, \
+	    DirectionIsFromSecondToFirst>  \
+    { typedef void __cake_default_to___cake_default_in_first;  \
+         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+             __cake_default = 0          \
+         }; }; \
+	};  \
+     template < \
         typename InFirstArrayEl, \
 		int Dim, \
         bool DirectionIsFromFirstToSecond \
@@ -106,7 +129,7 @@ namespace cake
          struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
              __cake_default = 0         \
          }; }; \
-	}; /* we specialize this for various InSeconds */ \
+	};  \
     template < \
         typename InSecondArrayEl, \
 		int Dim, \
@@ -125,7 +148,7 @@ namespace cake
              __cake_default = 0          \
          }; }; \
 	}; /* we specialize this for various InFirsts */ \
-    template <> \
+   template <> \
     struct corresponding_type_to_second< \
         component_pair, ::cake::unspecified_wordsize_type, true> \
     { \

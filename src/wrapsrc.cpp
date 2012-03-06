@@ -18,6 +18,22 @@ using std::clog;
 
 namespace cake
 {
+	// FIXME: put this somewhere and declare it in a header
+	string make_typeof_fragment(const string& cxx_typeof);
+	string make_typeof_fragment(const string& cxx_typeof)
+	{
+		string retval;
+		assert(cxx_typeof.length() > 0);
+		if (cxx_typeof.at(0) == '*')
+		{
+			retval = " ::boost::remove_pointer< __typeof(" 
+				+ cxx_typeof.substr(1)
+				+ ") > ::type ";
+		}
+		else retval = " __typeof(" + cxx_typeof + ") ";
+		
+		return retval;
+	}
 	const std::string wrapper_file::wrapper_arg_name_prefix = "__cake_arg";
 	const std::string wrapper_file::NO_VALUE = "__cake_arg";
 
@@ -1179,6 +1195,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			{
 				// ditch the precise to-type -- this allows us to get a non-pointer
 				// out of the value_convert and then fix things up by taking its address.
+				*p_out << "// Discarding precise to-type for virtual corresp" << endl;
 				precise_to_type = shared_ptr<type_die>();
 			}
 
@@ -1253,7 +1270,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 			bool old_module_is_first = (old_module == ifaces.first);
 			// an approximation of non-void pointers
 			bool should_reinterpret = is_a_pointer 
-				&& representative_binding.second.cxx_typeof != "((void*)0)";
+				&& representative_binding.second.cxx_typeof != "((void*)0)"
+				&& !precise_to_type;
 			if (/*will_override*/ should_reinterpret )
 			{
 				*p_out << "reinterpret_cast< typename ";
@@ -2368,7 +2386,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							*p_out << "cake::equal<";
 							//if (p_arg_type) *p_out << get_type_name(p_arg_type);
 							//else *p_out << " ::cake::unspecified_wordsize_type";
-							*p_out << "__typeof(" << bound_name << ")";
+							*p_out << make_typeof_fragment(bound_name);
 							*p_out << ", "
  << (	(GET_TYPE(GET_CHILD(valuePattern, 0)) == CAKE_TOKEN(STRING_LIT)) ? " ::cake::style_traits<0>::STRING_LIT" :
 		(GET_TYPE(GET_CHILD(valuePattern, 0)) == CAKE_TOKEN(CONST_ARITH)) ? " ::cake::style_traits<0>::CONST_ARITH" :
@@ -2422,7 +2440,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 // 			<< get_type_name(target_type) << "*>(&__cake_from);" << std::endl;
 // 	}
 	
-	
 	wrapper_file::value_conversion_params_t
 	wrapper_file::resolve_value_conversion_params(
 		link_derivation::iface_pair ifaces,
@@ -2452,7 +2469,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 		// ... this is NOT true for to_type: if we don't have a to_type or a to_typeof, 
 		// we will use use the corresponding_type template
 		std::string from_typestring = from_type ? get_type_name(from_type) 
-			: (std::string("__typeof(") + *from_typeof + ")");
+			: //(std::string("__typeof(") + *from_typeof + ")");
+			  make_typeof_fragment(*from_typeof);
        
 //         // if we have a "from that" type, use it directly
 //         if (from_type)
@@ -2522,7 +2540,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		else if (to_typeof) 
 		{
 			// this only gives us concrete info! 
-			to_typestring = "__typeof(" + *to_typeof + ")";
+			to_typestring = make_typeof_fragment(*to_typeof);
 // 			// ... so artificial tagstring is just the default
 // 			to_artificial_tagstring = "__cake_default";
 		}
@@ -3484,7 +3502,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			if (argnum != -1 &&
 				output_parameter_idents.find(argnum) != output_parameter_idents.end())
 			{
-				s << "__typeof(" << output_parameter_idents[argnum] << ")";
+				s << make_typeof_fragment(output_parameter_idents[argnum]);
 			}
 			else 
 			{

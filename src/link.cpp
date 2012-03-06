@@ -1944,6 +1944,12 @@ namespace cake
 							clog << "Hides: " << **i_p_corresp << endl;
 							clog << "when corresponding from outer type " << outer_type->summary();
 							clog << " since both have default-to-default tagstrings." << endl;
+							assert(val_corresp_numbering.find((*i_p_corresp)->shared_from_this())
+							    != val_corresp_numbering.end());
+							wrap_file << "// HIDDEN: " << **i_p_corresp << endl;
+							wrap_file << "// hidden rule has number: " 
+							<< val_corresp_numbering[(*i_p_corresp)->shared_from_this()]
+							<< ")" << endl;
 							continue;
 						}
 
@@ -2140,6 +2146,19 @@ namespace cake
 
 							assert(val_corresp_numbering.find(i_p_corresp_pair->second->shared_from_this())
 							    != val_corresp_numbering.end());
+							
+							if (artificial_name_for_the_other_die == "__cake_default")
+							{
+								if (emitted_default)
+								{
+									wrap_file << "// HIDDEN: __cake_default = "
+									<< val_corresp_numbering[(*i_p_corresp_pair).second->shared_from_this()]
+									<< endl;
+									continue;
+								}
+								else emitted_default = true;
+							}
+
 							wrap_file << artificial_name_for_the_other_die // artificial_name_for_half_key_die 
 								<< " = " 
 								<< val_corresp_numbering[(*i_p_corresp_pair).second->shared_from_this()];

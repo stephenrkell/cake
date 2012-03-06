@@ -1038,7 +1038,7 @@ namespace cake
 	return_label:		
 		if (handler != &cake::module_described_by_dwarf::do_nothing_handler) debug_out 
         	<< "Result of evaluating claim " << CCP(GET_TEXT(claim)) 
-			<< " on " << p_d->summary()
+			<< " on " << (p_d ? p_d->summary() : "(null DIE ptr)")
             << " was " << retval << std::endl;
 		// if (!retval)
 		// {
