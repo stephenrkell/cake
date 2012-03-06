@@ -1219,7 +1219,9 @@ namespace cake
 			if (*opt_arg1_ident_path == *opt_arg2_ident_path)
 			{
 				/* We will say they are equal, but warn if not rep-compatible. */
-				if (!(arg1->is_rep_compatible(arg2) && arg2->is_rep_compatible(arg1)))
+				if (!(arg1->get_declaration() && *arg1->get_declaration())
+				&&  !(arg2->get_declaration() && *arg2->get_declaration())
+				&& !(arg1->is_rep_compatible(arg2) && arg2->is_rep_compatible(arg1)))
 				{
 					cerr << "Warning: types appear equal but are not rep-compatible: " << endl;
 					cerr << "arg1: " << *arg1 << endl;

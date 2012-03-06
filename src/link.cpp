@@ -296,7 +296,7 @@ namespace cake
 						assert(source_module == i_pair->first || source_module == i_pair->second);
 						auto sink_module = module_of_die(sink_data_type);
 						assert(sink_module == i_pair->first || sink_module == i_pair->second);
-						add_value_corresp(source_module, 
+						auto inserted = add_value_corresp(source_module, 
 							source_data_type,
 							0,
 							sink_module,
@@ -309,6 +309,7 @@ namespace cake
 								 i_val_corresp->second->source_is_on_left ?
 									sink_name_parts : source_name_parts ));
 						
+						cerr << "Inserted corresp is at " << inserted->second.get() << endl;
 						// FIXME: now we recompute dependencies until we get a fixed point
 					}
 				}
@@ -372,168 +373,294 @@ namespace cake
 							init_rules_value_t>
 						> found_init;
 					
+					vector< pair<init_rules_key_t,
+							init_rules_value_t>
+						> remaining_candidates;
+					std::copy(candidates.first, candidates.second,
+						std::back_inserter(remaining_candidates));
+					
+					/* Instead of the old two-level approach
+					 * (1) pick a criterion
+					 * (2) try to pick a unique winner using that criterion,
+					 *     doing RAISE if ambiguous...
+					 *
+					 * ... we instead fall through to the next criterion.
+					 * There are two cases on fall through. One is that there were
+					 * 0 candidates satisfying the criterion. The other is that there were
+					 * >1 candidates.
+					 * In the former case, we keep the same candidates list.
+					 * In the latter case, we use only the candidates that passed. */
+					
+					#define FOUND_UNIQUE (remaining_candidates.size() == 1)
+					
 					unsigned count = 0;
-					for (auto i_candidate = candidates.first;
-						i_candidate != candidates.second;
-						++i_candidate)
-					{
-						cerr << "candidate " << ++count << " is val_corresp at " << i_candidate->second.get()
-							<< " with " << *i_candidate->second << endl;
-						
-						// we want a unique init rule in here
-						if (i_candidate->second->init_only)
-						{
-							if (found_init) RAISE(i_candidate->second->corresp,
-								"multiple initialization rules for the same type "
-								"not currently supported");
-							else found_init = *i_candidate;
-						}
-					}
-
-					// if we still don't have it, choose a rule relating a type
-					// with the "same" (nominally) type on the other side
-					if (!found_init) 
-					{
-						for (auto i_candidate = candidates.first;
-							i_candidate != candidates.second;
-							++i_candidate)
-						{
-							if (data_types_are_nominally_identical(
-								i_candidate->second->sink_data_type,
-								i_candidate->second->source_data_type
-								)
+					
+					typedef pair<init_rules_key_t,
+							init_rules_value_t> rule_pair;
+					auto print_candidate = [&count]( const rule_pair& p ) {
+						cerr << "candidate " << ++count 
+							<< " is val_corresp at " << p.second.get()
+							<< " with " << *p.second << endl;
+					};
+					auto true_criterion = []( const rule_pair& p ) {
+						return true;
+					};
+					//typedef __typeof(true_criterion) criterion_t;
+					typedef std::function<bool(const rule_pair&)> criterion_t;
+					criterion_t init_only_criterion = []( const rule_pair& p ) {
+						return p.second->init_only;
+					};
+					criterion_t nominally_identical_criterion = []( const rule_pair& p ) {
+						return data_types_are_nominally_identical(
+								p.second->sink_data_type,
+								p.second->source_data_type
+								);
+					};
+					criterion_t types_have_same_names_criterion = []( const rule_pair& p ) {
+						return p.second->sink_data_type->get_name()
+							&& p.second->source_data_type->get_name()
+							&& *p.second->sink_data_type->get_name()
+							== *p.second->source_data_type->get_name();
+					};
+					criterion_t skipped_criterion = []( const rule_pair& p ) {
+						return (bool) dynamic_pointer_cast<skipped_value_conversion>(p.second);
+					};
+					criterion_t reinterpret_criterion = []( const rule_pair& p ) {
+						return (bool) dynamic_pointer_cast<reinterpret_value_conversion>(p.second);
+					};
+					criterion_t primitive_criterion = []( const rule_pair& p ) {
+					// HACK: want a better is-a test here
+							return !dynamic_pointer_cast<structural_value_conversion>(p.second)
+								&& !dynamic_pointer_cast<reinterpret_value_conversion>(p.second)
+								&& !dynamic_pointer_cast<skipped_value_conversion>(p.second);
+					};					
+					criterion_t trivial_structural_criterion = []( const rule_pair& p ) {
+						auto as_structural
+						 = dynamic_pointer_cast<structural_value_conversion>(p.second);
+						if (as_structural
+							 && (!as_structural->source_infix_stub || GET_CHILD_COUNT(as_structural->source_infix_stub) == 0)
+							 && (!as_structural->sink_infix_stub ||  GET_CHILD_COUNT(as_structural->sink_infix_stub) == 0)
+							 && (!as_structural->refinement ||  GET_CHILD_COUNT(as_structural->refinement) == 0)
 							)
-							{
-								if (found_init) RAISE_INTERNAL(
-									i_candidate->second->corresp,
-						"multiple non-init rules declared relating nominally identical data types");
-								else found_init = *i_candidate;
-							}
-						}
-					}
-					
-
-					// if we still don't have it, prefer rules between like-named types
-					if (!found_init) 
-					{
-						for (auto i_candidate = candidates.first;
-							i_candidate != candidates.second;
-							++i_candidate)
 						{
-							if (i_candidate->second->sink_data_type->get_name()
-								&& i_candidate->second->source_data_type->get_name()
-								&& *i_candidate->second->sink_data_type->get_name()
-								== *i_candidate->second->source_data_type->get_name())
-							{
-								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
-									"multiple primitive rules for the same concrete types");
-								else found_init = *i_candidate;
-							}
+							return true;
 						}
-					}
-					
-					// if we still don't have it,
-					// prefer skipped rules
-					if (!found_init) 
-					{
-						for (auto i_candidate = candidates.first;
-							i_candidate != candidates.second;
-							++i_candidate)
-						{
-							if (dynamic_pointer_cast<skipped_value_conversion>(i_candidate->second))
-							{
-								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
-									"multiple rep-compatible and C++-assignable rules for the same concrete types");
-								else found_init = *i_candidate;
-							}
-						}
-					}
-					
-					// if we still don't have it,
-					// prefer reinterpret rules
-					if (!found_init) 
-					{
-						for (auto i_candidate = candidates.first;
-							i_candidate != candidates.second;
-							++i_candidate)
-						{
-							if (dynamic_pointer_cast<reinterpret_value_conversion>(i_candidate->second))
-							{
-								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
-									"multiple rep-compatible (non-C++-assignable) rules for the same concrete types");
-								else found_init = *i_candidate;
-							}
-						}
-					}
-										
-					// if we still don't have it, prefer primitive (i.e. not structural) rules
-					if (!found_init) 
-					{
-						for (auto i_candidate = candidates.first;
-							i_candidate != candidates.second;
-							++i_candidate)
-						{
-							// HACK: want a better is-a test here
-							if (!dynamic_pointer_cast<structural_value_conversion>(i_candidate->second))
-							{
-								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
-									"multiple primitive rules for the same concrete types");
-								else found_init = *i_candidate;
-							}
-						}
-					}
-					
-					// if we still don't have it, prefer trivial structural rules
-					if (!found_init) 
-					{
-						for (auto i_candidate = candidates.first;
-							i_candidate != candidates.second;
-							++i_candidate)
-						{
-							auto as_structural
-							 = dynamic_pointer_cast<structural_value_conversion>(i_candidate->second);
-							// HACK: want a better is-a test here
-							if (as_structural
-								 && (!as_structural->source_infix_stub || GET_CHILD_COUNT(as_structural->source_infix_stub) == 0)
-								 && (!as_structural->sink_infix_stub ||  GET_CHILD_COUNT(as_structural->sink_infix_stub) == 0)
-								 && (!as_structural->refinement ||  GET_CHILD_COUNT(as_structural->refinement) == 0)
-								)
-							{
-								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
-									"multiple trivial structural rules for the same concrete types");
-								else found_init = *i_candidate;
-							}
-						}
-					}
-					
-					// if we still don't have it, choose the rules whose
-					// declared types (on each side) are their own concrete type
-					if (!found_init) 
-					{
-						for (auto i_candidate = candidates.first;
-							i_candidate != candidates.second;
-							++i_candidate)
-						{
-							if (data_types_are_identical(
-								i_candidate->second->sink_data_type->get_concrete_type(),
-								i_candidate->second->sink_data_type)
+						else return false;
+					};
+					criterion_t own_concrete_types_criterion = []( const rule_pair& p ) {
+						return data_types_are_identical(
+								p.second->sink_data_type->get_concrete_type(),
+								p.second->sink_data_type)
 							 && data_types_are_identical(
-								i_candidate->second->source_data_type->get_concrete_type(),
-								i_candidate->second->source_data_type)
-							)
-							{
-								if (found_init) RAISE_INTERNAL(
-									i_candidate->second->corresp,
-						"multiple non-init rules declared for the same concrete types");
-								else found_init = *i_candidate;
-							}
+								p.second->source_data_type->get_concrete_type(),
+								p.second->source_data_type);
+					};
+					//std::function<bool(const rule_pair&)> *criteria[] = {
+					criterion_t *criteria[] = { 
+						&init_only_criterion, 
+						&nominally_identical_criterion, 
+						&types_have_same_names_criterion,
+						&skipped_criterion,
+						&reinterpret_criterion,
+						&primitive_criterion,
+						&trivial_structural_criterion,
+						&own_concrete_types_criterion
+					};
+					int num_criteria = sizeof criteria / sizeof criteria[0];
+					
+					for (auto i = 0; i < num_criteria && !found_init; ++i)
+					{
+						vector< rule_pair > satisfying_candidates;
+
+						srk31::copy_if(remaining_candidates.begin(), remaining_candidates.end(),
+							std::back_inserter(satisfying_candidates),
+							*criteria[i]
+						);
+						switch (satisfying_candidates.size())
+						{
+							case 1:
+								found_init = *satisfying_candidates.begin();
+								continue;
+							case 2:
+							default:
+								remaining_candidates = satisfying_candidates;
+								// fall through!
+							case 0:
+								continue; // next criterion please
 						}
 					}
 					
-					
-					if (!found_init) RAISE_INTERNAL(
-						candidates.first->second->corresp,
-						"BUG: can't handle ambiguous selection of initialization rule ");
+					if (!found_init)
+					{
+						std::for_each(remaining_candidates.begin(), remaining_candidates.end(),
+							print_candidate
+						);
+						RAISE(remaining_candidates.begin()->second->corresp,
+							"could not choose initialization rule");
+					}
+// 					
+// 					
+// 					for (auto i_candidate = remaining_candidates.begin();
+// 						i_candidate != remaining_candidates.end();
+// 						++i_candidate)
+// 					{
+// 						cerr << "candidate " << ++count << " is val_corresp at " << i_candidate->second.get()
+// 							<< " with " << *i_candidate->second << endl;
+// 						
+// 						// we want a unique init rule in here
+// 						if (i_candidate->second->init_only)
+// 						{
+// 							if (found_init) /*RAISE(i_candidate->second->corresp,
+// 								"multiple initialization rules for the same type "
+// 								"not currently supported");*/
+// 								break;
+// 							else found_init = *i_candidate;
+// 						}
+// 					}
+// 
+// 					// if we still don't have it, choose a rule relating a type
+// 					// with the "same" (nominally) type on the other side
+// 					if (!found_init) 
+// 					{
+// 						for (auto i_candidate = remaining_candidates.begin();
+// 							i_candidate != remaining_candidates.end();
+// 							++i_candidate)
+// 						{
+// 							if (data_types_are_nominally_identical(
+// 								i_candidate->second->sink_data_type,
+// 								i_candidate->second->source_data_type
+// 								)
+// 							)
+// 							{
+// 								if (found_init) RAISE_INTERNAL(
+// 									i_candidate->second->corresp,
+// 						"multiple non-init rules declared relating nominally identical data types");
+// 								else found_init = *i_candidate;
+// 							}
+// 						}
+// 					}
+// 					
+// 					// if we still don't have it, prefer rules between like-named types
+// 					if (!found_init) 
+// 					{
+// 						for (auto i_candidate = remaining_candidates.begin();
+// 							i_candidate != remaining_candidates.end();
+// 							++i_candidate)
+// 						{
+// 							if (i_candidate->second->sink_data_type->get_name()
+// 								&& i_candidate->second->source_data_type->get_name()
+// 								&& *i_candidate->second->sink_data_type->get_name()
+// 								== *i_candidate->second->source_data_type->get_name())
+// 							{
+// 								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
+// 									"multiple primitive rules for the same concrete types");
+// 								else found_init = *i_candidate;
+// 							}
+// 						}
+// 					}
+// 					
+// 					// if we still don't have it,
+// 					// prefer skipped rules
+// 					if (!found_init) 
+// 					{
+// 						for (auto i_candidate = remaining_candidates.begin();
+// 							i_candidate != remaining_candidates.end();
+// 							++i_candidate)
+// 						{
+// 							if (dynamic_pointer_cast<skipped_value_conversion>(i_candidate->second))
+// 							{
+// 								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
+// 									"multiple rep-compatible and C++-assignable rules for the same concrete types");
+// 								else found_init = *i_candidate;
+// 							}
+// 						}
+// 					}
+// 					
+// 					// if we still don't have it,
+// 					// prefer reinterpret rules
+// 					if (!found_init) 
+// 					{
+// 						for (auto i_candidate = remaining_candidates.begin();
+// 							i_candidate != remaining_candidates.end();
+// 							++i_candidate)
+// 						{
+// 							if (dynamic_pointer_cast<reinterpret_value_conversion>(i_candidate->second))
+// 							{
+// 								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
+// 									"multiple rep-compatible (non-C++-assignable) rules for the same concrete types");
+// 								else found_init = *i_candidate;
+// 							}
+// 						}
+// 					}
+// 										
+// 					// if we still don't have it, prefer primitive (i.e. not structural) rules
+// 					if (!found_init) 
+// 					{
+// 						for (auto i_candidate = remaining_candidates.begin();
+// 							i_candidate != remaining_candidates.end();
+// 							++i_candidate)
+// 						{
+// 							// HACK: want a better is-a test here
+// 							if (!dynamic_pointer_cast<structural_value_conversion>(i_candidate->second))
+// 							{
+// 								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
+// 									"multiple primitive rules for the same concrete types");
+// 								else found_init = *i_candidate;
+// 							}
+// 						}
+// 					}
+// 					
+// 					// if we still don't have it, prefer trivial structural rules
+// 					if (!found_init) 
+// 					{
+// 						for (auto i_candidate = remaining_candidates.begin();
+// 							i_candidate != remaining_candidates.end();
+// 							++i_candidate)
+// 						{
+// 							auto as_structural
+// 							 = dynamic_pointer_cast<structural_value_conversion>(i_candidate->second);
+// 							// HACK: want a better is-a test here
+// 							if (as_structural
+// 								 && (!as_structural->source_infix_stub || GET_CHILD_COUNT(as_structural->source_infix_stub) == 0)
+// 								 && (!as_structural->sink_infix_stub ||  GET_CHILD_COUNT(as_structural->sink_infix_stub) == 0)
+// 								 && (!as_structural->refinement ||  GET_CHILD_COUNT(as_structural->refinement) == 0)
+// 								)
+// 							{
+// 								if (found_init) RAISE_INTERNAL(i_candidate->second->corresp,
+// 									"multiple trivial structural rules for the same concrete types");
+// 								else found_init = *i_candidate;
+// 							}
+// 						}
+// 					}
+// 					
+// 					// if we still don't have it, choose the rules whose
+// 					// declared types (on each side) are their own concrete type
+// 					if (!found_init) 
+// 					{
+// 						for (auto i_candidate = remaining_candidates.begin();
+// 							i_candidate != remaining_candidates.end();
+// 							++i_candidate)
+// 						{
+// 							if (data_types_are_identical(
+// 								i_candidate->second->sink_data_type->get_concrete_type(),
+// 								i_candidate->second->sink_data_type)
+// 							 && data_types_are_identical(
+// 								i_candidate->second->source_data_type->get_concrete_type(),
+// 								i_candidate->second->source_data_type)
+// 							)
+// 							{
+// 								if (found_init) RAISE_INTERNAL(
+// 									i_candidate->second->corresp,
+// 						"multiple non-init rules declared for the same concrete types");
+// 								else found_init = *i_candidate;
+// 							}
+// 						}
+// 					}
+// 					
+// 					
+// 					if (!found_init) RAISE_INTERNAL(
+// 						candidates.first->second->corresp,
+// 						"BUG: can't handle ambiguous selection of initialization rule ");
 					
 					init_rules_tbl[*i_pair][found_init->first] = found_init->second;
 				}
@@ -3702,7 +3829,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		shared_ptr<value_conversion> init_candidate;
 			
 		bool emit_as_reinterpret = false;
-		val_corresp_map_t::iterator ret; 
+		val_corresp_map_t::iterator ret = val_corresps.end(); 
 		if (source_concrete_type->is_rep_compatible(sink_concrete_type)
 			&& (!refinement || GET_CHILD_COUNT(refinement) == 0)
 			&& (!source_infix_stub || GET_CHILD_COUNT(source_infix_stub) == 0)
@@ -3715,7 +3842,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 					<< from_typename << " to " << to_typename
 					<< " because of rep-compatibility and C++-assignability." << endl;
 				//m_out << "// (skipped because of rep-compatibility and C++-assignability)" << endl << endl;
-				val_corresps.insert(make_pair(key, 
+				ret = val_corresps.insert(make_pair(key, 
 					init_candidate = dynamic_pointer_cast<value_conversion>(
 						make_shared<skipped_value_conversion>(
 							wrap_code, basic, 
@@ -3852,7 +3979,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			}
 	#undef TAG_PAIR
 		}
-		else
+		else // emit_as_reinterpret is true
 		{
 			//emit_reinterpret_conversion_body(source_data_type, sink_data_type);
 			ret = val_corresps.insert(make_pair(key, 
@@ -3872,6 +3999,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			init_tbl_key,
 			init_candidate
 		));
+		assert(ret != val_corresps.end());
 		return ret;
 	}
 	
@@ -4258,6 +4386,14 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			// HMM -- why not?
 			// Ditch the "concrete" requirement -- only avoid them if they 
 			// have not been matched before in a nominally identical way.
+			// This allows separate corresps e.g.
+			// dev_t <--> dev_t
+			// int   <--> signed int
+			// and so on.
+			// BUT it also means e.g.
+			// struct kmutex <--> struct kmutex
+			// struct kmutex_t <--> struct kmutex
+			// ... so we have to be careful when choosing init rules
 			auto found_first_matched_before =  std::find_if(
 				seen_types.begin(), seen_types.end(),
 				[iter_pair](shared_ptr<type_die> item) {
@@ -4526,11 +4662,10 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 											//<< " sink module @" << source_sink_pair.second.get()
 											<< " sink data type " 
 											<< (sink_type->get_name() ? *sink_type->get_name() : "(anonymous)" )
-											<< " at " << std::hex << sink_type->get_offset() << std::dec
+											<< " at " << std::hex << sink_type->get_offset() << std::dec;
 											//<< *sink_type 
-											<< endl;
 
-										add_value_corresp(
+										auto inserted = add_value_corresp(
 											source_sink_pair.first,
 											source_type,
 											0,
@@ -4541,6 +4676,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 											true, // source_is_on_left -- irrelevant as we have no refinement
 											make_simple_corresp_expression(*i_k) // corresp
 										);
+										assert(inserted != val_corresps.end());
+										cerr << ", corresp is at " << inserted->second.get() << endl;
 									} // end if not already exist
 									else cerr << "Skipping correspondence for matched data type named " 
 										<< definite_member_name(*i_k)

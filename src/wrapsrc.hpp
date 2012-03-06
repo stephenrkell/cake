@@ -27,8 +27,8 @@ namespace cake
 	using dwarf::spec::formal_parameter_die;
 	using srk31::indenting_ostream;
 	
-    class wrapper_file
-    {
+	class wrapper_file
+	{
 		friend class link_derivation;
 		friend class value_conversion;
 		friend class structural_value_conversion;
@@ -315,7 +315,13 @@ namespace cake
 			const context& ctxt,
 			antlr::tree::Tree *constant_expr);
 
-		long double eval_const_expr(
+#ifndef NO_LONG_DOUBLE
+		typedef long double const_arith_t;
+#else
+		typedef double const_arith_t;
+#endif
+		
+		const_arith_t eval_const_expr(
 			const context& ctxt,
 			antlr::tree::Tree *expr);
 

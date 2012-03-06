@@ -4140,7 +4140,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			//case CAKE_TOKEN(CONST_ARITH):
 			case CAKE_TOKEN(CONST_ARITH):
 			{
-				long double result = eval_const_expr(ctxt, constant_expr);
+				const_arith_t result = eval_const_expr(ctxt, constant_expr);
 				s << result; // trivial cxxify :-)
 				break;
 			}			
@@ -4151,7 +4151,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 	}
     
     // FIXME: something better than this naive long double implementation please
-    long double wrapper_file::eval_const_expr(
+    wrapper_file::const_arith_t
+	wrapper_file::eval_const_expr(
     	const context& ctxt,
 		antlr::tree::Tree *expr)
     {
@@ -4162,11 +4163,19 @@ assert(false && "disabled support for inferring positional argument mappings");
             case CAKE_TOKEN(SHIFT_LEFT): 
             	return 
                 	eval_const_expr(ctxt, GET_CHILD(expr, 0))
+#ifndef NO_LONG_DOUBLE
                     	* powl(2.0, eval_const_expr(ctxt, GET_CHILD(expr, 0)));
+#else 
+                    	* pow(2.0, eval_const_expr(ctxt, GET_CHILD(expr, 0)));
+#endif
             case CAKE_TOKEN(SHIFT_RIGHT):
             	return 
                 	eval_const_expr(ctxt, GET_CHILD(expr, 0))
+#ifndef NO_LONG_DOUBLE
                     	* powl(2.0, eval_const_expr(ctxt, GET_CHILD(expr, 0)));
+#else
+                    	* pow(2.0, eval_const_expr(ctxt, GET_CHILD(expr, 0)));
+#endif
 
             case CAKE_TOKEN(KEYWORD_CONST):
             case CAKE_TOKEN(CONST_ARITH):

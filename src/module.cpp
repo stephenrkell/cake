@@ -654,6 +654,12 @@ namespace cake
 						case TAG_AND_TOKEN(DW_TAG_formal_parameter, ANY_VALUE):
 						case TAG_AND_TOKEN(DW_TAG_member, ANY_VALUE):
 						case TAG_AND_TOKEN(DW_TAG_base_type, ANY_VALUE): // Hmm?
+						case TAG_AND_TOKEN(DW_TAG_typedef, INDEFINITE_MEMBER_NAME): // HACK
+						case TAG_AND_TOKEN(DW_TAG_subprogram, INDEFINITE_MEMBER_NAME):  // HACK
+						case TAG_AND_TOKEN(DW_TAG_variable, INDEFINITE_MEMBER_NAME): // HACK
+						case TAG_AND_TOKEN(DW_TAG_formal_parameter, INDEFINITE_MEMBER_NAME): // HACK
+						case TAG_AND_TOKEN(DW_TAG_member, INDEFINITE_MEMBER_NAME): // HACK
+						case TAG_AND_TOKEN(DW_TAG_base_type, INDEFINITE_MEMBER_NAME): // HACK
 							RETURN_VALUE_IS(true);
 						case TAG_AND_TOKEN(DW_TAG_base_type, KEYWORD_VOID): // Hmm?
 						case TAG_AND_TOKEN(DW_TAG_structure_type, KEYWORD_VOID): // Hmm?

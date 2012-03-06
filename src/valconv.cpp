@@ -258,7 +258,8 @@ namespace cake
 			
 			cerr << "Is dependency on a conversion from " << m_dep.first->summary()
 				<< " to " << m_dep.second->summary()
-				<< " satisfied by " << *candidate.second << "? ";
+				<< " satisfied by corresp (at " << candidate.second.get()
+				<< ") " << *candidate.second << "? ";
 
 			bool first_dieset_match
 			 = (&candidate.second->source_data_type->get_ds() == &m_dep.first->get_ds());
@@ -337,7 +338,11 @@ namespace cake
 		p_out_seq->append(working_exact.begin(), working_exact.end())
 		.append(working_half_exact.begin(), working_half_exact.end())
 		.append(working_concrete.begin(), working_concrete.end());
-		return vector< shared_ptr<value_conversion> >(p_out_seq->begin(), p_out_seq->end());
+		auto retval
+		 = vector< shared_ptr<value_conversion> >(p_out_seq->begin(), p_out_seq->end());
+		// sanity check
+		assert(retval.size() == srk31::count(p_out_seq->begin(), p_out_seq->end()));
+		return retval;
 	}
 
 	void reinterpret_value_conversion::emit_body()
