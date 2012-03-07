@@ -987,7 +987,8 @@ namespace cake
 							//assert(false);
 						}
 						abort: 
-							cerr << "Claim: " << CCP(TO_STRING_TREE(claim)) << endl;
+							cerr << "Claim: " << CCP(TO_STRING_TREE(claim)) 
+								<< " (token type: " << GET_TYPE(claim) << ")" << endl;
 							cerr << *p_d << endl;
 							RAISE_INTERNAL(claim, "not supported");
 					}
