@@ -525,34 +525,25 @@ namespace cake
 						<< " to be that described by " << CCP(TO_STRING_TREE(falsifiable)) << endl;
 					shared_ptr<type_die> new_target_type = ensure_dwarf_type(typeDescr);
 					assert(new_target_type);
+					// for all types identical to our typedef...
 					for_all_identical_types(shared_from_this(), is_typedef, 
-						[new_target_type](shared_ptr<type_die> t) {
-							auto opt_ident_path = new_target_type->ident_path_from_cu();
-							assert(opt_ident_path);
-							auto ident_path = *opt_ident_path;
+						// replace their target type with the new target
+						[new_target_type, is_typedef](shared_ptr<type_die> t) {
 							if (t->get_tag() == DW_TAG_typedef)
 							{
-								cerr << "Overriding target type of typedef " << *t << endl;
-								auto analogous_target = t->enclosing_compile_unit()->resolve(
-										ident_path.begin(), ident_path.end()
-									);
-								if (!analogous_target) 
+								auto typedef_t = dynamic_pointer_cast<spec::typedef_die>(t);
+								shared_ptr<type_die> analogous_target_type
+								 = get_analogous_type(new_target_type,
+									t->enclosing_compile_unit());
+								if (!analogous_target_type) 
 								{
-									cerr << "No analogous target in CU " 
+									cerr << "Warning: analogous target is null in CU " 
 										<< t->enclosing_compile_unit()->summary() << endl;
-									return;
 								}
-								auto analogous_target_type = dynamic_pointer_cast<type_die>(
-									analogous_target);
-								if (!analogous_target_type) cerr << "Skipping analogous " 
-									<< *analogous_target << " which is not a type." << endl;
-								else
-								{
-									dynamic_pointer_cast<encap::typedef_die>(t)->set_type(
-										analogous_target_type
-									);
-									cerr << "Success; typedef is now " << *t << endl;
-								}
+								dynamic_pointer_cast<encap::typedef_die>(t)->set_type(
+									analogous_target_type
+								);
+								cerr << "Success; typedef is now " << *t << endl;
 							}
 							else cerr << "Hmm: wasn't a typedef: " << *t << endl;
 						}
@@ -657,6 +648,7 @@ namespace cake
 								p_resolver,
 								handler
 							) );
+						case TAG_AND_TOKEN(DW_TAG_typedef, ANY_VALUE):
 						case TAG_AND_TOKEN(DW_TAG_subprogram, ANY_VALUE): 
 						case TAG_AND_TOKEN(DW_TAG_variable, ANY_VALUE):
 						case TAG_AND_TOKEN(DW_TAG_formal_parameter, ANY_VALUE):

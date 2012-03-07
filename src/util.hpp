@@ -144,6 +144,10 @@ namespace cake
 		module_ptr p_mod,
 		dwarf::tool::cxx_compiler& compiler
 	);
+	shared_ptr<type_die> get_analogous_type(
+		shared_ptr<type_die> t,
+		shared_ptr<spec::compile_unit_die> p_cu
+	);
 
 	template <typename Action>
 	void

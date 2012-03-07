@@ -15,6 +15,7 @@ using std::istringstream;
 using std::cerr;
 using std::endl;
 using std::clog;
+using std::set;
 
 namespace cake
 {
@@ -26,9 +27,9 @@ namespace cake
 		assert(cxx_typeof.length() > 0);
 		if (cxx_typeof.at(0) == '*')
 		{
-			retval = " ::boost::remove_pointer< __typeof(" 
+			retval = " REMOVE_REF(REMOVE_PTR( __typeof(" 
 				+ cxx_typeof.substr(1)
-				+ ") > ::type ";
+				+ ")))";
 		}
 		else retval = " __typeof(" + cxx_typeof + ") ";
 		
@@ -1013,6 +1014,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 //		
 //		}
 		
+		map<string, set< pair<antlr::tree::Tree*, shared_ptr<spec::type_die> > > > 
+		constraints_by_cxxname;
+		
 		// for each unique cxxname...
 		for (auto i_cxxname = bindings_by_cxxname.begin(); 
 			i_cxxname != bindings_by_cxxname.end();
@@ -1062,7 +1066,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			auto ident = new_ident("xover_" + representative_binding.first);
 			
 			// collect constraints, over all aliases
-			std::set< pair<antlr::tree::Tree*, boost::shared_ptr<dwarf::spec::type_die> > > all_constraints;
+			set< pair<antlr::tree::Tree*, shared_ptr<spec::type_die> > > all_constraints;
 			for (auto i_binding_name = bindings_by_cxxname[cur_cxxname].begin();
 				i_binding_name != bindings_by_cxxname[cur_cxxname].end();
 				++i_binding_name)
@@ -1078,6 +1082,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					all_constraints.insert(i_constraint->second);
 				}
 			}
+			constraints_by_cxxname[cur_cxxname] = all_constraints;
 
 			/* Work out the target type expectations, using constraints */
 			boost::shared_ptr<dwarf::spec::type_die> precise_to_type;
@@ -1286,7 +1291,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					// which gives an error "not a pointer to object type" in gcc...
 					// << "__typeof(*" << cur_cxxname << "), "
 					// we use boost::remove_pointer< > :: type
-					<< "REMOVE_CV(boost::remove_pointer< __typeof(" << cur_cxxname << ")>::type), "
+					<< "REMOVE_REF(REMOVE_CV(REMOVE_PTR( __typeof(" << cur_cxxname << ")))), "
 					<< (old_module_is_first ? /* DirectionIsFromFirstToSecond */ "true"
 					                        : /* DirectionIsFromSecondToFirst */ "true")
 					<< ">::"
@@ -1435,7 +1440,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 				new_module,
 				env,
 				new_env,
-				direction_is_out);
+				direction_is_out,
+				constraints_by_cxxname);
 		}
 		
 		return new_env;
@@ -1512,7 +1518,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 		module_ptr new_module,
 		const environment& old_env,
 		const environment& new_env,
-		bool direction_is_out
+		bool direction_is_out,
+		const map< string, 
+			set< pair<antlr::tree::Tree *, shared_ptr<type_die> > >
+		>& constraints_by_cxxname
 	)
 	{
 		auto old_bindings_by_cxxname = group_bindings_by_cxxname(old_env);
@@ -1533,6 +1542,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 			
 			auto i_binding = old_env.find(*i_cxxname->second.begin());
 			assert(i_binding != old_env.end());
+
+			auto found_constraints = constraints_by_cxxname.find(i_cxxname->first);
+			set< pair<antlr::tree::Tree *, shared_ptr<spec::type_die> > > empty_constraints;
+			auto& constraints = (found_constraints != constraints_by_cxxname.end())
+				? found_constraints->second : empty_constraints;
 
 			if (
 				(direction_is_out && (i_binding->second.indirect_local_tagstring_out
@@ -1581,13 +1595,40 @@ assert(false && "disabled support for inferring positional argument mappings");
 				auto modified_binding = *i_binding;
 				modified_binding.second.pointerness = bound_var_info::UNDEFINED;
 				
+				auto precise_to_type = shared_ptr<spec::type_die>();
+				if (constraints.size() > 0)
+				{
+					/* The constraints reflect the pointer, whereas we want 
+					 * the pointed-to. */
+					auto constrained_to_type = constraints.begin()->second;
+					auto constrained_to_pointer_type = dynamic_pointer_cast<spec::pointer_type_die>(
+						constrained_to_type);
+					if (constrained_to_type && constrained_to_pointer_type
+						&& constrained_to_pointer_type->get_type())
+					{
+						precise_to_type = constrained_to_pointer_type->get_type();
+						*p_out << "// Constrained " << i_cxxname->first
+							<< " to " << precise_to_type->summary() << endl;
+					}
+					else
+					{
+						*p_out << "// Not constraining because " << precise_to_type->summary() 
+							<< " is not a pointer-to-object type" << endl;
+					}
+					// FIXME: try other constraints here
+					if (constraints.size() > 1)
+					{
+						*p_out << "// Warning: ignored additional constraints" << endl;
+					}
+				}
+				
 				auto funcname = make_value_conversion_funcname(
 						link_derivation::sorted(make_pair(old_module, new_module)),
 						modified_binding,
 						direction_is_out,
 						true, // is_indirect ,i.e. use the indirect tagstrings
-						shared_ptr<spec::type_die>(),
-						shared_ptr<spec::type_die>(),
+						shared_ptr<spec::type_die>(), // from_type
+						precise_to_type, // to_type -- likely to be null
 						"*" + i_cxxname->first, // must NOT be void* --> requires precise static typing
 						optional<string>(),
 						old_module,
@@ -2468,7 +2509,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		assert(from_type || from_typeof);
 		// ... this is NOT true for to_type: if we don't have a to_type or a to_typeof, 
 		// we will use use the corresponding_type template
-		std::string from_typestring = from_type ? get_type_name(from_type) 
+		std::string from_typestring = from_type ? ("REMOVE_REF(" + get_type_name(from_type) + ")")
 			: //(std::string("__typeof(") + *from_typeof + ")");
 			  make_typeof_fragment(*from_typeof);
        

@@ -17,6 +17,7 @@ namespace cake
 	using std::pair;
 	using std::make_pair;
 	using std::map;
+	using std::set;
 	using boost::optional;
 	using boost::shared_ptr;
 	using boost::dynamic_pointer_cast;
@@ -105,7 +106,11 @@ namespace cake
 			module_ptr new_module,
 			const environment& old_env,
 			const environment& new_env,
-			bool direction_is_out);
+			bool direction_is_out,
+			const map<string, set< pair<
+					antlr::tree::Tree*, 
+					shared_ptr<spec::type_die> 
+				> > >& constraints);
 
 		environment initial_environment(
 			antlr::tree::Tree *pattern,

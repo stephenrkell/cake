@@ -11,10 +11,27 @@ extern "C" {
 #include <boost/type_traits/is_pointer.hpp>
 #define REP_ID(ident) ident::marker::rep_id
 // don't bother with volatile for now
-#define REMOVE_CV(t_id) boost::remove_const< typename t_id >::type
+#define REMOVE_CV(t_id) boost::remove_const< t_id >::type
+#define REMOVE_REF(t_id) boost::remove_reference< t_id >::type
+#define REMOVE_PTR(t_id) cake::dereferenced< t_id >::type
 
 namespace cake 
 {
+	template <typename T> 
+	struct dereferenced
+	{};
+	
+	template <typename T>
+	struct dereferenced<T*>
+	{
+		typedef T type;
+	};
+	template <typename T>
+	struct dereferenced<boost::optional<T> >
+	{
+		typedef T type;
+	};
+
     template <
         typename ComponentPair, 
         typename InFirst, 

@@ -1199,6 +1199,7 @@ namespace cake
 	data_types_are_identical(shared_ptr<type_die> arg1, shared_ptr<type_die> arg2)
 	{
 		if (arg1 == arg2) return true;
+		if (!arg1 || !arg2) return false;
 		
 		// if not in the same file, not identical
 		if (!(&arg1->get_ds() == &arg2->get_ds())) return false;
@@ -1327,6 +1328,50 @@ namespace cake
 		}
 	}
 	
+	shared_ptr<type_die> get_analogous_type(
+		shared_ptr<type_die> t,
+		shared_ptr<spec::compile_unit_die> p_cu
+	)
+	{
+		if (!t) return shared_ptr<type_die>(); // useful for void case
+		if (t->ident_path_from_cu())
+		{
+			auto new_target_ident_path = *t->ident_path_from_cu();
+			auto analogous_target = t->enclosing_compile_unit()->resolve(
+				new_target_ident_path.begin(), new_target_ident_path.end()
+			);
+			return dynamic_pointer_cast<spec::type_die>(analogous_target);
+		}
+		else
+		{
+			/* The target of the typedef is an anonymous type.
+			 * We handle this recursively. 
+			 * Just support chained types for now. */
+			auto chain_t = dynamic_pointer_cast<spec::type_chain_die>(t);
+			assert(chain_t);
+			
+			auto chained_t = chain_t->get_type();
+			
+			auto analogous_chained_t = get_analogous_type(
+				chained_t,
+				p_cu);
+				
+			// analogous chained t is allowed to be null!
+			auto found = std::find_if(p_cu->children_begin(), p_cu->children_end(),
+				[chain_t, chained_t](shared_ptr<basic_die> p_d)
+				{
+					if (p_d->get_tag() == chain_t->get_tag()
+						&& data_types_are_identical(
+							dynamic_pointer_cast<type_chain_die>(p_d)->get_type(),
+							chained_t
+						)) return true;
+				});
+			if (found !=  p_cu->children_end()) return dynamic_pointer_cast<type_die>(*found);
+
+			return shared_ptr<type_die>();
+		}
+	}
+
 	bool
 	stub_is_sane(antlr::tree::Tree *expr, module_ptr p_mod)
 	{
