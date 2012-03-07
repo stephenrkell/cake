@@ -823,6 +823,54 @@ namespace cake
 	{
 		std::set<dep> working;
 	
+		auto maybe_insert_dependency = [&working](
+			const working::value_type& dep, 
+			const member_mapping_rule& rule) {
+			/* We discard dependencies that are pointers. 
+			 * We turn array dependencies into their ultimate element type. */
+			
+			working::value_type to_add = dep;
+			
+			auto first_concrete = dep.first->get_concrete_type();
+			auto second_concrete = dep.second->get_concrete_type();
+			if (!first_concrete || !second.concrete)
+			{
+				cerr << "Warning: discarding dependency involving void type " 
+					<< (!first_concrete ? dep.first->summary() : dep.second->summary())
+					<< endl;
+				return;
+			}
+			
+			if (first_concrete->get_tag() == DW_TAG_pointer_type
+			|| second_concrete->get_tag() == DW_TAG_pointer_type)
+			{
+				if (!(first_concrete->get_tag() == DW_TAG_pointer_type
+				&& second_concrete->get_tag() == DW_TAG_pointer_type))
+				{
+					RAISE(rule.rule_ast, "requires non-pointer-to-pointer correspondence");
+				}
+				
+				// now we know that they're both pointers
+				// just skip it! The user has to ensure the right corresps are defined
+				return;
+			}
+			
+			if (first_concrete->get_tag() == DW_TAG_array_type)
+			{
+				to_add.first = dynamic_pointer_cast<array_type_die>(first_concrete)
+					->ultimate_element_type();
+				assert(to_add.first);
+			}
+			if (second_concrete->get_tag() == DW_TAG_array_type)
+			{
+				to_add.second = dynamic_pointer_cast<array_type_die>(second_concrete)
+					->ultimate_element_type();
+				assert(to_add.second);
+			}
+			
+			working.insert(to_add);
+		};
+	
 		// for each field (subobject) that corresponds, we require
 		// a defined conversion
 		for (auto i_mapping = name_matched_mappings.begin();
@@ -841,7 +889,7 @@ namespace cake
 					);
 
 			assert(pair.first && pair.second);
-			working.insert(pair);
+			maybe_insert_dependency(pair);
 		}
 		
 		for (auto i_mapping = explicit_toplevel_mappings.begin();
@@ -872,8 +920,11 @@ namespace cake
 				auto pair = make_pair(source_member_type, sink_member_type);
 
 				assert(pair.first && pair.second);
-				auto retval = working.insert(pair);
-				assert(retval.second); // assert that we actually inserted something
+				
+				maybe_insert_dependency(pair);
+				
+				// auto retval = working.insert(pair);
+				// assert(retval.second); // assert that we actually inserted something
 				// FIX: use multimap::equal_range to generate a list of all rules
 				// that have the same string, then group these as constraints 
 				// and add them to the dependency

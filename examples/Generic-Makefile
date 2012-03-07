@@ -7,7 +7,7 @@ CXX ?= g++-4.5
 CXXFLAGS += -I/usr/local/include 
 CXXFLAGS += -I$(shell dirname $(CAKE))/../include 
 CXXFLAGS += -I$(shell dirname $(CAKE))/../libcake/include
-CXXFLAGS += -I$(shell dirname $(CAKE))/../../libsrk31c++/include
+CXXFLAGS += -I$(shell dirname $(CAKE))/../../libsrk31c++.hg/include
 LDFLAGS += -L/usr/local/lib -Wl,-R/usr/local/lib -L$(shell dirname $(CAKE))/../libcake -lcake -Wl,-R$(realpath $(shell dirname $(CAKE))/../libcake)
 LDLIBS += -lunwind -lunwind-ptrace -lunwind-$(shell uname -m)
 
