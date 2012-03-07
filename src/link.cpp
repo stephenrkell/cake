@@ -4708,7 +4708,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 											//<< " sink module @" << source_sink_pair.second.get()
 											<< " sink data type " 
 											<< (sink_type->get_name() ? *sink_type->get_name() : "(anonymous)" )
-											<< " at " << std::hex << sink_type->get_offset() << std::dec;
+											<< " at " << std::hex << sink_type->get_offset() << std::dec << std::endl;
 											//<< *sink_type 
 
 										auto inserted = add_value_corresp(
@@ -4723,7 +4723,17 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 											make_simple_corresp_expression(*i_k) // corresp
 										);
 										assert(inserted != val_corresps.end());
-										cerr << ", corresp is at " << inserted->second.get() << endl;
+										cerr << "Added name-matched corresp from " 
+											<< " source data type " 
+											//<< *source_type 
+											<< (source_type->get_name() ? *source_type->get_name() : "(anonymous)" )
+											<< " at " << std::hex << source_type->get_offset() << std::dec
+											<< " to" 
+											//<< " sink module @" << source_sink_pair.second.get()
+											<< " sink data type " 
+											<< (sink_type->get_name() ? *sink_type->get_name() : "(anonymous)" )
+											<< " at " << std::hex << sink_type->get_offset() << std::dec
+											<< " is at " << inserted->second.get() << endl;
 									} // end if not already exist
 									else cerr << "Skipping correspondence for matched data type named " 
 										<< definite_member_name(*i_k)

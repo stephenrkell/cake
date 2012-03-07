@@ -349,7 +349,11 @@ namespace cake
 		auto retval
 		 = vector< shared_ptr<value_conversion> >(p_out_seq->begin(), p_out_seq->end());
 		// sanity check
+		auto exact_size = srk31::count(working_exact.begin(), working_exact.end());
+		auto half_size = srk31::count(working_half_exact.begin(), working_half_exact.end());
+		auto concrete_size = srk31::count(working_concrete.begin(), working_concrete.end());
 		assert(retval.size() == srk31::count(p_out_seq->begin(), p_out_seq->end()));
+		assert(retval.size() == exact_size + half_size + concrete_size);
 		return retval;
 	}
 
