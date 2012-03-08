@@ -150,6 +150,9 @@ namespace cake
 	
 	bool virtual_value_conversion::treat_target_type_as_user_allocated()
 	{
+		// yes if incomplete
+		if (!w.compiler.cxx_is_complete_type(sink_data_type)) return true;
+		
 		if (explicit_field_corresps.size() == 0
 		 && sink_infix_stub
 		 && GET_CHILD_COUNT(sink_infix_stub) > 0
@@ -191,7 +194,12 @@ namespace cake
 	void value_conversion::emit_signature(bool emit_return_type/* = true*/, 
 		bool emit_default_argument /* = true */) 
 	{
-        m_out() << (emit_return_type ? to_typename : "") 
+		// HACK: if our target type is incomplete, the best we can do is return a reference
+		string reference_insert;
+		if (!w.compiler.cxx_is_complete_type(sink_data_type)) reference_insert = "&";
+		else reference_insert = "";
+	
+		m_out() << (emit_return_type ? (to_typename + reference_insert) : "") 
 			<< " operator()(const " << from_typename << "& __cake_from, " 
 			<< to_typename << "*__cake_p_to"
 			<< (emit_default_argument ? " = 0" : "")
@@ -902,9 +910,16 @@ namespace cake
 	
 	void primitive_value_conversion::emit_target_buffer_declaration()
 	{
-		/* Create or find buffer */
-		m_out() << w.get_type_name(sink_data_type) << " __cake_tmp, *__cake_p_buf;" << endl
-			<< "if (__cake_p_to) __cake_p_buf = __cake_p_to; else __cake_p_buf = &__cake_tmp;" << endl;
+		/* Create or find buffer...
+		 * if we have an incomplete type, don't create the buffer! */
+		m_out() << w.get_type_name(sink_data_type);
+		if (!w.compiler.cxx_is_complete_type(sink_data_type)) m_out() << " /* incomplete, so no __cake_tmp, */";
+		else m_out() << " __cake_tmp, ";
+	
+		m_out() << " *__cake_p_buf;" << endl
+		<< "if (__cake_p_to) __cake_p_buf = __cake_p_to; else ";
+		if (!w.compiler.cxx_is_complete_type(sink_data_type)) m_out() << "assert(false);";
+		else m_out() << " __cake_p_buf = &__cake_tmp;" << endl;
 	}
 
 	// override for the virtual corresp case

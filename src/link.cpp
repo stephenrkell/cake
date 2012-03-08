@@ -2403,9 +2403,18 @@ wrap_file    << "\tvoid component_pair<"
 					wrap_file << /* i_corresp->second->rule_tag */ "0 " << "}, " 
 						<< endl << "\t\t\t (conv_table_value) {";
 					// output the size of the object -- hey, we can use sizeof
-					wrap_file << " sizeof ( ::cake::" << namespace_name() << "::"
-						<< name_of_module(i_corresp->second->sink) << "::"
-						<< compiler.local_name_for(i_corresp->second->sink_data_type, false) << "), ";
+					// ... unless it's incomplete
+					if (compiler.cxx_is_complete_type(i_corresp->second->sink_data_type))
+					{
+						wrap_file << " /* complete type */ sizeof ( ::cake::" << namespace_name() << "::"
+							<< name_of_module(i_corresp->second->sink) << "::"
+							<< compiler.local_name_for(i_corresp->second->sink_data_type, false) << ")";
+					}
+					else 
+					{
+						wrap_file << " 0U /* HACK: incomplete type */";
+					}
+					wrap_file << ", ";
 					// now output the address 
 					wrap_file << "reinterpret_cast<void*(*)(void*,void*)>(&";
 					i_corresp->second->emit_function_name();
@@ -2455,9 +2464,18 @@ wrap_file    << "\tvoid component_pair<"
 					wrap_file << "}, " 
 						<< endl << "\t\t\t (init_table_value) {";
 					// output the size of the object -- hey, we can use sizeof
-					wrap_file << " sizeof ( ::cake::" << namespace_name() << "::"
-						<< name_of_module(i_corresp->second->sink) << "::"
-						<< compiler.local_name_for(i_corresp->second->sink_data_type, false) << "), ";
+					// ... unless it's incomplete
+					if (compiler.cxx_is_complete_type(i_corresp->second->sink_data_type))
+					{
+						wrap_file << " /* complete type */ sizeof ( ::cake::" << namespace_name() << "::"
+							<< name_of_module(i_corresp->second->sink) << "::"
+							<< compiler.local_name_for(i_corresp->second->sink_data_type, false) << ")";
+					}
+					else
+					{
+						wrap_file << " 0U /* HACK: incomplete type */";
+					}
+					wrap_file << ", ";
 					wrap_file << endl << "\t\t\t{ ";
 					auto sink_fq_name
 					 = compiler.fq_name_parts_for(i_corresp->second->sink_data_type);
@@ -3632,6 +3650,25 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		// we should never have corresps between pointer types
 		assert(source_data_type_opt->get_concrete_type()->get_tag() != DW_TAG_pointer_type);
 		assert(sink_data_type_opt->get_concrete_type()->get_tag() != DW_TAG_pointer_type);
+		
+		// if we are corresponding incomplete types, we can't emit them (in .o.hpps) as incomplete
+		// because we won't be able to instantiate template args with them
+		// (FIXME: get confirmation that this is C++-correct and not a g++ bug)
+		auto canon_source = canonicalise_type(source_data_type_opt, source, compiler);
+		auto canon_sink = canonicalise_type(sink_data_type_opt, sink, compiler);
+		// ... so we turn off the flag, making them empty structs
+		if (canon_source->get_declaration() && *canon_source->get_declaration())
+		{
+			auto as_struct = dynamic_pointer_cast<encap::structure_type_die>(canon_source);
+			assert(as_struct);
+			as_struct->set_declaration(opt<bool>(false));
+		}
+		if (canon_sink->get_declaration() && *canon_sink->get_declaration())
+		{
+			auto as_struct = dynamic_pointer_cast<encap::structure_type_die>(canon_sink);
+			assert(as_struct);
+			as_struct->set_declaration(opt<bool>(false));
+		}
 		
 		return add_value_corresp(source, 
 			source_data_type_opt, 

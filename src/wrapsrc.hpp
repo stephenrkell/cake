@@ -29,11 +29,13 @@ namespace cake
 	
 	class wrapper_file
 	{
+		// HACK: shouldn't need so many friends. Pull compiler out of wrapper_file....
 		friend class link_derivation;
 		friend class value_conversion;
 		friend class structural_value_conversion;
 		friend class primitive_value_conversion;
 		friend class reinterpret_value_conversion;
+		friend class virtual_value_conversion;
 		friend class codegen_context;
 	
         cxx_target& compiler;

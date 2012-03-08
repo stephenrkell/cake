@@ -1256,20 +1256,47 @@ namespace cake
 			if (!opt_ident_path) clog << "No name path, so cannot canonicalise further." << endl;
 			if (opt_ident_path)
 			{
-				auto resolved = p_mod->get_ds().toplevel()->visible_resolve(
+				auto resolved_all = p_mod->get_ds().toplevel()->visible_resolve_all(
 					opt_ident_path->begin(), opt_ident_path->end()
 				);
 				clog << "Name path: " << definite_member_name(*opt_ident_path) << endl;
-				if (!resolved) clog << "BUG: failed to resolve this name path." << endl;
-				//if (resolved && dynamic_pointer_cast<type_die>(resolved)) 
-				assert(resolved);
-				if (dynamic_pointer_cast<type_die>(resolved))
+				if (resolved_all.size() == 0) clog << "BUG: failed to resolve this name path." << endl;
+				assert(resolved_all.size() > 0);
+				
+				/* We choose the first one that is not a declaration
+				 * when we concrete + dedeclify it.
+				 * If they are all declarations, we choose the first one.
+				 * If there are none, it is an error.
+				 */
+
+				shared_ptr<type_die> first_non_decl;
+				shared_ptr<type_die> first_concrete;
+				for (auto i_resolved = resolved_all.begin();
+					i_resolved != resolved_all.end(); ++i_resolved)
 				{
-					Dwarf_Off new_off = resolved->get_offset();
-					concrete_t = dynamic_pointer_cast<type_die>(resolved)
-						->get_concrete_type();
+					if (dynamic_pointer_cast<type_die>(*i_resolved))
+					{
+						auto temp_concrete_t = dynamic_pointer_cast<type_die>(*i_resolved)
+							->get_concrete_type();
+						if (!first_concrete) first_concrete = temp_concrete_t;
+						auto with_data_members
+						 = dynamic_pointer_cast<spec::with_data_members_die>(temp_concrete_t);
+						if (with_data_members)
+						{
+							// we do another canonicalisation here: find the defn of a decl
+							auto defn = with_data_members->find_my_own_definition();
+							if (defn && (!defn->get_declaration() || !*defn->get_declaration())) 
+							{
+								first_non_decl = defn;
+								break;
+							}
+						}
+					}
 				}
-				else goto return_concrete; // FIXME: we could do more here
+				if (first_non_decl) concrete_t = first_non_decl;
+				else concrete_t = first_concrete;
+				
+				/*else*/ /* not resolved*/ goto return_concrete; // FIXME: we could do more here
 			}
 			else goto return_concrete; // FIXME: we could do more here
 		}
@@ -1367,6 +1394,7 @@ namespace cake
 							dynamic_pointer_cast<type_chain_die>(p_d)->get_type(),
 							chained_t
 						)) return true;
+					else return false;
 				});
 			if (found !=  p_cu->children_end()) return dynamic_pointer_cast<type_die>(*found);
 
