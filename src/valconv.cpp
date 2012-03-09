@@ -151,7 +151,7 @@ namespace cake
 	bool virtual_value_conversion::treat_target_type_as_user_allocated()
 	{
 		// yes if incomplete
-		if (!w.compiler.cxx_is_complete_type(sink_data_type)) return true;
+		if (!w.compiler.cxx_is_complete_type(canonicalise_type(sink_data_type, sink, w.compiler))) return true;
 		
 		if (explicit_field_corresps.size() == 0
 		 && sink_infix_stub
@@ -196,7 +196,7 @@ namespace cake
 	{
 		// HACK: if our target type is incomplete, the best we can do is return a reference
 		string reference_insert;
-		if (!w.compiler.cxx_is_complete_type(sink_data_type)) reference_insert = "&";
+		if (!w.compiler.cxx_is_complete_type(canonicalise_type(sink_data_type, sink, w.compiler))) reference_insert = "&";
 		else reference_insert = "";
 	
 		m_out() << (emit_return_type ? (to_typename + reference_insert) : "") 
@@ -913,12 +913,12 @@ namespace cake
 		/* Create or find buffer...
 		 * if we have an incomplete type, don't create the buffer! */
 		m_out() << w.get_type_name(sink_data_type);
-		if (!w.compiler.cxx_is_complete_type(sink_data_type)) m_out() << " /* incomplete, so no __cake_tmp, */";
+		if (!w.compiler.cxx_is_complete_type(canonicalise_type(sink_data_type, sink, w.compiler))) m_out() << " /* incomplete, so no __cake_tmp, */";
 		else m_out() << " __cake_tmp, ";
 	
 		m_out() << " *__cake_p_buf;" << endl
 		<< "if (__cake_p_to) __cake_p_buf = __cake_p_to; else ";
-		if (!w.compiler.cxx_is_complete_type(sink_data_type)) m_out() << "assert(false);";
+		if (!w.compiler.cxx_is_complete_type(canonicalise_type(sink_data_type, sink, w.compiler))) m_out() << "assert(false);";
 		else m_out() << " __cake_p_buf = &__cake_tmp;" << endl;
 	}
 

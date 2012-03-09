@@ -645,7 +645,7 @@ pair_of_mappings(long double);
 		Source *from,
 		Sink *to)
 	{
-		auto& from_ref = *from;
+		Source& from_ref = *from; //reinterpret_cast<Source&>(from);
 		value_convert<Source, Sink, FromComponent, ToComponent, RuleTag>().operator()(from_ref, to);
 		return to;
 	}

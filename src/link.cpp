@@ -2404,7 +2404,10 @@ wrap_file    << "\tvoid component_pair<"
 						<< endl << "\t\t\t (conv_table_value) {";
 					// output the size of the object -- hey, we can use sizeof
 					// ... unless it's incomplete
-					if (compiler.cxx_is_complete_type(i_corresp->second->sink_data_type))
+					if (compiler.cxx_is_complete_type(
+						canonicalise_type(i_corresp->second->sink_data_type, 
+							i_corresp->second->sink,
+							compiler)))
 					{
 						wrap_file << " /* complete type */ sizeof ( ::cake::" << namespace_name() << "::"
 							<< name_of_module(i_corresp->second->sink) << "::"
@@ -2465,7 +2468,11 @@ wrap_file    << "\tvoid component_pair<"
 						<< endl << "\t\t\t (init_table_value) {";
 					// output the size of the object -- hey, we can use sizeof
 					// ... unless it's incomplete
-					if (compiler.cxx_is_complete_type(i_corresp->second->sink_data_type))
+					if (compiler.cxx_is_complete_type(
+						canonicalise_type(
+							i_corresp->second->sink_data_type,
+							i_corresp->second->sink,
+							compiler)))
 					{
 						wrap_file << " /* complete type */ sizeof ( ::cake::" << namespace_name() << "::"
 							<< name_of_module(i_corresp->second->sink) << "::"
@@ -3813,8 +3820,10 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		}
 	
 		// skip incomplete (void) typedefs and other incompletes
-		if (!(source_concrete_type && compiler.cxx_is_complete_type(source_concrete_type))
-		|| !(sink_concrete_type && compiler.cxx_is_complete_type(sink_concrete_type)))
+		if (!(source_concrete_type 
+			&& compiler.cxx_is_complete_type(canonicalise_type(source_concrete_type, source, compiler)))
+		|| !(sink_concrete_type 
+			&& compiler.cxx_is_complete_type(canonicalise_type(sink_concrete_type, sink, compiler))))
 		{
 			cerr << "Warning: skipping value conversion from " << get_type_name(source_data_type)
 				<< " to " << get_type_name(sink_data_type)
