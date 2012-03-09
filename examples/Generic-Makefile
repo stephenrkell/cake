@@ -8,8 +8,14 @@ CXXFLAGS += -I/usr/local/include
 CXXFLAGS += -I$(shell dirname $(CAKE))/../include 
 CXXFLAGS += -I$(shell dirname $(CAKE))/../libcake/include
 CXXFLAGS += -I$(shell dirname $(CAKE))/../../libsrk31c++.hg/include
-LDFLAGS += -L/usr/local/lib -Wl,-R/usr/local/lib -L$(shell dirname $(CAKE))/../libcake -lcake -Wl,-R$(realpath $(shell dirname $(CAKE))/../libcake)
+LDFLAGS += -L/usr/local/lib -Wl,-R/usr/local/lib 
+
+ifneq ($(NO_LIBUNWIND),yes)
 LDLIBS += -lunwind -lunwind-ptrace -lunwind-$(shell uname -m)
+endif
+
+LDLIBS += -L$(shell dirname $(CAKE))/../libcake -lcake -Wl,-R$(realpath $(shell dirname $(CAKE))/../libcake)
+LDLIBS += -lreflect -lpmirror -ldwarfpp -ldwarf -lelf 
 
 SRC := $(wildcard *.c)
 OBJS ?= $(patsubst %.c,%.o,$(SRC))
@@ -36,9 +42,15 @@ default: cake-generated.mk $(BASENAME)
 $(BASENAME): $(BASENAME).o
 
 # HACK: workaround missing symbol unbinding
+# -- don't use xargs, because some implementations will do nothing
+# if given an empty stdin (looking at you, BSD xargs)
 $(BASENAME): $(BASENAME).o # FIXME: do the PIPESTATUS job on the line below
-	objdump -t $(BASENAME).o | grep __real_ | tr -s '[:blank:]' '\t' | cut -f6 | sed 's/__real_\(.*\)/-Wl,--defsym,\1=__real_\1/' | xargs \
-	$(CXX) -o $(BASENAME) $(BASENAME).o $(LDFLAGS) $(LDLIBS)
+	extra_args=$$( objdump -t $(BASENAME).o | \
+grep __real_ | \
+tr -s '[:blank:]' '\t' | \
+cut -f6 | \
+sed 's/__real_\(.*\)/-Wl,--defsym,\1=__real_\1/' ); \
+	$(CXX) -o $(BASENAME) $(BASENAME).o $(LDFLAGS) $(LDLIBS) $${extra_args}
 
 # We remove cake-generated.mk if Cake didn't succeed, because otherwise it will hang around
 # and appear to be up-to-date, preventing re-running of Cake. FIXME: shouldn't Make handle

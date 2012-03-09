@@ -32,11 +32,7 @@ CFLAGS += -DCAKE_VERSION=\"$(CAKE_VERSION)\"
 CXXFLAGS += -DCAKE_VERSION=\"$(CAKE_VERSION)\"
 
 .PHONY: default
-default: cake
-
-.PHONY: parser-recursive
-parser-recursive: 
-	$(MAKE) -C parser
+default: cake parser/test_parser
 
 # cancel builtin implicit rule
 %.o: %.cpp
@@ -46,14 +42,13 @@ clean::
 	rm -rf gcjh_generated
 	rm -f cake *.o *.so
 	rm -f $(DEPS)
-	$(MAKE) -C parser clean
 
 #$(HDR_DEPS) : .%.hpp.d: %.hpp
 #	g++ -MM -fpch-deps $(CXXFLAGS) "$<" > "$@"
 #	
 #include $(HDR_DEPS)
 
-$(DEPS) : .%.d : %.cpp
+$(DEPS) : .%.d : %.cpp parser/include/cakeCParser.h parser/include/cakeCLexer.h
 	$(CXX) -MM $(CXXFLAGS) "$<"  > "$@"
 
 ifneq ($(MAKECMDGOALS),clean)
@@ -68,13 +63,13 @@ endif
 	$(CXX) -o "$@" ${CXXFLAGS} "$<"
 
 #$(warning OBJS is $(OBJS))
-cake: parser-recursive $(OBJS) 
+cake: $(OBJS) parser/cakeCParser.o parser/cakeCLexer.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) \
 	 $(OBJS) parser/cakeCParser.o parser/cakeCLexer.o $(LDLIBS) -o "$@" 
 
 .PHONY: test
 RUN_PREFIX := gdb --eval-command "source ../src/cake-test.gdb" --eval-command run --args
-test: cake
+test:: cake
 	cd ../examples; LD_LIBRARY_PATH=../src:${LD_LIBRARY_PATH} $(RUN_PREFIX) ../src/cake switch-simple.cake
 
 .PHONY: test_batch
@@ -84,3 +79,28 @@ test_batch: cake
 .PHONY: memtest
 memtest: cake
 	cd ../examples; LD_LIBRARY_PATH=../src:$(LD_LIBRARY_PATH) valgrind --tool=memcheck ../src/cake switch-simple.cake
+.PHONY: default
+#default: java-all 
+
+# Begin parser rules 
+ANTLR_M4_PATH ?= ../../../antlr-m4
+M4PATH := $(ANTLR_M4_PATH):$(DWARFIDL_PATH)/src/parser:$(M4_PATH)
+export M4PATH
+GRAMMAR_OPTIONS += backtrack=true output=AST
+GRAMMAR_BASENAME := cake
+GRAMMAR_PATH := parser
+include $(ANTLR_M4_PATH)/Makerules
+
+test:: test-samples
+
+.PHONY: test-samples
+test-samples: parser/cakePyParser.py parser/samples/ephy.cake parser/samples/mpeg2ffplay.cake parser/samples/p2k.cake parser/samples/xcl.cake
+	for fname in parser/samples/xcl.cake samples/ephy.cake samples/mpeg2ffplay.cake samples/p2k.cake ; do \
+		python parser/cakePyParser.py --rule=toplevel < "$$fname"; \
+	done | $(ANTLR_M4_PATH)/parens-filter.sh
+		
+.PHONY: test-lexer-samples
+test-lexer-samples: parser/cakePyLexer.py # samples/ephy.cake samples/xcl.cake
+	for fname in parser/samples/ephy.cake ; do \
+		python parser/cakePyLexer.py < "$$fname"; \
+	done 

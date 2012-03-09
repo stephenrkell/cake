@@ -36,27 +36,87 @@ namespace cake
 	template <typename To, typename From>
 	struct default_cast
 	{
-		const To& operator()(const From& from) const
+		To operator()(const From& from) const
 		{
 			return from; // use default conversions
 		}
 	};
 	
 	// specialize for pointers
-	template <typename To, typename From>
-	struct default_cast
+	template <typename ToPointee, typename FromPointee>
+	struct default_cast<ToPointee*, FromPointee*>
 	{
-		To* operator()(From *from) const
+		ToPointee* operator()(FromPointee *from) const
 		{
-			return reinterpret_cast<To*>(from); // use reinterpret
+			// we have to do reinterpret, *and* 
+			return reinterpret_cast<ToPointee*>(from); // use reinterpret
 		}
 	};
-
-	template <typename To, typename From>
-	const To& default_cast_function(const From& from)
+	
+// 	// specialize *again* for const from-pointers
+// 	template <typename ToPointee, typename FromPointee>
+// 	struct default_cast<ToPointee*, const FromPointee*>
+// 	{
+// 		ToPointee* operator()(FromPointee *from) const
+// 		{
+// 			// we have to do reinterpret, *and* 
+// 			return reinterpret_cast<ToPointee*>(
+// 				const_cast<FromPointee*>(from)
+// 			); // use reinterpret
+// 		}
+// 	};	
+	// specialize for arrays
+	template <typename ToEl, typename FromEl, int Dim>
+	struct default_cast<ToEl[Dim], FromEl[Dim]>
 	{
-		return default_cast<To, From>()(from);
-	}
+		srk31::array<ToEl, Dim> operator()(const FromEl (&from)[Dim]) const
+		{
+			return srk31::array<ToEl, Dim>(from); 
+		}
+	};
+	// specialize for srk31::arrays as if they were arrays
+	template <typename ToEl, typename FromEl, int Dim>
+	struct default_cast<ToEl[Dim], srk31::array<FromEl, Dim> >
+	{
+		srk31::array<ToEl, Dim> operator()(const srk31::array<FromEl, Dim>& from) const
+		{
+			return srk31::array<ToEl, Dim>(from); 
+		}
+	};
+	
+	// this is similar, but makes an assignable thing (lvalue) out of its arg
+	// -- again, we have to use the struct template
+	template <typename Target>
+	struct assignable
+	{
+		Target& operator()(Target& from) const
+		{
+			return from; // use default conversions
+		}
+	};
+	template <typename TargetEl, int Dim>
+	struct assignable<TargetEl[Dim]>
+	{
+		srk31::array_wrapper<TargetEl, Dim> operator()(TargetEl (&from)[Dim]) const
+		{
+			return srk31::array_wrapper<TargetEl, Dim>(from); // use default conversions
+		}
+	};
+	
+	
+	
+	/* We can't use default_cast_function because
+	 * our caller supplies both type args,
+	 * and we need to  partially specialize for the
+	 * return type in the case of arrays. 
+	 * Specifically, if the user requests To = some_array_type[n],
+	 * we need to return an srk31::array instead.
+	 * So, the caller has to select the struct template. */
+//	template <typename To, typename From>
+//	To default_cast_function(const From& from)
+//	{
+//		return default_cast<To, From>()(from);
+//	}
 
     template <
         typename ComponentPair, 
@@ -423,10 +483,10 @@ pair_of_mappings(long double);
     }; 
 	
 	template <typename FromIsAPtr, typename ToIsAPtr, typename FromComponent, typename ToComponent, int RuleTag>
-    struct value_convert<FromIsAPtr*, ToIsAPtr*, FromComponent, ToComponent, RuleTag>
-    { 
-    	ToIsAPtr* operator()(FromIsAPtr* from, ToIsAPtr **p_to = 0) const 
-        { 
+	struct value_convert<FromIsAPtr*, ToIsAPtr*, FromComponent, ToComponent, RuleTag>
+	{
+		ToIsAPtr* operator()(const FromIsAPtr* from, ToIsAPtr **p_to = 0) const 
+		{
 			print_object(from);
 			
 			struct co_object_group *found_group;
@@ -440,8 +500,11 @@ pair_of_mappings(long double);
 			{
 				fprintf(stderr, "Warning: assuming object at %p is its own co-object.\n",
 					from);
-				if (p_to) *p_to = reinterpret_cast<__typeof(*p_to)>(from);
-				return reinterpret_cast<__typeof(*p_to)>(from);
+				if (p_to) *p_to = reinterpret_cast<__typeof(*p_to)>(
+					const_cast< typename boost::remove_const<FromIsAPtr>::type *>(from));
+				return reinterpret_cast<__typeof(*p_to)>(
+					const_cast< typename boost::remove_const<FromIsAPtr>::type *>(from)
+				);
 			}
 			else
 			{

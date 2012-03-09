@@ -40,8 +40,13 @@ CXX_DEPS := $(patsubset %.cc,%,cc.d,$(patsubst %.cpp,.%.cpp.d,$(CXX_SRC)))
 clean:
 	rm -f *.o *.so $(C_DEPS) $(CXX_DEPS)
 
+LDLIBS += -lreflect -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive 
+ifneq ($(LIBC_INCLUDES_LIBDL),yes)
+LDLIBS += -ldl
+endif
+
 libcake.so: $(OBJS)
-	$(CXX) $(CXXFLAGS) -shared -o "$@"  $(OBJS) $(LDFLAGS) -lreflect -Wl,--whole-archive -ldwarf -Wl,--no-whole-archive -ldl
+	$(CXX) $(CXXFLAGS) -shared -o "$@"  $(OBJS) $(LDFLAGS) $(LDLIBS)
 
 $(CXX_DEPS): .%.cpp.d : %.cpp
 	$(CXX) -MM $(CXXFLAGS) "$<"  > "$@"
