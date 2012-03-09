@@ -407,7 +407,7 @@ namespace cake
 		auto found_target_field = dynamic_pointer_cast<member_die>(found_target);
 		assert(found_target_field && found_target_field->get_type());
 		
-		auto found_target_field_type = found_target_field->get_type();
+		shared_ptr<type_die> found_target_field_type = found_target_field->get_type();
 		assert(found_target_field_type);
 		
 		shared_ptr<member_die> found_source_field;
@@ -426,12 +426,23 @@ namespace cake
 		} else unique_source_field = optional<definite_member_name>(); // kill the "void" dmn
 		
 		/* Check that there exists some correspondence,
-		 * or it's a pointer or base type. */
+		 * or it's a pointer or base type.
+		 * For array types, we replace the array type with its ultimate element type. */
 		auto value_corresps = owner->w.m_d.val_corresps_for_iface_pair(
 			owner->w.m_d.sorted(owner->source, owner->sink));
 		
 		typedef link_derivation::val_corresp_map_t::value_type ent;
 		
+		if (found_source_field_type->get_concrete_type()->get_tag() == DW_TAG_array_type)
+		{
+			found_source_field_type = dynamic_pointer_cast<spec::array_type_die>(found_source_field_type)
+				->ultimate_element_type();
+		}
+		if (found_target_field_type->get_concrete_type()->get_tag() == DW_TAG_array_type)
+		{
+			found_target_field_type = dynamic_pointer_cast<spec::array_type_die>(found_target_field_type)
+				->ultimate_element_type();
+		}		
 		if (!(
 			(std::find_if(
 					value_corresps.first, value_corresps.second, 
@@ -1034,7 +1045,8 @@ namespace cake
 		antlr::tree::Tree *source_expr,
 		antlr::tree::Tree *source_infix,
 		antlr::tree::Tree *sink_infix,
-		bool write_void_target)
+		bool write_void_target
+		)
 	{
 		// Assume our environment already contains all the source fields that the
 		// rule could reference. 
@@ -1242,14 +1254,19 @@ namespace cake
 		}
 
 		/* Now we have an "it": either the output of the stub, if there was one,
-		 * or else the converted field value. */
+		 * or else the converted field value.
+		 *
+		 * If we're assigning to an array type, we have to wrap it so that assignment
+		 * will work. So, we use a template that makes this decision for us. */
 		if (!is_void_target || write_void_target)
 		{
 			assert(ctxt.env["__cake_it"].cxx_name != "");
-			m_out() << "(*__cake_p_buf)" << target_field_selector << " = " 
-				<< " ::cake::default_cast_function < __typeof( " 
+			m_out() << "::cake::assignable< __typeof( (*__cake_p_buf)" << target_field_selector << ") >()("
+				                                     "(*__cake_p_buf)" << target_field_selector << ")" 
+													 << " = " 
+				<< " ::cake::default_cast < __typeof( " 
 					<< "(*__cake_p_buf)" << target_field_selector << "), "
-					<< " __typeof(" << ctxt.env["__cake_it"].cxx_name << ") >( "
+					<< " __typeof(" << ctxt.env["__cake_it"].cxx_name << ") >()( "
 				<< ctxt.env["__cake_it"].cxx_name 
 				<< ")"
 				<< ";" << endl;
