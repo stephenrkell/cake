@@ -824,19 +824,19 @@ namespace cake
 		std::set<dep> working;
 	
 		auto maybe_insert_dependency = [&working](
-			const working::value_type& dep, 
+			const dep& the_dep, 
 			const member_mapping_rule& rule) {
 			/* We discard dependencies that are pointers. 
 			 * We turn array dependencies into their ultimate element type. */
 			
-			working::value_type to_add = dep;
+			dep to_add = the_dep;
 			
-			auto first_concrete = dep.first->get_concrete_type();
-			auto second_concrete = dep.second->get_concrete_type();
-			if (!first_concrete || !second.concrete)
+			auto first_concrete = the_dep.first->get_concrete_type();
+			auto second_concrete = the_dep.second->get_concrete_type();
+			if (!first_concrete || !second_concrete)
 			{
 				cerr << "Warning: discarding dependency involving void type " 
-					<< (!first_concrete ? dep.first->summary() : dep.second->summary())
+					<< (!first_concrete ? the_dep.first->summary() : the_dep.second->summary())
 					<< endl;
 				return;
 			}
@@ -857,13 +857,13 @@ namespace cake
 			
 			if (first_concrete->get_tag() == DW_TAG_array_type)
 			{
-				to_add.first = dynamic_pointer_cast<array_type_die>(first_concrete)
+				to_add.first = dynamic_pointer_cast<spec::array_type_die>(first_concrete)
 					->ultimate_element_type();
 				assert(to_add.first);
 			}
 			if (second_concrete->get_tag() == DW_TAG_array_type)
 			{
-				to_add.second = dynamic_pointer_cast<array_type_die>(second_concrete)
+				to_add.second = dynamic_pointer_cast<spec::array_type_die>(second_concrete)
 					->ultimate_element_type();
 				assert(to_add.second);
 			}
@@ -889,7 +889,7 @@ namespace cake
 					);
 
 			assert(pair.first && pair.second);
-			maybe_insert_dependency(pair);
+			maybe_insert_dependency(pair, i_mapping->second);
 		}
 		
 		for (auto i_mapping = explicit_toplevel_mappings.begin();
@@ -921,7 +921,7 @@ namespace cake
 
 				assert(pair.first && pair.second);
 				
-				maybe_insert_dependency(pair);
+				maybe_insert_dependency(pair, *i_mapping->second);
 				
 				// auto retval = working.insert(pair);
 				// assert(retval.second); // assert that we actually inserted something
@@ -1246,8 +1246,13 @@ namespace cake
 		if (!is_void_target || write_void_target)
 		{
 			assert(ctxt.env["__cake_it"].cxx_name != "");
-			m_out() << "(*__cake_p_buf)" << target_field_selector << " = " <<
-				ctxt.env["__cake_it"].cxx_name << ";" << endl;
+			m_out() << "(*__cake_p_buf)" << target_field_selector << " = " 
+				<< " ::cake::default_cast_function < __typeof( " 
+					<< "(*__cake_p_buf)" << target_field_selector << "), "
+					<< " __typeof(" << ctxt.env["__cake_it"].cxx_name << ") >( "
+				<< ctxt.env["__cake_it"].cxx_name 
+				<< ")"
+				<< ";" << endl;
 		}
 	}
 	

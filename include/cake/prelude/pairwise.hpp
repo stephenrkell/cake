@@ -31,6 +31,32 @@ namespace cake
 	{
 		typedef T type;
 	};
+	
+	// default conversions
+	template <typename To, typename From>
+	struct default_cast
+	{
+		const To& operator()(const From& from) const
+		{
+			return from; // use default conversions
+		}
+	};
+	
+	// specialize for pointers
+	template <typename To, typename From>
+	struct default_cast
+	{
+		To* operator()(From *from) const
+		{
+			return reinterpret_cast<To*>(from); // use reinterpret
+		}
+	};
+
+	template <typename To, typename From>
+	const To& default_cast_function(const From& from)
+	{
+		return default_cast<To, From>()(from);
+	}
 
     template <
         typename ComponentPair, 

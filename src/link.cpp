@@ -2195,7 +2195,7 @@ namespace cake
 					// mapping, i.e. inner-to-default -- HACK: only if unique, for now.
 					for (auto i_outer = outer_tagstrings.begin(); i_outer != outer_tagstrings.end(); ++i_outer)
 					{
-						if (*i_outer == "__cake_default"
+						if ( *i_outer == "__cake_default"
 						|| emitted_outer_tags_to_default.find(*i_outer)
 							!= emitted_outer_tags_to_default.end()) continue;
 						auto outer_seq = by_outer_tagstring.equal_range(*i_outer);
@@ -2216,8 +2216,10 @@ namespace cake
 					// sim. for default-to-outer? 
 					for (auto i_inner = inner_tagstrings.begin(); i_inner != inner_tagstrings.end(); ++i_inner)
 					{
+						/* NOTE: here we pick up the default-to-default case, so don't skip
+						 * the default case here. */
 						if (*i_inner == "__cake_default"
-						|| emitted_default_to_inner_tags.find(*i_inner)
+						||  emitted_default_to_inner_tags.find(*i_inner)
 							!= emitted_default_to_inner_tags.end()) continue;
 						auto inner_seq = by_inner_tagstring.equal_range(*i_inner);
 						if (srk31::count(inner_seq.first, inner_seq.second) == 1)
@@ -2233,6 +2235,27 @@ namespace cake
 						}
 						else wrap_file << "// not emitting a __cake_default_to_" << *i_inner << " typedef "
 							<< "because there is no unique candidate" << endl;
+					}
+					
+					/* Finally, if both outer and inner tagstrings are unique, but non-default, 
+					 * we need to output a default-to-default typedef .*/
+					if (outer_tagstrings.size() == 1 && inner_tagstrings.size() == 1
+						&& *outer_tagstrings.begin() != "__cake_default"
+						&& *inner_tagstrings.begin() != "__cake_default")
+					{
+						auto inner_tagstring = *inner_tagstrings.begin();
+						assert(by_inner_tagstring.equal_range(inner_tagstring).first
+						!= by_inner_tagstring.equal_range(inner_tagstring).second);
+						
+						auto i_inner_corresp = by_inner_tagstring.equal_range(inner_tagstring).first;
+						wrap_file << "typedef " 
+							// we STILL (ALWAYS) typedef the inner type, i.e. the non-half-key one
+							<< ((half_key_is_source) ? 
+									get_type_name(i_inner_corresp->second->sink_data_type)
+								: 	get_type_name(i_inner_corresp->second->source_data_type))
+							<< 	" __cake_default_to___cake_default_in_"
+							<< (half_key_is_first ? "second" : "first") 
+							<< ";" << endl;
 					}
 					
 					// NO -- actually we can't assume a default is already in there,
@@ -2252,11 +2275,13 @@ namespace cake
 						auto outer_seq = by_outer_tagstring.equal_range(*i_outer);
 						bool emitted_default = false;
 						set<string> emitted_inner_tagstrings;
+						bool suppress_comma = false;
 						for (auto i_p_corresp_pair = outer_seq.first;
 							i_p_corresp_pair != outer_seq.second;
 							++i_p_corresp_pair)
 						{
-							if (i_p_corresp_pair != outer_seq.first) wrap_file << ", " << endl;
+							if (i_p_corresp_pair != outer_seq.first && !suppress_comma) wrap_file << ", " << endl;
+							if (suppress_comma) suppress_comma = false;
 							// here we want the data type in the *other* module, but not concretised
 							auto half_key_die = (half_key_is_source) ?
 								(*i_p_corresp_pair).second->source_data_type : (*i_p_corresp_pair).second->sink_data_type;
@@ -2268,8 +2293,15 @@ namespace cake
 							//	 : "__cake_default";
 							auto artificial_name_for_the_other_die =
 								(!data_types_are_identical(the_other_die->get_concrete_type(), the_other_die)) 
-								? *the_other_die->get_name()
+								? *the_other_die->get_unqualified_type()->get_name()
 								 : "__cake_default";
+							if (artificial_name_for_the_other_die == "")
+							{
+								cerr << "Offending immediate type: " << the_other_die->summary() << endl;
+								cerr << "Offending unqualified type: " << the_other_die->get_unqualified_type()->summary() << endl;
+								cerr << "Offending concrete type: " << the_other_die->get_concrete_type()->summary() << endl;
+							}
+							assert(artificial_name_for_the_other_die != "");
 
 							assert(val_corresp_numbering.find(i_p_corresp_pair->second->shared_from_this())
 							    != val_corresp_numbering.end());
@@ -2281,6 +2313,7 @@ namespace cake
 									wrap_file << "// HIDDEN: __cake_default = "
 									<< val_corresp_numbering[(*i_p_corresp_pair).second->shared_from_this()]
 									<< endl;
+									suppress_comma = true;
 									continue;
 								}
 								else emitted_default = true;
@@ -2290,13 +2323,14 @@ namespace cake
 								<< " = " 
 								<< val_corresp_numbering[(*i_p_corresp_pair).second->shared_from_this()];
 							emitted_inner_tagstrings.insert(artificial_name_for_the_other_die);
-						}
+						} /* end for outer */
 						/* Now also emit a "__cake_default" enum element if it's unique and we haven't yet; */
 						if (srk31::count(outer_seq.first, outer_seq.second) == 1
 						 && emitted_inner_tagstrings.find("__cake_default") == emitted_inner_tagstrings.end())
 						{
 							auto i_p_corresp_pair = outer_seq.first;
-							wrap_file << ", " << endl;
+							if (!suppress_comma) wrap_file << ", " << endl;
+							suppress_comma = false;
 							auto artificial_name_for_the_other_die = "__cake_default";
 							wrap_file << artificial_name_for_the_other_die 
 								<< " = " 
@@ -2319,8 +2353,9 @@ namespace cake
 								{
 									auto i_p_corresp_pair = inner_seq.first;
 									auto artificial_name_for_the_other_die = *i_inner;
-									wrap_file << ", " << endl
-										<< artificial_name_for_the_other_die // artificial_name_for_half_key_die 
+									if (!suppress_comma) wrap_file << ", " << endl;
+									suppress_comma = false;
+									wrap_file << artificial_name_for_the_other_die // artificial_name_for_half_key_die 
 										<< " = " 
 										<< val_corresp_numbering[(*i_p_corresp_pair).second->shared_from_this()];
 								}
@@ -2328,6 +2363,20 @@ namespace cake
 						}
 							
 						
+						wrap_file << "         }; };" << endl; // ends a tag enum/struct
+					} /* end for i_outer */ 
+					
+					/* Finally, if both outer and inner tagstrings are unique, but non-default, 
+					 * we need to output a default-to-default enum .*/
+					if (outer_tagstrings.size() == 1 && inner_tagstrings.size() == 1
+						&& *outer_tagstrings.begin() != "__cake_default"
+						&& *inner_tagstrings.begin() != "__cake_default")
+					{
+						wrap_file << "         struct rule_tag_in_" << (half_key_is_first ? "second" : "first") 
+						  << "_given_" << (half_key_is_first ? "first" : "second") 
+						  << "_artificial_name___cake_default" 
+							<< " { enum __cake_rule_tags {" << endl;
+						wrap_file << "__cake_default = 0" << endl; 
 						wrap_file << "         }; };" << endl; // ends a tag enum/struct
 					}
      wrap_file << "    };" // ends a specialization

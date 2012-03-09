@@ -1228,6 +1228,7 @@ namespace cake
 				encap_cu,
 				opt<string>(name) 
 			);
+		this->get_ds().toplevel()->clear_cache(name);
 		dynamic_pointer_cast<encap::typedef_die>(created)->set_type(p_d);
 		return dynamic_pointer_cast<spec::type_die>(created);
 	}
@@ -1246,6 +1247,7 @@ namespace cake
 				encap_cu,
 				opt<string>(name) 
 			);
+		this->get_ds().toplevel()->clear_cache(name);
 		return dynamic_pointer_cast<spec::structure_type_die>(created);
 	}
 	
