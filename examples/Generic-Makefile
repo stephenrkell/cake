@@ -5,6 +5,7 @@ CXXFLAGS += -std=gnu++0x -g3
 CAKE ?= ../../src/cake
 CXX ?= g++-4.5
 CXXFLAGS += -I/usr/local/include 
+CXXFLAGS += -I/usr/pkg/include 
 CXXFLAGS += -I$(shell dirname $(CAKE))/../include 
 CXXFLAGS += -I$(shell dirname $(CAKE))/../libcake/include
 CXXFLAGS += -I$(shell dirname $(CAKE))/../../libsrk31c++.hg/include
@@ -16,6 +17,14 @@ endif
 
 LDLIBS += -L$(shell dirname $(CAKE))/../libcake -lcake -Wl,-R$(realpath $(shell dirname $(CAKE))/../libcake)
 LDLIBS += -lreflect -lpmirror -ldwarfpp -ldwarf -lelf 
+
+ifeq ($(REVERSE_LDLIBS),yes)
+$(warning Before reversing, LDLIBS is $(LDLIBS))
+$(warning Echoing LDLIBS gives $(shell echo "$(LDLIBS)"))
+# On BSD, we don't have "tac", so use sed -n '1! G; $ p; h'
+LDLIBS := $(shell echo "$(LDLIBS)" | tr '[:blank:]' '\n' | sed -n '1! G; $$ p; h' )
+$(warning After reversing, LDLIBS is $(LDLIBS))
+endif
 
 SRC := $(wildcard *.c)
 OBJS ?= $(patsubst %.c,%.o,$(SRC))

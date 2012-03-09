@@ -116,10 +116,10 @@ namespace cake
 		{ return true; }
 	};
 	// overrides for wordsize integer-valued types
-	template <> struct success_of<unsigned, 0> 
-	{ bool operator()(const unsigned& arg) const { return (arg == 0); } };
-	template <> struct success_of<signed, 0> 
-	{ bool operator()(const signed& arg) const { return (arg == 0); } };
+	template <> struct success_of<unsigned long, 0> 
+	{ bool operator()(unsigned long arg) const { return (arg == 0); } };
+	template <> struct success_of<signed long, 0> 
+	{ bool operator()(signed long arg) const { return (arg == 0); } };
 	// FIXME: come up with an architecture-independent way of describing
 	// specialisations for other sizes of integer
 
