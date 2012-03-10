@@ -117,7 +117,7 @@ void *find_co_object(const void *object, int object_rep, int co_object_rep,
 		return NULL; /* NULL is NULL in all representations */
 	}
 	
-	auto group = group_for_object(object);
+	auto group = group_for_object(const_cast<void*>(object));
 	if (!group) 
 	{
 		fprintf(stderr, "Failed to find co-object in rep %d of object at %p (rep %d)\n",
