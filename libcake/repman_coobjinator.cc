@@ -109,7 +109,7 @@ int invalidate_co_object(void *object, int rep)
 	return 0;
 }
 
-void *find_co_object(void *object, int object_rep, int co_object_rep, 
+void *find_co_object(const void *object, int object_rep, int co_object_rep, 
 		struct co_object_group **co_object_rec_out/*, int expected_size_words*/)
 {
 	if (object == NULL)

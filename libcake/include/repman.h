@@ -46,7 +46,7 @@ void print_object(const void *);
 
 /* co-object bookkeeping interface */
 int invalidate_co_object(void *object, int rep);
-void *find_co_object(void *object, int object_rep, int co_object_rep, 
+void *find_co_object(const void *object, int object_rep, int co_object_rep, 
 		struct co_object_group **co_object_rec_out/*, int expected_size_words*/);		
 struct co_object_group *new_co_object_record(void *initial_object, int initial_rep, 
 	int initial_alloc_by, int is_uninit);
