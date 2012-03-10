@@ -22,7 +22,14 @@ public:
 	//cake_headers_target(Args&&... args)
 	cake_cxx_target(Args&&... args)
 	 : dwarf::tool::dwarfidl_cxx_target(std::forward<Args>(args)...) {}
-
+	 
+	cake_cxx_target()
+	 : dwarf::tool::dwarfidl_cxx_target(
+		" ::cake::unspecified_wordsize_type",
+		srk31::indenting_cout, 
+		dwarf::tool::cxx_compiler::default_compiler_argv(true))
+	{}
+	
 protected:
 	shared_ptr<type_die>
 	transform_type(
