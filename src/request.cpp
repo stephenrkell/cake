@@ -25,7 +25,11 @@ namespace cake
 			out_filename(makefile),
 			maybe_out_stream(makefile ? makefile : "/dev/null"),
 			p_out(makefile ? &maybe_out_stream : &std::cout),
-			module_tbl()
+			module_tbl(),
+			indenting_out(*p_out),
+			compiler(" ::cake::unspecified_wordsize_type",
+				indenting_out, 
+				dwarf::tool::cxx_compiler::default_compiler_argv(true)) // use CXXFLAGS
 	{
 		if (!in_fileobj) throw cake::SemanticError("error opening input file");
 		if (!makefile && !maybe_out_stream) throw cake::SemanticError("error opening output file");
@@ -158,10 +162,14 @@ namespace cake
 		}
 	}
 	
+	/* For outputting the headers, we refine dwarfidl_cxx_target a little, 
+	 * so that any struct members turn out non-const (so that they always
+	 * have an operator=). 
+	 *
+	 * Note that we put this struct here because local structs can't have
+	 * member templates, apparently. */
 	void request::write_headers(const string& module_name)
 	{
-		using dwarf::tool::dwarfidl_cxx_target;
-		
 		auto found = module_tbl.find(module_name);
 		if (found == module_tbl.end()) RAISE(ast, "no such module");
 		else 
@@ -170,9 +178,10 @@ namespace cake
 				(found->second->get_filename() + ".hpp");
 			std::ofstream out(headers_out_filename.c_str());
 			srk31::indenting_ostream indenting_out(out);
-			dwarfidl_cxx_target headers_target(" ::cake::unspecified_wordsize_type",
-				indenting_out, 
-				dwarf::tool::cxx_compiler::default_compiler_argv(true)); // use CXXFLAGS
+			
+			//cake_headers_target headers_target(" ::cake::unspecified_wordsize_type",
+			//	indenting_out, 
+			//	dwarf::tool::cxx_compiler::default_compiler_argv(true)); // use CXXFLAGS
 			
 			// we should agree on what the greatest preexisting offset is
 			auto module_top_offset = found->second->greatest_preexisting_offset();
@@ -181,7 +190,7 @@ namespace cake
 			 	->second->get_offset();
 			assert(module_top_offset == dieset_top_offset);
 			
-			headers_target.emit_all_decls(found->second->get_ds().toplevel());
+			compiler.emit_all_decls(found->second->get_ds().toplevel());
 		}
 	}
 	

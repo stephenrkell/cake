@@ -339,6 +339,15 @@ namespace cake
 		);
 		
 		bool source_type_has_correspondence(shared_ptr<type_die> t);
+		
+	private:
+		/* Helpers */
+		string
+		flatten_selector_dmn(const definite_member_name& dmn);
+		
+		definite_member_name
+		cxxify_selector_dmn(const definite_member_name& dmn,
+			shared_ptr<spec::with_data_members_die> start_type);
 
 	public:
 		structural_value_conversion(wrapper_file& w,

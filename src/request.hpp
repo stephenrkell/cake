@@ -99,8 +99,10 @@ namespace cake
 		void write_headers(const string& module_name);
 		void write_makerules();
 	private:
+		/* indenting output stream */
+		srk31::indenting_ostream indenting_out;
 		/* cxx generation */
-		cake_cxx_target compiler; // FIXME: can we merge cake_cxx_target and dwarfidl_cxx_target?
+		cake_cxx_target compiler; 
 
 	public:
     	typedef module_inverse_tbl_t::value_type module_name_pair;

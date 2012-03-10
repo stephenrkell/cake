@@ -42,7 +42,7 @@ void init_components_table(void);
 void init_component_pairs_table(void);
 
 /* Utility code. */
-void print_object(void *);
+void print_object(const void *);
 
 /* co-object bookkeeping interface */
 int invalidate_co_object(void *object, int rep);

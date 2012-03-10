@@ -800,13 +800,23 @@ namespace cake
 						(member_mapping_rule_base){
 							/* structural_value_conversion *owner, */
 								this,
-							/* definite_member_name target; */ 
+							/* definite_member_name target; */
+							// for these, we use the non-cxxified name, so that 
+							// ... what? So that we can pull idents out and look them
+							// up in the DWARF, e.g. as in get_dependencies
 								definite_member_name(1, *(*i_member)->get_name()),
 							/* optional<definite_member_name> unique_source_field; */
 								definite_member_name(1, *(*i_member)->get_name()),
 							/* antlr::tree::Tree *stub; */ 
+							// for the stub, we use the cxxified name
 								make_definite_member_name_expr(
-									definite_member_name(1, *(*i_member)->get_name())),
+									definite_member_name(1, w.compiler.cxx_name_from_die(
+									/* we have to use the source/sink DIE that is appropriate
+									 * -- which is always the source value! i.e. the stub */
+										dynamic_pointer_cast<structure_type_die>(
+											source_concrete_type
+										)->named_child(*(*i_member)->get_name())
+									))),
 							/* module_ptr pre_context; */ 
 								source_module,
 							/* antlr::tree::Tree *pre_stub; */ 
@@ -1386,6 +1396,55 @@ namespace cake
 				!= w.m_d.val_corresp_supergroups[ifaces].end();
 	}
 	
+	string
+	structural_value_conversion::flatten_selector_dmn(const definite_member_name& dmn)
+	{
+		ostringstream s;
+		for (auto i_name_part = dmn.begin();
+			i_name_part != dmn.end();
+			++i_name_part)
+		{
+			//if (i_name_part != i_name_matched->second.target.begin())
+			{ s << "."; } // always begin selector with '.'!
+			s << *i_name_part;
+		}
+		return s.str();
+	}
+	
+	definite_member_name
+	structural_value_conversion::cxxify_selector_dmn(
+		const definite_member_name& dmn,
+		shared_ptr<spec::with_data_members_die> start_type
+	)
+	{
+		definite_member_name cxxified_selector;
+		shared_ptr<with_data_members_die> cur_dwarf_type = start_type;
+		for (auto i_el = dmn.begin(); i_el != dmn.end(); ++i_el)
+		{
+			if (!cur_dwarf_type)
+			{
+				cerr << "Error refers to selector: " << dmn << endl;
+				 RAISE(this->corresp,
+					"selector is not a path through subobject tree");
+			}
+			auto cur_memb = dynamic_pointer_cast<member_die>(
+				cur_dwarf_type->named_child(*i_el)
+			);
+			cxxified_selector.push_back(
+				w.compiler.cxx_name_from_die(
+					cur_memb
+				)
+			);
+			/* The last element in the selector need not denote a structured thing, 
+			 * so we don't raise an error if the cast fails, until the next iteration (if any). */
+			auto tmp_dwarf_type = cur_memb->get_type();
+			auto tmp_with_members_type = dynamic_pointer_cast<with_data_members_die>(tmp_dwarf_type);
+			if (tmp_with_members_type) cur_dwarf_type = tmp_with_members_type;
+			else cur_dwarf_type = shared_ptr<with_data_members_die>();
+		}
+		return cxxified_selector;
+	}
+	
 	void structural_value_conversion::emit_body()
 	{
 		emit_initial_declarations();
@@ -1412,17 +1471,12 @@ namespace cake
 				i_name_matched != name_matched_mappings.end();
 				++i_name_matched)
 		{
-			string target_field_selector;
-			ostringstream s;
-			for (auto i_name_part = i_name_matched->second.target.begin();
-				i_name_part != i_name_matched->second.target.end();
-				++i_name_part)
-			{
-				//if (i_name_part != i_name_matched->second.target.begin())
-				{ s << "."; } // always begin selector with '.'!
-				s << *i_name_part;
-			}
-			target_field_selector = s.str();
+			string target_field_selector = flatten_selector_dmn(
+				cxxify_selector_dmn(
+					i_name_matched->second.target,
+					dynamic_pointer_cast<with_data_members_die>(sink_data_type->get_concrete_type())
+				)
+			);
 			
 			assert(
 				target_fields_to_write.find(target_field_selector)
@@ -1461,7 +1515,11 @@ namespace cake
 			
 			auto selector = i_explicit_toplevel->first == "" ? 
 						""
-						: "." + i_explicit_toplevel->first;
+						: "." + w.compiler.cxx_name_from_die(
+								dynamic_pointer_cast<with_data_members_die>(
+									sink_data_type->get_concrete_type()
+								)->named_child(i_explicit_toplevel->first)
+							);
 			target_fields_to_write.insert(
 				make_pair(
 					selector, 
@@ -1545,11 +1603,14 @@ namespace cake
 				++i_field)
 		{
 			assert((*i_field)->get_name());
-			string field_name = *(*i_field)->get_name();
+			string field_name = w.compiler.cxx_name_from_die(*i_field);
 			shared_ptr<type_die> field_type = (*i_field)->get_type();
 			
-			/* We can skip fields that are not referenced anywhere. */
-			if (source_side_idents_referenced.find(field_name)
+			/* We can skip fields that are not referenced anywhere. 
+			 * EXCEPT if we are dealing with a field that has been renamed 
+			 * -- then its reference will not look like its name. */
+			if (*(*i_field)->get_name() == field_name &&
+				source_side_idents_referenced.find(field_name)
 				 == source_side_idents_referenced.end()) continue;
 			
 			/* We only crossover if the field's type has a corresponding type
@@ -1653,16 +1714,13 @@ namespace cake
 				optional<string> unique_source_field_selector;
 				if (i_target->second->unique_source_field)
 				{
-					ostringstream s;
-					for (auto i_name_part = i_target->second->unique_source_field->begin();
-						i_name_part != i_target->second->unique_source_field->end();
-						++i_name_part)
-					{
-						//if (i_name_part != i_target->second->unique_source_field->begin())
-						{ s << "."; } // i.e. always begin with '.'
-						s << *i_name_part;
-					}
-					unique_source_field_selector = s.str();
+					unique_source_field_selector
+					 = flatten_selector_dmn(
+					 	cxxify_selector_dmn(
+							*i_target->second->unique_source_field,
+							dynamic_pointer_cast<with_data_members_die>(source_data_type->get_concrete_type())
+						)
+					);
 				}
 
 				assert(target_field_selector == "" || *target_field_selector.begin() == '.');
