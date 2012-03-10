@@ -4607,7 +4607,13 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			 && different_modules)
 			{
 				cerr << "data type " << friendly_name
-					<< " exists in both modules ";
+					<< " exists in both modules ("
+					<< iter_pair.first->second.module->get_filename() 
+						<< " at " << std::hex << iter_pair.first->second.t->get_offset() << std::dec 
+						<< ", "
+						<< iter_pair.second->second.module->get_filename() 
+						<< " at " << std::hex << iter_pair.second->second.t->get_offset() << std::dec 
+						<< ")";
 				
 				if (correspondable_types)
 				{
@@ -4753,11 +4759,13 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 											//<< *source_type 
 											<< (source_type->get_name() ? *source_type->get_name() : "(anonymous)" )
 											<< " at " << std::hex << source_type->get_offset() << std::dec
+											<< " in module " << source_sink_pair.first->get_filename()
 											<< " to" 
 											//<< " sink module @" << source_sink_pair.second.get()
 											<< " sink data type " 
 											<< (sink_type->get_name() ? *sink_type->get_name() : "(anonymous)" )
-											<< " at " << std::hex << sink_type->get_offset() << std::dec << std::endl;
+											<< " at " << std::hex << sink_type->get_offset() << std::dec 
+											<< " in " << source_sink_pair.second->get_filename() << std::endl;
 											//<< *sink_type 
 
 										auto inserted = add_value_corresp(
@@ -4777,11 +4785,13 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 											//<< *source_type 
 											<< (source_type->get_name() ? *source_type->get_name() : "(anonymous)" )
 											<< " at " << std::hex << source_type->get_offset() << std::dec
+											<< " in " << source_sink_pair.first->get_filename()
 											<< " to" 
 											//<< " sink module @" << source_sink_pair.second.get()
 											<< " sink data type " 
 											<< (sink_type->get_name() ? *sink_type->get_name() : "(anonymous)" )
 											<< " at " << std::hex << sink_type->get_offset() << std::dec
+											<< " in " << source_sink_pair.second->get_filename()
 											<< " is at " << inserted->second.get() << endl;
 									} // end if not already exist
 									else cerr << "Skipping correspondence for matched data type named " 
