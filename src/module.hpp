@@ -199,7 +199,7 @@ namespace cake
 		static const dwarf::encap::die::attribute_map default_subprogram_attributes;
 
 		const dwarf::spec::abstract_def& get_spec() 
-		{ return static_cast<dwarf::encap::file*>(this)->get_spec(); }
+		{ return static_cast<dwarf::encap::file*>(this)->get_ds().get_spec(); }
 	
 	public:
 		elf_module(std::string local_filename, std::string makefile_filename);
