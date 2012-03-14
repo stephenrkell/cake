@@ -1201,7 +1201,7 @@ namespace cake
 		if (arg1 == arg2) return true;
 		if (!arg1 || !arg2) return false;
 		
-		// if not in the same file, not identical
+		// if not in the same module, not identical
 		if (!(&arg1->get_ds() == &arg2->get_ds())) return false;
 		
 		return data_types_are_nominally_identical(arg1, arg2);
