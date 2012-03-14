@@ -1,8 +1,8 @@
 #ifndef CAKE_COMMON_HPP_
 #define CAKE_COMMON_HPP_
 
-#include <iostream>
-#include <cassert>
+//#include <iostream>
+#include <cassert> // is this okay?
 
 namespace cake 
 { 
