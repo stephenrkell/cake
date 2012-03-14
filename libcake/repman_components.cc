@@ -79,6 +79,7 @@ void init_components_table(void)
 	 * where a conversions-table*/
 	using namespace cake;	
 	
+	self.update();
 	for (auto i_file = self.files.begin(); i_file != self.files.end(); ++i_file)
 	{
 		auto symbols = self.all_symbols(i_file);
@@ -161,6 +162,7 @@ void init_component_pairs_table(void)
 	// FIXME: delete this object
 	
 	/* We're building a table of component pairs, pointing to their conversion table. */
+	self.update();
 	for (auto i_file = self.files.begin(); i_file != self.files.end(); ++i_file)
 	{
 		auto symbols = self.all_symbols(i_file);

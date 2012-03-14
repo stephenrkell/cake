@@ -3,6 +3,9 @@ CFLAGS += -I${HOME}/opt/include
 CXXFLAGS += -std=gnu++0x -g3
 
 CAKE ?= ../../src/cake
+PMIRROR ?= $(realpath ../../../libpmirror.hg)
+DWARFPP ?= $(realpath ../../../libdwarfpp.hg)
+
 CXX ?= g++-4.5
 CXXFLAGS += -I/usr/local/include 
 CXXFLAGS += -I/usr/pkg/include 
@@ -15,8 +18,11 @@ ifneq ($(NO_LIBUNWIND),yes)
 LDLIBS += -lunwind -lunwind-ptrace -lunwind-$(shell uname -m)
 endif
 
-LDLIBS += -L$(shell dirname $(CAKE))/../libcake -lcake -Wl,-R$(realpath $(shell dirname $(CAKE))/../libcake)
-LDLIBS += -lreflect -lpmirror -ldwarfpp -ldwarf -lelf 
+LDFLAGS += -L$(shell dirname $(CAKE))/../libcake  -Wl,-R$(realpath $(shell dirname $(CAKE))/../libcake)
+LDFLAGS += -L$(PMIRROR)/lib -Wl,-R$(PMIRROR)/lib
+LDFLAGS += -L$(DWARFPP)/lib -Wl,-R$(DWARFPP)/lib
+
+LDLIBS += -lcake -lreflect -lpmirror -ldwarfpp -ldwarf -lelf 
 
 ifeq ($(REVERSE_LDLIBS),yes)
 $(warning Before reversing, LDLIBS is $(LDLIBS))
