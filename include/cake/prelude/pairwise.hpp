@@ -691,4 +691,4 @@ __cake_default = 0         }; }; \
 		value_convert<Source, Sink, FromComponent, ToComponent, RuleTag>().operator()(from_ref, to);
 		return to;
 	}
-}
+} /* end namespace cake */

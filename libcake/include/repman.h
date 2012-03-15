@@ -1,4 +1,4 @@
-#include <sys/types.h>
+// #include <sys/types.h>
 
 #ifndef LIBCAKE_REPMAN_H_
 #define LIBCAKE_REPMAN_H_
@@ -74,7 +74,7 @@ void allocate_co_object_idem_callee_rep(int do_not_use, void *object, int form, 
 /* Table lookups */
 conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, void *target_object);
 conv_func_t get_init_func(int from_rep, int to_rep, void *source_object, void *target_object);
-size_t get_co_object_size(void *obj, int obj_rep, int co_obj_rep);
+unsigned long get_co_object_size(void *obj, int obj_rep, int co_obj_rep);
 
 /* Components table lookups */
 const char *get_component_name_for_rep(int rep);

@@ -87,11 +87,20 @@ void init_components_table(void)
 			<< std::endl;
 		for (auto i_sym = symbols.first; i_sym != symbols.second; ++i_sym)
 		{
-			const char *strptr = elf_strptr(i_sym.base().origin->elf,
-				i_sym.base().origin->shdr.sh_link, 
-				(size_t)i_sym->st_name);
-			assert(strptr);
+			Elf *elf = i_sym.base().origin->elf;
+			process_image::symbols_iteration_state *origin = i_sym.base().origin.get();
+			size_t strtab_scndx = origin->shdr.sh_link;
+			size_t offset_in_strtab = (size_t)i_sym->st_name;
+			const char *strptr = elf_strptr(elf,
+				strtab_scndx, 
+				offset_in_strtab);
+			if (!strptr)
+			{
+				/* null symbol name -- continue */
+				continue;
+			}
 			std::string name(strptr);
+			//cerr << "Considering symbol " << name << endl;
 			
 			std::string::size_type off;
 			if (name.find("__cake_component_") == 0)
@@ -168,9 +177,11 @@ void init_component_pairs_table(void)
 		auto symbols = self.all_symbols(i_file);
 		for (auto i_sym = symbols.first; i_sym != symbols.second; ++i_sym)
 		{
-			std::string name = elf_strptr(i_sym.base().origin->elf,
+			auto name_ptr = elf_strptr(i_sym.base().origin->elf,
 				i_sym.base().origin->shdr.sh_link, 
 				(size_t)i_sym->st_name);
+			if (!name_ptr) continue; // null name
+			std::string name(name_ptr);
 			
 			std::string::size_type off;
 			if ((off = name.find("__cake_componentpair_")) == 0)
@@ -306,7 +317,7 @@ get_init_table_entry(void *obj, int obj_rep, int co_obj_rep)
 	else return 0;
 }	
 
-size_t get_co_object_size(void *obj, int obj_rep, int co_obj_rep)
+unsigned long get_co_object_size(void *obj, int obj_rep, int co_obj_rep)
 {
 	auto init_tbl_ent = get_init_table_entry(obj, obj_rep, co_obj_rep);
 	if (init_tbl_ent) return init_tbl_ent->to_size;
