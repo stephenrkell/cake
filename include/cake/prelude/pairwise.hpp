@@ -103,8 +103,6 @@ namespace cake
 		}
 	};
 	
-	
-	
 	/* We can't use default_cast_function because
 	 * our caller supplies both type args,
 	 * and we need to  partially specialize for the
@@ -187,11 +185,49 @@ namespace cake
 			DirectionIsFromSecondToFirst
 			>::__cake_default_to___cake_default_in_first __cake_default_to___cake_default_in_first[Dim]; 
 	}; /* we specialize this for various InFirsts */ 
-} // end namespace cake
+	
+#if defined (X86_64) || (defined (__x86_64__))
+#define SIGNED_16BIT_INT short
+#define UNSIGNED_16BIT_INT unsigned short
+#define SIGNED_32BIT_INT int
+#define UNSIGNED_32BIT_INT unsigned int
+#define SIGNED_64BIT_INT long
+#define UNSIGNED_64BIT_INT unsigned long
+#else
+#define __CAKE_SIGNED_16BIT_INT short
+#define __CAKE_UNSIGNED_16BIT_INT unsigned short
+#define __CAKE_SIGNED_32BIT_INT int
+#define __CAKE_UNSIGNED_32BIT_INT unsigned int
+#define __CAKE_SIGNED_64BIT_INT long long
+#define __CAKE_UNSIGNED_64BIT_INT unsigned long long
+#endif
+
 	/* NOTE: we will repeat the above specializations on a per-component-pair basis!
 	 * This is because C++ resolves partial specializations using some left-to-right precedence
 	 * (HMM: read up on the actual rules)
 	 * So they don't really have any effect! Here are the macros we will use. */
+#define default_corresponding_base_type_specializations(component_pair, base_type) \
+template < \
+        bool DirectionIsFromFirstToSecond \
+    > struct corresponding_type_to_first <component_pair,\
+	     base_type, \
+	     DirectionIsFromFirstToSecond> \
+ { \
+	typedef base_type __cake_default_to___cake_default_in_second; \
+    struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+__cake_default = 0         }; }; \
+}; \
+template < \
+        bool DirectionIsFromSecondToFirst \
+    > struct corresponding_type_to_second <component_pair,\
+	     base_type, \
+	     DirectionIsFromSecondToFirst> \
+ { \
+	typedef base_type __cake_default_to___cake_default_in_first; \
+    struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+__cake_default = 0         }; }; \
+}; 
+
 #define default_corresponding_type_specializations(component_pair) \
     template < /* This is the "unknown type" case: we define a type-to-void corresp */\
         typename InFirst, \
@@ -359,103 +395,20 @@ namespace cake
          struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
              __cake_default = 0          \
          }; }; \
-    } /* leave off so that our instantiator has the satisfaction of ending with ';' */
-
-namespace cake
-{
-	/* These represent value correspondences which Cake programmers don't
-	 * have to write explicitly: between base types and pointers. */
-#define template_head4_map_keyed_on_first_module(InFirst_typename) \
-    template < \
-        typename ComponentPair,  \
-        typename InFirst_typename,  \
-/*        int RuleTag,*/ \
-        bool DirectionIsFromFirstToSecond \
-    > struct corresponding_type_to_first 
-
-#define template_head4_map_keyed_on_second_module(InSecond_typename) \
-    template < \
-        typename ComponentPair,  \
-        typename InSecond_typename,  \
-/*        int RuleTag,*/ \
-        bool DirectionIsFromSecondToFirst \
-    > struct corresponding_type_to_second 
-	
-#define template_head3_map_keyed_on_first_module \
-    template < \
-        typename ComponentPair,  \
-/*        int RuleTag,*/ \
-        bool DirectionIsFromFirstToSecond \
-    > struct corresponding_type_to_first 
-
-#define template_head3_map_keyed_on_second_module \
-    template < \
-        typename ComponentPair,  \
-/*        int RuleTag,*/ \
-        bool DirectionIsFromSecondToFirst \
-    > struct corresponding_type_to_second 
-
-// empty mappings -- by default, there is no corresponding type
-// 
-// template_head4_map_keyed_on_first_module(InFirst) {};
-// template_head4_map_keyed_on_second_module(InSecond) {};
-// 	
-// // mappings for pointers -- by default, all pointer types correspond to void*
-// template_head4_map_keyed_on_first_module(InFirstIsAPtr)
-// <ComponentPair, InFirstIsAPtr*, /*RuleTag,*/ DirectionIsFromFirstToSecond>
-// : public corresponding_type_to_first<ComponentPair, void, /*RuleTag,*/
-// 	DirectionIsFromFirstToSecond> {
-// 	typedef void *__cake_default_to___cake_default_in_second;
-//          struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags {
-// __cake_default = 0         }; };
-// };	
-// template_head4_map_keyed_on_second_module(InSecondIsAPtr)
-// <ComponentPair, InSecondIsAPtr*, /*RuleTag,*/ DirectionIsFromSecondToFirst>
-// : public corresponding_type_to_second<ComponentPair, void, /*RuleTag,*/
-// 	DirectionIsFromSecondToFirst> {
-// typedef void *__cake_default_to___cake_default_in_first;
-//          struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags {
-// __cake_default = 0         }; };
-// };
-
-// mappings for base types -- by default, all base types correspond to themselves
-#define pair_of_mappings(base_type) \
-template_head3_map_keyed_on_first_module \
-<ComponentPair, base_type, /*RuleTag,*/ DirectionIsFromFirstToSecond> \
-: public corresponding_type_to_first<ComponentPair, void, /*RuleTag,*/ \
-	DirectionIsFromFirstToSecond> { \
-	typedef base_type __cake_default_to___cake_default_in_second; \
-    struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
-__cake_default = 0         }; }; \
-};	 \
-template_head3_map_keyed_on_second_module \
-<ComponentPair, base_type, /*RuleTag,*/ DirectionIsFromSecondToFirst> \
-: public corresponding_type_to_second<ComponentPair, void, /*RuleTag,*/ \
-	DirectionIsFromSecondToFirst> { \
-	typedef base_type __cake_default_to___cake_default_in_first; \
-    struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
-__cake_default = 0         }; }; \
-}
-
-pair_of_mappings(bool);
-pair_of_mappings(char);
-pair_of_mappings(wchar_t);
-pair_of_mappings(unsigned char);
-pair_of_mappings(short);
-pair_of_mappings(unsigned short);
-pair_of_mappings(long);
-pair_of_mappings(unsigned long);
-pair_of_mappings(float);
-pair_of_mappings(double);
-pair_of_mappings(long double);
-
-/* Now we can define the template specialization for base types.
- * Note that this works because we index these templates at the 
- * point of use, specifying a ComponentPair and all the other stuff.
- * In particular, we don't define a partial specialization for *just*
- * the ComponentPair -- whenever we specify a ComponentPair, we also specify
- * a type. So these will get overridden effectively only if a ComponentPair
- * defines its own rules for a particular type */
+    }; \
+	default_corresponding_base_type_specializations(component_pair, bool) \
+	default_corresponding_base_type_specializations(component_pair, char) \
+	default_corresponding_base_type_specializations(component_pair, wchar_t) \
+	default_corresponding_base_type_specializations(component_pair, unsigned char) \
+	default_corresponding_base_type_specializations(component_pair, __CAKE_SIGNED_16BIT_INT) \
+	default_corresponding_base_type_specializations(component_pair, __CAKE_UNSIGNED_16BIT_INT) \
+	default_corresponding_base_type_specializations(component_pair, __CAKE_SIGNED_32BIT_INT) \
+	default_corresponding_base_type_specializations(component_pair, __CAKE_UNSIGNED_32BIT_INT) \
+	default_corresponding_base_type_specializations(component_pair, __CAKE_SIGNED_64BIT_INT) \
+	default_corresponding_base_type_specializations(component_pair, __CAKE_UNSIGNED_64BIT_INT) \
+	default_corresponding_base_type_specializations(component_pair, float) \
+	default_corresponding_base_type_specializations(component_pair, double) \
+	default_corresponding_base_type_specializations(component_pair, long double) 
 
 	/* All value_convert operator()s MUST have the same ABI, so that they
 	 * can be dispatched to by the runtime!
