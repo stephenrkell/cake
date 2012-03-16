@@ -1639,7 +1639,7 @@ namespace cake
 			// which necessarily goes in CU order,
 			// and continue from there.
 			// FIXME: this inefficient because it walks the whole list of DIEs.
-			// We could probably just construct the conjoining_iterator directly,
+			// We could probably just construct the concatenating_iterator directly,
 			// knowing its offset.
 			auto visible_toplevel_seq = (*i_mod)->get_ds().toplevel()
 				->visible_grandchildren_sequence();
@@ -4147,7 +4147,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		auto r_cus = make_pair(r_toplevel->compile_unit_children_begin(),
 			r_toplevel->compile_unit_children_end());
 		auto r_subprograms = make_shared<
-			srk31::conjoining_sequence<
+			srk31::concatenating_sequence<
 				spec::compile_unit_die::subprogram_iterator
 				>
 			>();
@@ -4170,7 +4170,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		auto p_cus = make_pair(p_toplevel->compile_unit_children_begin(),
 			p_toplevel->compile_unit_children_end());
 		auto p_subprograms = make_shared<
-			srk31::conjoining_sequence<
+			srk31::concatenating_sequence<
 				spec::compile_unit_die::subprogram_iterator
 				>
 			>();

@@ -82,7 +82,7 @@ void init_components_table(void)
 	self.update();
 	for (auto i_file = self.files.begin(); i_file != self.files.end(); ++i_file)
 	{
-		auto symbols = self.all_symbols(i_file);
+		auto symbols = self./*all_*/static_symbols(i_file);
 		std::cerr << "Looking for Cake component definitions in symbols of file " << i_file->first
 			<< std::endl;
 		for (auto i_sym = symbols.first; i_sym != symbols.second; ++i_sym)
@@ -174,7 +174,7 @@ void init_component_pairs_table(void)
 	self.update();
 	for (auto i_file = self.files.begin(); i_file != self.files.end(); ++i_file)
 	{
-		auto symbols = self.all_symbols(i_file);
+		auto symbols = self.static_symbols(i_file);
 		for (auto i_sym = symbols.first; i_sym != symbols.second; ++i_sym)
 		{
 			auto name_ptr = elf_strptr(i_sym.base().origin->elf,
@@ -182,6 +182,7 @@ void init_component_pairs_table(void)
 				(size_t)i_sym->st_name);
 			if (!name_ptr) continue; // null name
 			std::string name(name_ptr);
+			cerr << "Considering symbol " << name << endl;
 			
 			std::string::size_type off;
 			if ((off = name.find("__cake_componentpair_")) == 0)
@@ -385,11 +386,11 @@ conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, voi
 	
 	std::cerr << "Getting rep conv func from object: ";
 	self.print_object(std::cerr, source_object);
-	if (discovered_source) std::cerr << *discovered_source;
+	if (discovered_source) std::cerr << ", " << *discovered_source;
 	else std::cerr << "(assumed void type)";
 	std::cerr << " to object: ";
 	self.print_object(std::cerr, target_object);
-	if (discovered_target) std::cerr << *discovered_target;
+	if (discovered_target) std::cerr << ", " << *discovered_target;
 	else std::cerr << "(assumed void type)";
 	std::cerr << std::endl;
 	

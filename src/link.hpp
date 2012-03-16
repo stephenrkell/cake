@@ -55,7 +55,7 @@ namespace cake {
 		module_ptr module_for_die(shared_ptr<spec::basic_die> p_d);
 
 	private:
-		typedef srk31::conjoining_iterator<
+		typedef srk31::concatenating_iterator<
 			encap::compile_unit_die::subprogram_iterator>
 				subprograms_in_file_iterator;
 		// ^-- this will give us all subprograms, even static / non-visible ones...
