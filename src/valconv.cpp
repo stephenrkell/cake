@@ -173,7 +173,7 @@ namespace cake
 			}
 			else return false;
 			
-			auto found = sink->get_ds().toplevel()->visible_resolve(
+			auto found = sink->get_ds().toplevel()->resolve_visible(
 				dmn.begin(), dmn.end());
 			if (!found) return false;
 			auto subprogram = dynamic_pointer_cast<subprogram_die>(found);

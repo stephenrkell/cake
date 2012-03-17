@@ -1301,7 +1301,7 @@ namespace cake
 // 					if (function_dmn) 
 // 					{
 // 						/* Resolve the function name against the module. */
-// 						auto found = module->get_ds().toplevel()->visible_resolve(
+// 						auto found = module->get_ds().toplevel()->resolve_visible(
 // 							function_dmn->begin(), function_dmn->end());
 // 						if (found)
 // 						{
@@ -1407,9 +1407,9 @@ namespace cake
 					definite_member_name source_sym_mn(1, *source_symname);
 					definite_member_name sink_sym_mn(1, *sink_symname);
 					auto source_subprogram = 
-						(*i_corresp_ptr)->second.source->get_ds().toplevel()->visible_resolve(source_sym_mn.begin(), source_sym_mn.end());
+						(*i_corresp_ptr)->second.source->get_ds().toplevel()->resolve_visible(source_sym_mn.begin(), source_sym_mn.end());
 					auto sink_subprogram =
-						(*i_corresp_ptr)->second.sink->get_ds().toplevel()->visible_resolve(sink_sym_mn.begin(), sink_sym_mn.end());
+						(*i_corresp_ptr)->second.sink->get_ds().toplevel()->resolve_visible(sink_sym_mn.begin(), sink_sym_mn.end());
 					assert(source_subprogram->get_tag() == DW_TAG_subprogram
 					 && sink_subprogram->get_tag() == DW_TAG_subprogram);
 					dwarf::spec::abstract_dieset::iterator i_source_arg 
@@ -3688,7 +3688,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 
 		auto source_mn = read_definite_member_name(source_data_type_mn);
 		auto source_data_type_opt = dynamic_pointer_cast<dwarf::spec::type_die>(
-			source->get_ds().toplevel()->visible_resolve(
+			source->get_ds().toplevel()->resolve_visible(
 			source_mn.begin(), source_mn.end()));
 		if (!source_data_type_opt) {
 			RAISE(corresp, "could not resolve source data type");
@@ -3696,7 +3696,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		assert(module_of_die(source_data_type_opt) == source);
 		auto sink_mn = read_definite_member_name(sink_data_type_mn);
 		auto sink_data_type_opt = dynamic_pointer_cast<dwarf::spec::type_die>(
-			sink->get_ds().toplevel()->visible_resolve(
+			sink->get_ds().toplevel()->resolve_visible(
 			sink_mn.begin(), sink_mn.end()));
 		if (!sink_data_type_opt) {
 			RAISE(corresp, "could not resolve sink data type");
@@ -4695,12 +4695,12 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 // 									auto source_type = (source_synonymy.find(*i_k) != source_synonymy.end()) ?
 // 											(source_is_synonym = true, source_synonymy[*i_k]) : /*, // *i_k, // */ 
 // 											dynamic_pointer_cast<dwarf::spec::type_die>(
-// 												source_found = source_sink_pair.first->get_ds().toplevel()->visible_resolve(
+// 												source_found = source_sink_pair.first->get_ds().toplevel()->resolve_visible(
 // 													i_k->begin(), i_k->end()));
 // 									auto sink_type = (sink_synonymy.find(*i_k) != sink_synonymy.end()) ?
 // 											(sink_is_synonym = true, sink_synonymy[*i_k]) : /*, // *i_k, // */ 
 // 											dynamic_pointer_cast<dwarf::spec::type_die>(
-// 												sink_found = source_sink_pair.second->get_ds().toplevel()->visible_resolve(
+// 												sink_found = source_sink_pair.second->get_ds().toplevel()->resolve_visible(
 // 													i_k->begin(), i_k->end()));
 // 									const char *matched_name = i_k->at(0).c_str();
 // 
@@ -4867,7 +4867,19 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			corresp_module,
 			flow_from_type_module_to_corresp_module);
 		if (result.size() == 1) return result.at(0);
-		else return shared_ptr<dwarf::spec::type_die>();
+		else 
+		{
+			if (result.size() > 1)
+			{
+				cerr << "Warning: non-unique corresponding types for " << type->summary() << endl;
+				for (auto i_cand = result.begin(); i_cand != result.end(); ++i_cand)
+				{
+					cerr << "Candidate: " << (*i_cand)->summary() << endl;
+				}
+			}
+			else cerr << "Warning: found no corresponding types for " << type->summary() << endl;
+			return shared_ptr<dwarf::spec::type_die>();
+		}
 	}
 
 	void link_derivation::compute_wrappers() 

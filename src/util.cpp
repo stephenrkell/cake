@@ -1040,7 +1040,7 @@ namespace cake
 						if (GET_TYPE(invoked_function) == CAKE_TOKEN(IDENT))
 						{ dmn.push_back(CCP(GET_TEXT(invoked_function))); }
 						else dmn = read_definite_member_name(invoked_function);
-						auto found_dwarf = dwarf_context->get_ds().toplevel()->visible_resolve(
+						auto found_dwarf = dwarf_context->get_ds().toplevel()->resolve_visible(
 							dmn.begin(), dmn.end());
 						auto found_subp = dynamic_pointer_cast<dwarf::spec::subprogram_die>(found_dwarf);
 						assert(found_dwarf); assert(found_subp);
@@ -1087,7 +1087,7 @@ namespace cake
 						auto dmn = read_definite_member_name(memberNameExpr);
 						assert(dmn.size() == 1);
 						
-						auto found = dwarf_context->get_ds().toplevel()->visible_resolve(
+						auto found = dwarf_context->get_ds().toplevel()->resolve_visible(
 							dmn.begin(), dmn.end());
 						assert(found);
 						subprogram = dynamic_pointer_cast<spec::subprogram_die>(found);
@@ -1258,7 +1258,9 @@ namespace cake
 			if (!opt_ident_path) clog << "No name path, so cannot canonicalise further." << endl;
 			if (opt_ident_path)
 			{
-				auto resolved_all = p_mod->get_ds().toplevel()->visible_resolve_all(
+				/* Instead of doing resolve_all_visible and then */
+			
+				auto resolved_all = p_mod->get_ds().toplevel()->resolve_all_visible(
 					opt_ident_path->begin(), opt_ident_path->end()
 				);
 				clog << "Name path: " << definite_member_name(*opt_ident_path) << endl;
@@ -1414,7 +1416,7 @@ namespace cake
 				BIND3(expr, argsMultiValue, MULTIVALUE);
 				BIND3(expr, functionNameTree, IDENT);
 				auto function_name = vector<string>(1, unescape_ident(CCP(GET_TEXT(functionNameTree))));
-				auto found = p_mod->get_ds().toplevel()->visible_resolve(function_name.begin(),
+				auto found = p_mod->get_ds().toplevel()->resolve_visible(function_name.begin(),
 					function_name.end());
 				if (found && found->get_tag() == DW_TAG_subprogram) return true;
 				else return false;

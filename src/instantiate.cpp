@@ -152,7 +152,7 @@ namespace cake
 
 		// HACK: cloned from below
 		definite_member_name mn(1, objtype);
-		auto named = (*input_modules.begin())->get_ds().toplevel()->visible_resolve(
+		auto named = (*input_modules.begin())->get_ds().toplevel()->resolve_visible(
 			mn.begin(), mn.end());
 		auto named_type = dynamic_pointer_cast<spec::type_die>(named);
 		auto named_with_data_members = dynamic_pointer_cast<spec::with_data_members_die>(named_type);
@@ -215,7 +215,7 @@ namespace cake
 		*output_cxx_file << "using namespace ::cake::" << r.module_inverse_tbl[*input_modules.begin()] << ";" << endl;
 		// instantiate each function pointer in the named data type
 		definite_member_name mn(1, objtype);
-		auto named = (*input_modules.begin())->get_ds().toplevel()->visible_resolve(
+		auto named = (*input_modules.begin())->get_ds().toplevel()->resolve_visible(
 			mn.begin(), mn.end());
 		auto named_type = dynamic_pointer_cast<spec::type_die>(named);
 		auto named_with_data_members = dynamic_pointer_cast<spec::with_data_members_die>(named_type);

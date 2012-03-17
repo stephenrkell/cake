@@ -476,7 +476,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			std::vector<std::string> called_name_vec(1, called_name);
 			unique_called_subprogram 
 			 = boost::dynamic_pointer_cast<dwarf::spec::subprogram_die>(
-			 		corresps.at(0)->second.sink->get_ds().toplevel()->visible_resolve(
+			 		corresps.at(0)->second.sink->get_ds().toplevel()->resolve_visible(
 			 			called_name_vec.begin(), called_name_vec.end()
 					)
 				);
@@ -1575,7 +1575,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 // 				definite_member_name mn(1, direction_is_out 
 // 					? *i_binding->second.indirect_local_tagstring_out
 // 					: *i_binding->second.indirect_local_tagstring_in);
-// 				auto found = old_module->get_ds().toplevel()->visible_resolve(mn.begin(), mn.end());
+// 				auto found = old_module->get_ds().toplevel()->resolve_visible(mn.begin(), mn.end());
 // 				assert(found);
 // 				auto found_type = dynamic_pointer_cast<spec::type_die>(found);
 // 				assert(found_type);
@@ -1836,7 +1836,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			BIND3(pattern, eventParameterNamesAnnotation, KEYWORD_NAMES);
 			definite_member_name call_mn = read_definite_member_name(memberNameExpr);
 			if (call_mn.size() != 1) RAISE(memberNameExpr, "may not be compound");			
-			auto caller = source_module->get_ds().toplevel()->visible_resolve(
+			auto caller = source_module->get_ds().toplevel()->resolve_visible(
 				call_mn.begin(), call_mn.end());
 			if (!caller) RAISE(memberNameExpr, "does not name a visible function");
 			if ((*caller).get_tag() != DW_TAG_subprogram) 
@@ -2250,7 +2250,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				*p_out << virtual_fq_typename << " __cake_" << *i_virt->overall_cake_name 
 					<< " = " /* "(" << virtual_fq_typename << ") " */ " {" << endl;
 				definite_member_name virtual_typename_dmn(1, i_virt->virtual_typename);
-				auto virtual_type_die_found = source_module->get_ds().toplevel()->visible_resolve(
+				auto virtual_type_die_found = source_module->get_ds().toplevel()->resolve_visible(
 					virtual_typename_dmn.begin(), virtual_typename_dmn.end());
 				assert(virtual_type_die_found);
 				auto virtual_type_die = dynamic_pointer_cast<structure_type_die>(virtual_type_die_found);
@@ -3316,7 +3316,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 		std::string function_name = CCP(GET_TEXT(functionNameTree));
 		std::vector<std::string> mn(1, function_name);
-		auto callee = ctxt.modules.current->get_ds().toplevel()->visible_resolve(
+		auto callee = ctxt.modules.current->get_ds().toplevel()->resolve_visible(
 					mn.begin(), mn.end());
 		if (!callee || callee->get_tag() != DW_TAG_subprogram)
 		{

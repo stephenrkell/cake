@@ -106,7 +106,7 @@ namespace cake
 		INIT;
 		bool success = false;
 		/* We have two ways of resolving names:
-		 * using visible_resolve on a file_toplevel_die
+		 * using resolve_visible on a file_toplevel_die
 		 * or
 		 * using resolve on any other kind of DIE. 
 		 * How to represent this function? Lambdas are no good
@@ -122,7 +122,7 @@ namespace cake
 			shared_ptr<basic_die> 
 			resolve(const definite_member_name& mn)
 			{
-				return p_toplevel->visible_resolve(mn.begin(), mn.end());
+				return p_toplevel->resolve_visible(mn.begin(), mn.end());
 			}
 		} resolver(get_ds().toplevel());
 		 
@@ -1125,7 +1125,7 @@ namespace cake
 			case CAKE_TOKEN(IDENT): {
 				// we resolve the ident and check it resolves to a type
 				definite_member_name dmn; dmn.push_back(unescape_ident(CCP(GET_TEXT(t))));
-				auto found = this->get_ds().toplevel()->visible_resolve_all(
+				auto found = this->get_ds().toplevel()->resolve_all_visible(
 					dmn.begin(),
 					dmn.end()
 				);
@@ -1228,7 +1228,7 @@ namespace cake
 				encap_cu,
 				opt<string>(name) 
 			);
-		this->get_ds().toplevel()->clear_cache(name);
+		this->get_ds().toplevel()->clear_vg_cache(name);
 		dynamic_pointer_cast<encap::typedef_die>(created)->set_type(p_d);
 		return dynamic_pointer_cast<spec::type_die>(created);
 	}
@@ -1247,7 +1247,7 @@ namespace cake
 				encap_cu,
 				opt<string>(name) 
 			);
-		this->get_ds().toplevel()->clear_cache(name);
+		this->get_ds().toplevel()->clear_vg_cache(name);
 		return dynamic_pointer_cast<spec::structure_type_die>(created);
 	}
 	

@@ -192,7 +192,7 @@ namespace cake
 		boost::shared_ptr<std::ifstream> input_stream;
 							
 	protected:
-		static const dwarf::encap::die_off_list empty_child_list;
+		static const std::set<Dwarf_Off> empty_child_list;
 		static const dwarf::encap::die::attribute_map empty_attribute_map;
 		
 		static const dwarf::encap::die::attribute_map::value_type default_subprogram_attr_entries[];
