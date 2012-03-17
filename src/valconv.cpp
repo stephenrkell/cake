@@ -433,7 +433,8 @@ namespace cake
 		
 		typedef link_derivation::val_corresp_map_t::value_type ent;
 		
-		if (found_source_field_type->get_concrete_type()->get_tag() == DW_TAG_array_type)
+		if (found_source_field_type &&  // source field is optional
+			found_source_field_type->get_concrete_type()->get_tag() == DW_TAG_array_type)
 		{
 			found_source_field_type = dynamic_pointer_cast<spec::array_type_die>(found_source_field_type)
 				->ultimate_element_type();

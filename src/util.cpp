@@ -1005,6 +1005,8 @@ namespace cake
 		while (node && (node_ancestors.push_back(node), (node = GET_PARENT(node)) != NULL))
 		//for (auto i_node = parent_chain.begin(); i_node != parent_chain.end(); ++i_node, ++i_path)
 		{
+			// debugging
+			assert((unsigned long) node > 0x100000);
 			if (!node) 
 			{
 				// we've reached the top
