@@ -139,11 +139,16 @@ namespace cake
         bool DirectionIsFromFirstToSecond
     > struct corresponding_type_to_first <ComponentPair, InFirstPtrTarget*, DirectionIsFromFirstToSecond>
     {
-		typedef void *__cake_default_to___cake_default_in_second; 
-         struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
-             __cake_default = 0          \
-         }; }; \
+		//typedef void *__cake_default_to___cake_default_in_second; 
+		typedef 
+		typename corresponding_type_to_first<
+			ComponentPair, InFirstPtrTarget, DirectionIsFromFirstToSecond
+		>::__cake_default_to___cake_default_in_second
+		 *__cake_default_to___cake_default_in_second;
 		
+		struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
+			__cake_default = 0 \
+		}; }; \
 	}; /* we specialize this for various InSeconds */ 
     template <
         typename ComponentPair, 
@@ -151,10 +156,16 @@ namespace cake
         bool DirectionIsFromSecondToFirst
     > struct corresponding_type_to_second<ComponentPair, InSecondPtrTarget*, DirectionIsFromSecondToFirst> 
     { 
-		typedef void *__cake_default_to___cake_default_in_first; 
-         struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
-             __cake_default = 0          \
-         }; }; \
+		//typedef void *__cake_default_to___cake_default_in_first; 
+		typedef
+		typename corresponding_type_to_second<
+			ComponentPair, InSecondPtrTarget, DirectionIsFromSecondToFirst
+		>::__cake_default_to___cake_default_in_first
+		 *__cake_default_to___cake_default_in_first;
+		
+		struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
+			__cake_default = 0 \
+		}; }; \
 		
 	}; /* we specialize this for various InFirsts */ 
 	
@@ -364,7 +375,12 @@ __cake_default = 0         }; }; \
     struct corresponding_type_to_second< \
        component_pair, PointerTarget*, true> \
     { \
-         typedef void *__cake_default_to___cake_default_in_first; \
+         /* typedef void *__cake_default_to___cake_default_in_first; */ \
+typedef \
+typename corresponding_type_to_second< \
+	component_pair, PointerTarget, true \
+>::__cake_default_to___cake_default_in_first \
+ *__cake_default_to___cake_default_in_first; \
          struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
              __cake_default = 0         \
          }; }; \
@@ -373,7 +389,12 @@ __cake_default = 0         }; }; \
     struct corresponding_type_to_first< \
         component_pair,  PointerTarget*, false> \
     { \
-         typedef void *__cake_default_to___cake_default_in_second; \
+         /* typedef void *__cake_default_to___cake_default_in_second; */ \
+typedef \
+typename corresponding_type_to_first< \
+	component_pair, PointerTarget, false \
+>::__cake_default_to___cake_default_in_second \
+ *__cake_default_to___cake_default_in_second; \
          struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
              __cake_default = 0          \
          }; }; \
@@ -382,7 +403,12 @@ __cake_default = 0         }; }; \
     struct corresponding_type_to_second< \
        component_pair, PointerTarget*, false> \
     { \
-         typedef void *__cake_default_to___cake_default_in_first; \
+         /* typedef void *__cake_default_to___cake_default_in_first; */ \
+typedef \
+typename corresponding_type_to_second< \
+	component_pair, PointerTarget, false \
+>::__cake_default_to___cake_default_in_first \
+ *__cake_default_to___cake_default_in_first; \
          struct rule_tag_in_first_given_second_artificial_name___cake_default { enum __cake_rule_tags { \
              __cake_default = 0         \
          }; }; \
@@ -391,7 +417,12 @@ __cake_default = 0         }; }; \
     struct corresponding_type_to_first< \
         component_pair, PointerTarget*, true> \
     { \
-         typedef void *__cake_default_to___cake_default_in_second; \
+         /* typedef void *__cake_default_to___cake_default_in_second; */ \
+typedef \
+typename corresponding_type_to_first< \
+	component_pair, PointerTarget, true \
+>::__cake_default_to___cake_default_in_second \
+ *__cake_default_to___cake_default_in_second; \
          struct rule_tag_in_second_given_first_artificial_name___cake_default { enum __cake_rule_tags { \
              __cake_default = 0          \
          }; }; \

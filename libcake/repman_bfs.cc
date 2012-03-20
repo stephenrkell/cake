@@ -37,6 +37,40 @@ void build_adjacency_list_recursive(std::deque<node_rec>& adj_u,
 
 enum node_colour { WHITE, GREY, BLACK };
 
+static
+shared_ptr<type_die>
+imprecise_static_type_from_stackptr_helper(void *stackptr_helper)
+{
+	pmirror::addr_t object_start_addr;
+	pmirror::addr_t frame_base;
+	pmirror::addr_t frame_return_addr;
+
+	/* Our stackptr_helper points to a stack location
+	 * holding a pointer
+	 * whose target type is 
+	 * that being passed to ensure_co_objects_allocated...
+	 * which is *itself* a pointer,
+	 * whose target type is the imprecise_static_type hint that we need. */
+
+	shared_ptr<with_dynamic_location_die> stackptr_var
+	 = pmirror::self.discover_stack_object(
+		(pmirror::addr_t) stackptr_helper,
+		&object_start_addr, &frame_base, &frame_return_addr);
+	
+	shared_ptr<type_die> stackptr_type = stackptr_var->get_type();
+	assert(stackptr_type);
+	shared_ptr< ::dwarf::spec::pointer_type_die> stackptr_ptr_type
+	 = boost::dynamic_pointer_cast< ::dwarf::spec::pointer_type_die>(stackptr_type);
+	assert(stackptr_ptr_type);
+	
+	shared_ptr<type_die> stackptr_target_type = stackptr_ptr_type->get_type();
+	shared_ptr< ::dwarf::spec::pointer_type_die> stackptr_target_ptr_type
+	 = boost::dynamic_pointer_cast< ::dwarf::spec::pointer_type_die>(stackptr_target_type);
+	assert(stackptr_target_ptr_type);
+	
+	return stackptr_target_ptr_type->get_type();
+}
+
 void walk_bfs(int object_rep, void *object, void *stackptr_helper, int co_object_rep,
 	void (*on_blacken)(void*, int, int, int), int arg_n_minus_1, int arg_n, int obj_is_leaf)
 {
@@ -67,7 +101,7 @@ void walk_bfs(int object_rep, void *object, void *stackptr_helper, int co_object
 	process_image::addr_t object_actual_start_addr = 0;
 	auto descr = pmirror::self.discover_object_descr(
 		(process_image::addr_t) object, 
-		shared_ptr<type_die>(), // <-- imprecise static type
+		imprecise_static_type_from_stackptr_helper(stackptr_helper), // <-- imprecise static type
 		&object_actual_start_addr
 	);
 	assert(descr);
@@ -163,7 +197,7 @@ void build_adjacency_list_recursive(
 	if (!type_at_this_offset) return;
 
 	auto structured_type_at_this_offset
-	 = dynamic_pointer_cast<dwarf::spec::with_data_members_die>(type_at_this_offset);
+	 = dynamic_pointer_cast<with_data_members_die>(type_at_this_offset);
 	 
 	// We can assert this because the loop below only recurses on
 	// structured-typed members. We don't need to worry about getting ints.
@@ -175,7 +209,7 @@ void build_adjacency_list_recursive(
 		/* This will iterate through all members. 
 		 * We only want those with structured types. */
 		if (!((*i_subobj)->get_type() && 
-			dynamic_pointer_cast<dwarf::spec::with_data_members_die>((*i_subobj)->get_type())))
+			dynamic_pointer_cast<with_data_members_die>((*i_subobj)->get_type())))
 		{
 			continue;
 		}
@@ -209,13 +243,19 @@ void build_adjacency_list_recursive(
 	{
 		/* This will iterate through all members. 
 		 * We only want those with pointer types. */
-		if (!((*i_ptrmemb)->get_type() && 
-			(dynamic_pointer_cast<dwarf::spec::pointer_type_die>((*i_ptrmemb)->get_type())
-			|| dynamic_pointer_cast<dwarf::spec::reference_type_die>((*i_ptrmemb)->get_type()))
+		if (!(*i_ptrmemb)->get_type()) continue;
+		auto concrete_t = (*i_ptrmemb)->get_type()->get_concrete_type();
+		if (!(concrete_t && 
+			(dynamic_pointer_cast< ::dwarf::spec::pointer_type_die>(concrete_t)
+			|| dynamic_pointer_cast< ::dwarf::spec::reference_type_die>(concrete_t))
 			))
 		{
 			continue;
 		}
+		
+		// get the static type of the pointed-to object, as a failback
+		auto pointed_to_static_type 
+		= dynamic_pointer_cast<type_chain_die>(concrete_t)->get_type();
 
 		// get the address of the pointed-to object
 		void *pointed_to_object = 
@@ -231,7 +271,7 @@ void build_adjacency_list_recursive(
 			process_image::addr_t object_actual_start_addr;
 			auto descr = pmirror::self.discover_object_descr(
 				(process_image::addr_t) pointed_to_object, 
-				shared_ptr<type_die>(), // <-- imprecise static type
+				pointed_to_static_type, // <-- imprecise static type
 				&object_actual_start_addr
 			);
 			void *object_actual_start = (void*) object_actual_start_addr;

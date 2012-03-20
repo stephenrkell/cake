@@ -78,7 +78,7 @@ namespace cake
 			walk_bfs(
 				source_rep_id,
 				obj,
-				stackptr_helper, 
+				stackptr_helper,
 				target_rep_id,
 				allocate_co_object_idem,
 				source_rep_id,

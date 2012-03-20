@@ -1196,9 +1196,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 				/*if (is_a_pointer_this_time)*/ *p_out <<
 					"ensure_is_a_pointer(";
 				*p_out << cur_cxxname;
-				/*if (is_a_pointer_this_time)*/ *p_out << ")";
+				/*if (is_a_pointer_this_time)*/ *p_out << "), ";
 				*p_out << "&" << id << ", "; // <-- stackptr_helper
-				*p_out << ", REP_ID("
+				*p_out << "REP_ID("
 					<< m_d.name_of_module(new_module)
 					<<  "), "
 					// is this an output parameter?
