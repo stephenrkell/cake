@@ -196,7 +196,7 @@ decode_cake_component_string
 )
 {
 	// HACK: make this robust
-	unsigned startpos = 0;
+	size_t startpos = 0;
 	string source_fname;
 	string compile_dir;
 	string producer;
