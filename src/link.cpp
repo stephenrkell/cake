@@ -206,7 +206,19 @@ namespace cake
 		{
 			cerr << "Considering interface pair (" << i_pair->first->get_filename()
 				<< ", " << i_pair->second->get_filename() << ")" << endl;
-			// FIXME: this code is SLOW!
+
+			// To avoid traversing all the val corresps for every dep, 
+			// we keep a cache of deps already known to be satisfied.
+			// This is effectively a view onto the set of val corresps,
+			// although we don't bother storing pointers to the corresps,
+			// as just their existence is sufficient. We don't bother
+			// canonicalising, but we do avoid comparing pointers directly.
+			set<
+				std::pair < 
+					abstract_dieset::position_and_path,
+					abstract_dieset::position_and_path
+				>
+			> satisfied_cache;
 			for (auto i_val_corresp = this->val_corresps.equal_range(*i_pair).first;
 					i_val_corresp != this->val_corresps.equal_range(*i_pair).second;
 					++i_val_corresp)
@@ -224,13 +236,23 @@ namespace cake
 				// check that they are satisfied
 				for (auto i_dep = deps_vec.begin(); i_dep != deps_vec.end(); ++i_dep)
 				{
+					// 0. build cache key 
+					auto cache_key = make_pair(
+						i_dep->first->iterator_here().base(),
+						i_dep->second->iterator_here().base()
+					);
+					// 1. check cache
+					if (satisfied_cache.find(cache_key) != satisfied_cache.end()) continue;
+					
+					// 2. okay, traverse candidates
 					auto satisfying_candidates = value_conversion::dep_is_satisfied(
 						this->val_corresps.equal_range(*i_pair).first,
 						this->val_corresps.equal_range(*i_pair).second,
 						*i_dep);
 					// if we found a satisfying corresp, carry on...
 					if (satisfying_candidates.size() != 0
-					/* != this->val_corresps.equal_range(*i_pair).second*/ ) continue; 
+					/* != this->val_corresps.equal_range(*i_pair).second*/ )
+					{ satisfied_cache.insert(cache_key); continue; }
 					// FIXME: need to do anything here? Hmm, no, C++ compiler will choose. 
 					// ... otherwise we need to take action.
 					else 
@@ -246,6 +268,7 @@ namespace cake
 							cerr << "Falling back on C++-assignability to convert from "
 								<< get_type_name(i_dep->first) 
 								<< " to " << get_type_name(i_dep->second) << endl;
+							satisfied_cache.insert(cache_key);
 							continue;
 						}
 
@@ -310,6 +333,7 @@ namespace cake
 									sink_name_parts : source_name_parts ));
 						
 						cerr << "Inserted corresp is at " << inserted->second.get() << endl;
+						satisfied_cache.insert(cache_key);
 						// FIXME: now we recompute dependencies until we get a fixed point
 					}
 				}
