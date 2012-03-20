@@ -99,3 +99,12 @@ run:
 LD_PRELOAD=\"/usr/local/src/dlmalloc.so $(HOOKS)\" \
 gdb --args /usr/src/usr.sbin/puffs/rump_caketmpfs/rump_tmpfs tmpfs /mnt"
 
+# some more recipes
+#  419  su -- root -c "gdb --command=gdbinit --args ./rump_tmpfs tmpfs   
+
+# 421  su -- root -c "LD_LIBRARY_PATH=/usr/local/lib:/usr/pkg/lib: 
+# LD_PRELOAD=\"
+# /usr/local/src/libpmirror.hg/lib/libheap_index_preload_hooks.so 
+# /usr/local/src/d
+# lmalloc.so\" ./rump_tmpfs tmpfs /mnt" /mnt"
+
