@@ -213,8 +213,9 @@ namespace cake
 			// although we don't bother storing pointers to the corresps,
 			// as just their existence is sufficient. We don't bother
 			// canonicalising, but we do avoid comparing pointers directly.
+			// FIXME: this cache only makes a small difference, so perhaps rethink.
 			set<
-				std::pair < 
+				pair < 
 					abstract_dieset::position_and_path,
 					abstract_dieset::position_and_path
 				>

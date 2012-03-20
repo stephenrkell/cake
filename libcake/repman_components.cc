@@ -33,6 +33,8 @@ using boost::dynamic_pointer_cast;
 using boost::shared_ptr;
 using std::string;
 using std::vector;
+using std::cerr;
+using std::endl;
 using dwarf::spec::compile_unit_die;
 using dwarf::spec::type_die;
 using pmirror::process_image;
@@ -55,6 +57,12 @@ typedef std::map<
 	component_pair_tables
 > component_pairs_table_t;
 static component_pairs_table_t *p_component_pairs __attribute__((alias("component_pairs_table")));
+
+// helper
+static void 
+decode_cake_component_string(
+	const string&, vector<string>&, vector<string>& compile_dirs,  vector<string>&
+);
 
 void init_components_table(void)
 {
@@ -116,42 +124,58 @@ void init_components_table(void)
 				 * with the strings we found. */
 				std::cerr << "Symbol data is " << sym_data << std::endl;
 				
-				// HACK: make this robust
-				std::string::size_type caret_pos1 = sym_data.find('^');
-				assert(caret_pos1 == 0);
-				std::string::size_type caret_pos2 = sym_data.find('^', caret_pos1 + 1);
-				std::string::size_type caret_pos3 = sym_data.find('^', caret_pos2 + 1);
-				assert(caret_pos2 > caret_pos1 && caret_pos3 > caret_pos2);
+				vector<string> source_fnames;
+				vector<string> compile_dirs;
+				vector<string> producers;
+				decode_cake_component_string(sym_data, source_fnames, compile_dirs, producers);
+				// we should get some stuff out
+				assert(source_fnames.size() > 0);
 				
-				std::string source_fname = sym_data.substr(caret_pos1 + 1, caret_pos2 - caret_pos1 - 1);
-				std::string compile_dir = sym_data.substr(caret_pos2 + 1, caret_pos3 - caret_pos2 - 1);
-				std::string producer = sym_data.substr(caret_pos3 + 1, sym_data.size() - caret_pos3 - 2);
-				
-				/* Search the file containing this component 
-				 * for a CU that matches. */
-				bool success = false;
+				/* For each CU in the current file, test whether it 
+				 * is an element of this component,
+				 * and if so, put it in the relevant place in the components table. */
+				vector<bool> matched;
 				for (auto i_cu = i_file->second.p_ds->toplevel()->compile_unit_children_begin();
 					i_cu != i_file->second.p_ds->toplevel()->compile_unit_children_end();
 					++i_cu)
 				{
-					if (
-					    (*i_cu)->get_name() && *(*i_cu)->get_name() == source_fname
-					&&  (*i_cu)->get_comp_dir() && *(*i_cu)->get_comp_dir() == compile_dir
-					&&  (*i_cu)->get_producer() && *(*i_cu)->get_producer() == producer
-					)
+					if (!(*i_cu)->get_name()
+					||  !(*i_cu)->get_producer())
 					{
-						int component_rep = get_rep_for_component_name(
-							component_name.c_str());
-						assert(component_rep != -1);
-						(*p_components)[i_cu.base().base().base()] = component_rep;
-						success = true;
-						break;
+						std::cerr << "Skipping CU as it has no source filename and/or producer: " 
+							<< **i_cu << std::endl;
+						continue;
 					}
-					else
+					
+					string cu_source_fname = *(*i_cu)->get_name();
+					string cu_producer = *(*i_cu)->get_producer();
+					string cu_compile_dir = ((*i_cu)->get_comp_dir() 
+						? *(*i_cu)->get_comp_dir()
+						: "(unknown directory)");
+					
+					/* For each CU we decoded from the component string, try to match
+					 * it against this CU. */
+					
+					for (unsigned i = 0; i < source_fnames.size(); ++i)
 					{
-						std::cerr << "Skipping CU: " << **i_cu << std::endl;
+						if (cu_source_fname == source_fnames[i]
+						&&  cu_compile_dir == compile_dirs[i]
+						&&  cu_producer == producers[i])
+						{
+							int component_rep = get_rep_for_component_name(
+								component_name.c_str());
+							assert(component_rep != -1);
+							(*p_components)[i_cu.base().base().base()] = component_rep;
+							matched[i] = true;
+							break;
+						}
 					}
 				}
+				/* To succeed, we should have matched every element in the decoded
+				 * component string with a CU. */
+				bool success = true;
+				auto reducer = [&success](bool arg) { success &= arg; };
+				std::for_each(matched.begin(), matched.end(), reducer);
 				assert(success);
 				
 			}
@@ -159,6 +183,51 @@ void init_components_table(void)
 	}
 	
 	components_table_inited = 1;
+}
+
+static 
+void
+decode_cake_component_string
+(
+	const string& sym_data, 
+	vector<string>& source_fnames, 
+	vector<string>& compile_dirs, 
+	vector<string>& producers
+)
+{
+	// HACK: make this robust
+	unsigned startpos = 0;
+	string source_fname;
+	string compile_dir;
+	string producer;
+	while (startpos != string::npos)
+	{
+		cerr << "Beginning loop with: " << sym_data.substr(startpos) << endl;
+		std::string::size_type caret_pos1 = sym_data.find('^', startpos);
+		assert(caret_pos1 == startpos);
+		std::string::size_type caret_pos2 = sym_data.find('^', caret_pos1 + 1);
+		std::string::size_type caret_pos3 = sym_data.find('^', caret_pos2 + 1);
+		std::string::size_type caret_pos4 = sym_data.find('^', caret_pos3 + 1);
+		assert(caret_pos2 > caret_pos1 && caret_pos3 > caret_pos2 && caret_pos4 > caret_pos3);
+
+		if (caret_pos4 == string::npos
+		||  caret_pos3 == string::npos
+		||  caret_pos2 == string::npos
+		||  caret_pos1 == string::npos
+		) break; // early exit if we got nothing
+		startpos = (caret_pos4 == string::npos) ? string::npos : caret_pos4 + 1;
+		if (startpos >= sym_data.length()) startpos = string::npos;
+		
+		std::string source_fname = sym_data.substr(caret_pos1 + 1, caret_pos2 - caret_pos1 - 1);
+		std::string compile_dir = sym_data.substr(caret_pos2 + 1, caret_pos3 - caret_pos2 - 1);
+		std::string producer = sym_data.substr(caret_pos3 + 1, caret_pos4 - caret_pos3 - 1);
+		cerr << "Source fname: " << source_fname << endl;
+		cerr << "Compile dir: " << compile_dir << endl;
+		cerr << "Producer: " << producer << endl;
+		source_fnames.push_back(source_fname);
+		compile_dirs.push_back(compile_dir);
+		producers.push_back(producer);
+	}
 }
 
 void init_component_pairs_table(void)
@@ -182,7 +251,7 @@ void init_component_pairs_table(void)
 				(size_t)i_sym->st_name);
 			if (!name_ptr) continue; // null name
 			std::string name(name_ptr);
-			cerr << "Considering symbol " << name << endl;
+			//cerr << "Considering symbol " << name << endl;
 			
 			std::string::size_type off;
 			if ((off = name.find("__cake_componentpair_")) == 0)

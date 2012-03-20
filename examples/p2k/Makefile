@@ -95,6 +95,7 @@ clean::
 
 HOOKS := /usr/local/src/libpmirror.hg/lib/libheap_index_preload_hooks.so
 run: 
-	su -- -c LD_PRELOAD="/usr/local/src/dlmalloc.so $(HOOKS)" \
-gdb --args /usr/src/usr.sbin/puffs/rump_caketmpfs/rump_tmpfs tmpfs /mnt
+	su -- root -c "LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+LD_PRELOAD=\"/usr/local/src/dlmalloc.so $(HOOKS)\" \
+gdb --args /usr/src/usr.sbin/puffs/rump_caketmpfs/rump_tmpfs tmpfs /mnt"
 

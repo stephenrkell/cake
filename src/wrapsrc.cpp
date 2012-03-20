@@ -897,9 +897,15 @@ assert(false && "disabled support for inferring positional argument mappings");
 				<< "(co_object_info){ ALLOC_BY_USER, /* initialized */ 0 };" << endl;
 			// HACK: initialized == 0 here is wrong -- we actually don't know whether the
 			// pointed-to object has been initialized or not. 
+			
+			// HACK again: use the stackptr_helper thingy
+			auto id = new_ident("stackptr_helper");
+			*p_out << "__typeof( &" << env[cakename].cxx_name << " ) *" << id << ";" << endl;
+			
 			*p_out << "ensure_co_objects_allocated(REP_ID(" 
 				<< m_d.name_of_module(current_module) << "), "
 				<< "&" << env[cakename].cxx_name << ", "
+				<< "&" << id << ", " // <-- stackptr_helper
 				<< "REP_ID("
 				<< m_d.name_of_module(caller_module) << "), false);" << endl;
 			// now we REMOVE the env entry!
@@ -1180,6 +1186,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 			// output co-objects allocation call, if we have a pointer
 			if (is_a_pointer && !is_virtual)
 			{
+				auto id = new_ident("stackptr_helper");
+				*p_out << "__typeof(ensure_is_a_pointer(" << cur_cxxname << ")) *" 
+					<< id << ";" << endl;
+			
 				*p_out << "ensure_co_objects_allocated(REP_ID("
 					<< m_d.name_of_module(old_module) << "), ";
 				// make sure we invoke the pointer specialization
@@ -1187,6 +1197,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					"ensure_is_a_pointer(";
 				*p_out << cur_cxxname;
 				/*if (is_a_pointer_this_time)*/ *p_out << ")";
+				*p_out << "&" << id << ", "; // <-- stackptr_helper
 				*p_out << ", REP_ID("
 					<< m_d.name_of_module(new_module)
 					<<  "), "

@@ -61,7 +61,7 @@ void sync_all_co_objects(int from_rep, int to_rep, ...);
 void *replace_co_object(void *existing_obj, void *new_obj, int existing_rep, int require_other_rep);
 
 /* object graph walking */
-void walk_bfs(int object_rep, void *object, int co_object_rep,
+void walk_bfs(int object_rep, void *object, void *stackptr_helper, int co_object_rep,
 	void (*on_blacken)(void*, int, int, int), int arg_n_minus_1, int arg_n, int object_is_leaf);
 
 /* Useful callbacks for graph walking */
