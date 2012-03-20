@@ -187,12 +187,12 @@ namespace cake
 	}; /* we specialize this for various InFirsts */ 
 	
 #if defined (X86_64) || (defined (__x86_64__))
-#define SIGNED_16BIT_INT short
-#define UNSIGNED_16BIT_INT unsigned short
-#define SIGNED_32BIT_INT int
-#define UNSIGNED_32BIT_INT unsigned int
-#define SIGNED_64BIT_INT long
-#define UNSIGNED_64BIT_INT unsigned long
+#define __CAKE_SIGNED_16BIT_INT short
+#define __CAKE_UNSIGNED_16BIT_INT unsigned short
+#define __CAKE_SIGNED_32BIT_INT int
+#define __CAKE_UNSIGNED_32BIT_INT unsigned int
+#define __CAKE_SIGNED_64BIT_INT long
+#define __CAKE_UNSIGNED_64BIT_INT unsigned long
 #else
 #define __CAKE_SIGNED_16BIT_INT short
 #define __CAKE_UNSIGNED_16BIT_INT unsigned short

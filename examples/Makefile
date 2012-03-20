@@ -3,7 +3,7 @@ PMIRROR_LIB ?= $(realpath ../../libpmirror.hg/lib)
 
 PRELOAD_LIB := $(PMIRROR_LIB)/libheap_index_$(USE_MALLOC_HOOKS)_hooks.so
 
-examples := $(filter-out makefile p2k run-all-stdout.log run-all-stderr.log,$(wildcard [a-z]*))
+examples := $(filter-out makefile p2k p2k-local run-all-stdout.log run-all-stderr.log,$(wildcard [a-z]*))
 $(warning Available examples: $(examples))
 run-all:
 	mkdir -p Results
