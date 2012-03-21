@@ -166,6 +166,7 @@ void init_components_table(void)
 								component_name.c_str());
 							assert(component_rep != -1);
 							(*p_components)[i_cu.base().base().base()] = component_rep;
+							matched.resize(i+1);
 							matched[i] = true;
 							break;
 						}
