@@ -1,7 +1,7 @@
 CXX ?= g++-4.5
 
 .PHONY: default
-default: libcake.so
+default: libcake.so libcake.a
 
 C_SRC := $(wildcard *.c) 
 CPP_SRC := $(wildcard *.cpp)
@@ -47,6 +47,8 @@ endif
 
 libcake.so: $(OBJS)
 	$(CXX) $(CXXFLAGS) -shared -o "$@"  $(OBJS) $(LDFLAGS) $(LDLIBS)
+libcake.a: $(OBJS)
+	ar r "$@" $^
 
 $(CXX_DEPS): .%.cpp.d : %.cpp
 	$(CXX) -MM $(CXXFLAGS) "$<"  > "$@"
