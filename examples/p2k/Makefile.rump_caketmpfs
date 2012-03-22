@@ -1,0 +1,99 @@
+#	$NetBSD: Makefile,v 1.2 2008/08/05 20:57:46 pooka Exp $
+#
+
+MOUNTNAME=	tmpfs
+
+ISRUMP=		# the cock of the walk, baby
+LDFLAGS+= -L/usr/src/lib/libp2kcake
+
+#	/usr/src/tooldir.NetBSD-5.0.1-i386/bin/i386--netbsdelf-gcc  
+
+# -B/usr/lib/ -B/usr/lib/  -Wl,-nostdlib -L/usr/src/lib/libp2kcake \
+
+#-Wl,--fatal-warnings     -o rump_tmpfs empty.o mount_tmpfs.o rump_tmpfs.o \
+
+# -Wl,-rpath-link,/lib  -L/lib -Wl,-rpath-link,/usr/lib  -L/usr/lib \
+
+# dynamically linked  version
+#rump_tmpfs: mount_tmpfs.o rump_tmpfs.o pathadj.o fattr.o malloc.o
+#	/usr/local/bin/g++ -v \
+#-Wl,--wrap=malloc  \
+#  -o rump_tmpfs empty.o mount_tmpfs.o rump_tmpfs.o \
+#pathadj.o fattr.o -lrumpfs_tmpfs \
+#/usr/src/lib/libp2kcake/libp2k.a \
+#-Wl,--export-dynamic \
+#-lukfs \
+#-lrump -lrumpuser -lpuffs -lutil  \
+#-L/usr/local/lib -lstdc++ \
+#-L/usr/lib -lboost_regex \
+#-L/usr/pkg/lib -lelf \
+#-L/usr/local/lib -ldwarf \
+#-L/usr/local/src/libc++fileno.hg/lib -lc++fileno 
+#-Wl,-R/usr/local/src/libc++fileno.hg/lib \
+#-L/usr/local/src/libsrk31c++.hg/lib -lsrk31c++ 
+#-Wl,-R/usr/local/src/libsrk31c++.hg/lib \
+#-L/usr/local/src/libdwarfpp.hg/lib -ldwarfpp 
+#-Wl,-R/usr/local/src/libdwarfpp.hg/lib \
+#-L/usr/local/src/libpmirror.hg/lib -lpmirror -lreflect 
+#-Wl,-R/usr/local/src/libpmirror.hg/lib \
+#-L/usr/local/src/cake.hg/libcake -lcake 
+#-Wl,-R/usr/local/src/cake.hg/libcake 
+
+# This target builds a .o file that correctly links rump-side
+# malloc() calls to the rumpuser wrapper function. 
+# BSD Makefiles seem never to drive the linker directly, so we
+# hard-code the -L paths (since using LDFLAGS gives unwanted -Wl,...)
+rumpparts.o:
+	ld -r -o "$@"  \
+-L/usr/src/lib/librump -L/usr/src/sys/rump/fs/lib/libtmpfs \
+--whole-archive \
+-lrump \
+-lrumpfs_tmpfs 
+	objcopy --redefine-sym __wrap_malloc=__rumpuser_wrap_malloc "$@"
+
+rumpuser.o:
+	ld -r -o "$@" -L/usr/src/lib/librumpuser \
+	--whole-archive -lrumpuser 
+	objcopy --redefine-sym __wrap_malloc=__rumpuser_wrap_malloc "$@"
+
+# -Wl,--trace
+# -Wl,---trace-symbol='_ZSt16__ostream_insertIcSt11char_traitsIcEERSt13basic_ostreamIT_T0_ES6_PKS3_i'
+
+rump_tmpfs: mount_tmpfs.o rump_tmpfs.o pathadj.o fattr.o malloc.o
+	/usr/local/bin/g++ \
+-std=gnu++0x -v  \
+-static -nostdlib \
+-Wl,--wrap=malloc  \
+  -o rump_tmpfs \
+/usr/src/lib/csu/i386_elf/crt0.o /usr/src/lib/csu/i386_elf/crti.o \
+/usr/local/lib/gcc/i386-unknown-netbsdelf5.0.1/4.6.2/crtbeginT.o \
+empty.o mount_tmpfs.o rump_tmpfs.o \
+pathadj.o fattr.o \
+/usr/src/lib/libp2kcake/libp2k.a \
+rumpparts.o \
+-lukfs \
+rumpuser.o -lpuffs -lutil  \
+-L/usr/local/src/cake.hg/libcake -lcake -Wl,-R/usr/local/src/cake.hg/libcake \
+-L/usr/local/src/libpmirror.hg/lib -lreflect -lpmirror -Wl,-R/usr/local/src/libpmirror.hg/lib \
+-L/usr/local/src/libdwarfpp.hg/lib -ldwarfpp -Wl,-R/usr/local/src/libdwarfpp.hg/lib \
+-lboost_regex \
+-L/usr/local/lib -ldwarf \
+-L/usr/pkg/lib -lelf \
+-L/usr/local/src/libc++fileno.hg/lib -lc++fileno -Wl,-R/usr/local/src/libc++fileno.hg/lib \
+-L/usr/local/src/libsrk31c++.hg/lib -lsrk31c++ -Wl,-R/usr/local/src/libsrk31c++.hg/lib \
+-Wl,--wrap,malloc -Wl,--wrap,free -Wl,--wrap,calloc \
+-Wl,--wrap,realloc -Wl,--wrap,memalign -Wl,--wrap,posix_memalign \
+-Wl,--whole-archive \
+/usr/local/src/libpmirror.hg/src/libheap_index_wrap_hooks.a \
+malloc.o \
+-Wl,--no-whole-archive \
+-lstdc++ -lm \
+/usr/lib/libpthread.a \
+/usr/src/lib/libc/libc.a \
+/usr/local/lib/gcc/i386-unknown-netbsdelf5.0.1/4.6.2/libgcc.a \
+/usr/local/lib/gcc/i386-unknown-netbsdelf5.0.1/4.6.2/libgcc_eh.a \
+/usr/local/lib/gcc/i386-unknown-netbsdelf5.0.1/4.6.2/crtend.o  \
+/usr/src/lib/csu/i386_elf/crtn.o
+
+
+.include <bsd.prog.mk>
