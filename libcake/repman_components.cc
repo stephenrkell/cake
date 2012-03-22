@@ -96,7 +96,7 @@ void init_components_table(void)
 		for (auto i_sym = symbols.first; i_sym != symbols.second; ++i_sym)
 		{
 			Elf *elf = i_sym.base().origin->elf;
-			process_image::symbols_iteration_state *origin = i_sym.base().origin.get();
+			pmirror::symbols_iteration_state *origin = i_sym.base().origin.get();
 			size_t strtab_scndx = origin->shdr.sh_link;
 			size_t offset_in_strtab = (size_t)i_sym->st_name;
 			const char *strptr = elf_strptr(elf,
