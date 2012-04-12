@@ -30,6 +30,7 @@ struct co_object_group {
 	/* int form; */
 	struct co_object_info co_object_info[MAX_REPS];
 	/* struct co_object_group *next; */
+	unsigned array_len;
 };
 
 extern void *components_table;
@@ -49,7 +50,7 @@ int invalidate_co_object(void *object, int rep);
 void *find_co_object(const void *object, int object_rep, int co_object_rep, 
 		struct co_object_group **co_object_rec_out/*, int expected_size_words*/);		
 struct co_object_group *new_co_object_record(void *initial_object, int initial_rep, 
-	int initial_alloc_by, int is_uninit);
+	int initial_alloc_by, int is_uninit, unsigned array_len);
 int mark_object_as_initialized(void *, int);
 int object_is_live(struct co_object_group *rec);
 
@@ -74,7 +75,7 @@ void allocate_co_object_idem_callee_rep(int do_not_use, void *object, int form, 
 /* Table lookups */
 conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, void *target_object);
 conv_func_t get_init_func(int from_rep, int to_rep, void *source_object, void *target_object);
-unsigned long get_co_object_size(void *obj, int obj_rep, int co_obj_rep);
+void get_co_object_size(void *obj, int obj_rep, int co_obj_rep, unsigned *out_size, unsigned *out_count);
 
 /* Components table lookups */
 const char *get_component_name_for_rep(int rep);

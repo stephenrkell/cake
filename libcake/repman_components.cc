@@ -5,6 +5,9 @@ extern "C"
 	// define the table pointers
 	void *components_table;
 	void *component_pairs_table;
+	
+	// we need this function, whether or not it's in malloc.h
+	unsigned long malloc_usable_size(void *obj);
 }
 #include "cake/cxx_target.hpp"
 #include "cake/prelude/runtime.hpp"
@@ -39,6 +42,7 @@ using dwarf::spec::compile_unit_die;
 using dwarf::spec::type_die;
 using pmirror::process_image;
 using pmirror::self;
+using namespace dwarf;
 
 /* the actual tables -- type-correct aliases */
 typedef std::map<dwarf::spec::abstract_dieset::position, int> components_table_t;
@@ -359,6 +363,11 @@ get_init_table_entry(void *obj, int obj_rep, int co_obj_rep)
 	using namespace cake;
 	
 	auto discovered = self.discover_object_descr((process_image::addr_t) obj);
+	if (!discovered)
+	{
+		cerr << "Aborting init table lookup for object at " << obj << endl;
+		return 0;
+	}
 	
 	component_pairs_table_t::iterator i;
 	init_table_t *p_table;
@@ -377,8 +386,6 @@ get_init_table_entry(void *obj, int obj_rep, int co_obj_rep)
 	}
 	else assert(false);
 	
-	assert(discovered);
-
 	auto key = (const init_table_key) {
 			cake::compiler.fq_name_parts_for(discovered),
 			from_first_to_second
@@ -388,11 +395,104 @@ get_init_table_entry(void *obj, int obj_rep, int co_obj_rep)
 	else return 0;
 }	
 
-unsigned long get_co_object_size(void *obj, int obj_rep, int co_obj_rep)
+static void get_object_size(
+	void *obj,
+	int obj_rep,
+	unsigned *out_size, unsigned *out_count
+	);
+static void get_object_size(
+	void *obj,
+	int obj_rep,
+	unsigned *out_size, unsigned *out_count)
+{
+	/* How many objects does "obj" point to? 
+	 * We assume that obj points to the start of an object or subobject or array thereof. */
+	auto discovered = self.discover_object_descr(
+		(process_image::addr_t) obj /* FIXME: can thread through from previous discovery? */
+	);
+	memory_kind k = pmirror::self.discover_object_memory_kind(
+		(process_image::addr_t) obj);
+	if (!discovered)
+	{
+		goto return_opaque;
+	}
+	else
+	{
+		auto as_type = dynamic_pointer_cast<type_die>(discovered);
+		assert(as_type);
+		auto opt_byte_size = as_type->calculate_byte_size();
+		if (as_type->get_concrete_type()->get_tag() != DW_TAG_array_type
+			&& k != memory_kind::HEAP)
+		{
+			if (!opt_byte_size)
+			{
+				goto return_opaque;
+			}
+			else
+			{
+				*out_size = *opt_byte_size;
+				*out_count = 1;
+				return;
+			}
+		}
+		else if (k == memory_kind::HEAP)
+		{
+			/* heap case */
+			if (!opt_byte_size) 
+			{
+				goto return_opaque;
+			}
+			else
+			{
+				*out_count = malloc_usable_size(obj) / *opt_byte_size;
+				*out_size = *opt_byte_size;
+				return;
+			}
+		}
+		else 
+		{
+			assert(as_type->get_concrete_type()->get_tag() == DW_TAG_array_type);
+			/* array case */
+			auto as_array = dynamic_pointer_cast<spec::array_type_die>(as_type);
+			assert(as_array);
+			auto opt_count = as_array->element_count();
+			assert(opt_count); // will fail for allocas, but hopefully not other stack/static cases
+			// FIXME: short count for multidimensional arrays! we need to count how many
+			// nested arrays we go through, and multiply out the element counts
+			auto opt_element_size
+			 = as_array->ultimate_element_type()->calculate_byte_size();
+			assert(opt_element_size);
+			*out_size = *opt_element_size;
+			*out_count = *opt_count;
+			return;
+		}
+	}
+	assert(false); 
+	
+return_opaque:
+	*out_size = 0;
+	*out_count = 1;
+	return;
+}
+
+void get_co_object_size(void *obj, int obj_rep, int co_obj_rep, unsigned *out_size, unsigned *out_count)
 {
 	auto init_tbl_ent = get_init_table_entry(obj, obj_rep, co_obj_rep);
-	if (init_tbl_ent) return init_tbl_ent->to_size;
-	else return 0; // use a zero-size co-object for uncorresponded types
+	if (init_tbl_ent)
+	{
+		unsigned out_obj_size; 
+		unsigned out_obj_count;/* How many objects does "obj" point to? */ 
+		get_object_size(obj, obj_rep, &out_obj_size, &out_obj_count);
+		/* For co-objs, we assume the number is the same as objs, 
+		 * but the size may be different. */
+		*out_size = init_tbl_ent->to_size;
+		*out_count = out_obj_count;
+	}
+	else 
+	{
+		*out_size = 0; // use a zero-size co-object for uncorresponded types
+		*out_count = 1;
+	}
 }
 
 /* This is for co-objects that we have allocated. Their allocation sites are
