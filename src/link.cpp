@@ -4178,7 +4178,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			>();
 		for (auto i_cu = r_cus.first; i_cu != r_cus.second; ++i_cu)
 		{
-			assert(!(*i_cu)->subprogram_children_end().base().base().base().p_policy->is_undefined());
+			assert(!(*i_cu)->subprogram_children_end().base().base().p_policy->is_undefined());
 			r_subprograms->append(
 				(*i_cu)->subprogram_children_begin(),
 				(*i_cu)->subprogram_children_end());
@@ -4201,7 +4201,7 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			>();
 		for (auto i_cu = p_cus.first; i_cu != p_cus.second; ++i_cu)
 		{
-			assert(!(*i_cu)->subprogram_children_end().base().base().base().p_policy->is_undefined());
+			assert(!(*i_cu)->subprogram_children_end().base().base().p_policy->is_undefined());
 			p_subprograms->append(
 				(*i_cu)->subprogram_children_begin(),
 				(*i_cu)->subprogram_children_end());

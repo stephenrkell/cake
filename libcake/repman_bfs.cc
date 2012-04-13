@@ -21,6 +21,7 @@ using boost::shared_ptr;
 using boost::dynamic_pointer_cast;
 using namespace dwarf::spec;
 using pmirror::process_image;
+using std::endl;
 
 /* C++ prototypes */
 
@@ -267,6 +268,20 @@ void build_adjacency_list_recursive(
 			);
 		if (pointed_to_object != 0)
 		{
+			/* Check sanity of the pointer. We might be reading some union'd storage
+			 * that is currently holding a non-pointer. */
+			if ((intptr_t) pointed_to_object < 4096
+				|| (intptr_t) pointed_to_object == (intptr_t)-1)
+			{
+				cerr << "Warning: insane pointer value "
+					<< pointed_to_object
+					<< " found in field "
+					<< (*i_ptrmemb)->summary()
+					<< " in instance of type "
+					<< structured_type_at_this_offset->summary()
+					<< endl;
+			}
+			
 			/* Find out object's precise DWARF type and starting address. */
 			process_image::addr_t object_actual_start_addr;
 			auto descr = pmirror::self.discover_object_descr(

@@ -66,7 +66,7 @@ namespace cake
 	template <typename T>
 	struct co_objects_allocator<T*>
 	{
-		/* When we call ensure_co_objects on a non-pointer, we walk it! */
+		/* When we call ensure_co_objects on a pointer, we walk it! */
 		typedef T *arg_type;
 		inline void operator()(int source_rep_id, const arg_type& obj, 
 			void *stackptr_helper, int target_rep_id,

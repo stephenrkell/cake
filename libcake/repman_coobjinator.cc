@@ -155,17 +155,29 @@ static map_t *ensure_map_for_addr(void *addr)
 
 struct co_object_group *register_co_object(
 	void *existing_object, int existing_rep,
-	void *co_object, int co_object_rep, int alloc_by)
+	void *co_object, int co_object_rep, int alloc_by, unsigned array_len)
 {
 	auto group = group_for_object(existing_object);
 	assert(group);
 	group->reps[co_object_rep] = co_object;
 	group->co_object_info[co_object_rep].allocated_by = alloc_by;
 	ensure_map_for_addr(co_object)->insert(std::make_pair(co_object, group));
+	for (auto i_rep = 0; i_rep < MAX_REPS; ++i_rep)
+	{
+		if (group->reps[i_rep])
+		{
+			assert(group->array_len == array_len);
+			return group.get();
+		}
+	}
+	// if we got here, no array len is recorded, so record it
+	group->array_len = array_len;
+	return group.get();
 }
 
 struct co_object_group *
-new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by, int is_uninit)
+new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by, 
+	int is_uninit, unsigned array_len)
 {
 	assert(!group_for_object(initial_object));
 	auto p_m = ensure_map_for_addr(initial_object);
@@ -174,6 +186,7 @@ new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by
 	group->reps[initial_rep] = initial_object;
 	group->co_object_info[initial_rep].allocated_by = initial_alloc_by;
 	group->co_object_info[initial_rep].initialized = !is_uninit;
+	group->array_len = array_len;
 	
 	p_m->insert(std::make_pair(initial_object, group));
 	
@@ -223,26 +236,30 @@ void sync_all_co_objects(int from_rep, int to_rep, ...)
 				/*rep_conv_funcs[from_rep][to_rep][p->form](p->reps[from_rep], p->reps[to_rep]);*/
 				bool is_overridden = (overrides.find(p_group->reps[from_rep]) != overrides.end());
 				
-				/* We can only go ahead if the from_rep is initialized. 
-				 * This might not be the case, if the co-objects were created
-				 * by an "out" argument. */
+				/* from_rep may or may not be initialized. */
 				if (p_group->co_object_info[from_rep].initialized)
 				{
 					if (p_group->co_object_info[to_rep].initialized)
 					{
-						(is_overridden ? overrides[p_group->reps[from_rep]].conv : get_rep_conv_func(
-							from_rep, to_rep, 
-							p_group->reps[from_rep],
-							p_group->reps[to_rep]
-						))(p_group->reps[from_rep], p_group->reps[to_rep]);
+						auto p_func = is_overridden 
+							? overrides[p_group->reps[from_rep]].conv 
+							: get_rep_conv_func(
+								from_rep, to_rep, 
+								p_group->reps[from_rep],
+								p_group->reps[to_rep]
+							);
+						p_func(p_group->reps[from_rep], p_group->reps[to_rep]);
 					}
 					else // not initialized
 					{
-						(is_overridden ? overrides[p_group->reps[from_rep]].init : get_init_func(
-							from_rep, to_rep, 
-							p_group->reps[from_rep],
-							p_group->reps[to_rep]
-						))(p_group->reps[from_rep], p_group->reps[to_rep]);
+						auto p_func = is_overridden 
+							? overrides[p_group->reps[from_rep]].init 
+							: get_init_func(
+								from_rep, to_rep, 
+								p_group->reps[from_rep],
+								p_group->reps[to_rep]
+							);
+						p_func(p_group->reps[from_rep], p_group->reps[to_rep]);
 
 						p_group->co_object_info[to_rep].initialized = 1;
 					}
@@ -285,18 +302,23 @@ void allocate_co_object_idem(void *object, int object_rep, int co_object_rep, in
 	if (co_object) return; /* the co-object already exists */	
 	
 	/* the co-object doesn't exist, so allocate it -- use calloc for harmless defaults */
-	co_object = calloc(1, get_co_object_size(object, object_rep, co_object_rep));
+	unsigned size;
+	unsigned count;
+	get_co_object_size(object, object_rep, co_object_rep, &size, &count);
+	co_object = calloc(count, size);
+	
 	/* tell the image what the type of this heap object is */
 	if (co_object == NULL) { fprintf(stderr, "Error: malloc failed\n"); exit(42); }
 	fprintf(stderr, "Allocating a co-object in rep %d for object at %p (rep %d)\n", 
-            co_object_rep, object, object_rep);
+	        co_object_rep, object, object_rep);
 	
 	/* we *may* need a new co object record */
-	if (!co_object_rec) co_object_rec = new_co_object_record(object, object_rep, ALLOC_BY_USER, is_leaf);
+	if (!co_object_rec) co_object_rec = new_co_object_record(
+		object, object_rep, ALLOC_BY_USER, is_leaf, count);
 	
 	/* add info about the newly allocated co-object */
 	register_co_object(object, object_rep,
-		co_object, co_object_rep, ALLOC_BY_REP_MAN);
+		co_object, co_object_rep, ALLOC_BY_REP_MAN, count);
 	
 	/* tell the image what the type of this heap object is */
 	set_co_object_type(object, object_rep, co_object, co_object_rep);
