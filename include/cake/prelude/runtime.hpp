@@ -75,12 +75,20 @@ namespace cake
 			if (!components_table_inited) init_components_table();
 			if (!component_pairs_table_inited) init_component_pairs_table();
 			
-			walk_bfs(
-				source_rep_id,
+// 			walk_bfs(
+// 				source_rep_id,
+// 				obj,
+// 				stackptr_helper,
+// 				target_rep_id,
+// 				allocate_co_object_idem,
+// 				source_rep_id,
+// 				target_rep_id,
+// 				object_is_leaf
+// 			);
+			// ALWAYS_OVERRIDE
+			// let's just call allocate_co_object_idem once
+			allocate_co_object_idem(
 				obj,
-				stackptr_helper,
-				target_rep_id,
-				allocate_co_object_idem,
 				source_rep_id,
 				target_rep_id,
 				object_is_leaf

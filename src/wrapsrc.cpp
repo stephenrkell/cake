@@ -887,7 +887,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 				<< /* initial_object */ "&" << env[cakename].cxx_name << ", "
 				<< /* initial_rep */ "REP_ID(" << m_d.name_of_module(current_module) << "), "
 				<< /* initial_alloc_by */ "ALLOC_BY_USER, "
-				<< /* is_uninit */ "false"
+				<< /* is_uninit */ "false, "
+				<< /* array_length */ "1"
 				<< ");" << endl;
 			// also add the caller-side object to the group
 			*p_out << ident << "->reps[REP_ID(" << m_d.name_of_module(caller_module) << ")] = "
@@ -1274,14 +1275,14 @@ assert(false && "disabled support for inferring positional argument mappings");
 			 * have to look ahead to the inward ("out" values),
 			 * because if we have an output-only rule, 
 			 * we will try to take __typeof( *the-pointer-we're-making-here ) later on. */
-			bool will_override = 
-				(direction_is_out && (representative_binding.second.indirect_local_tagstring_out
-					|| representative_binding.second.indirect_remote_tagstring_out))
-			||  (!direction_is_out && (representative_binding.second.indirect_local_tagstring_in
-					|| representative_binding.second.indirect_remote_tagstring_in
-					|| representative_binding.second.indirect_local_tagstring_out
-					|| representative_binding.second.indirect_remote_tagstring_out
-					));
+			bool will_override = true; // HACK for ALWAYS_OVERRIDE, but has no effect
+// 				(direction_is_out && (representative_binding.second.indirect_local_tagstring_out
+// 					|| representative_binding.second.indirect_remote_tagstring_out))
+// 			||  (!direction_is_out && (representative_binding.second.indirect_local_tagstring_in
+// 					|| representative_binding.second.indirect_remote_tagstring_in
+// 					|| representative_binding.second.indirect_local_tagstring_out
+// 					|| representative_binding.second.indirect_remote_tagstring_out
+// 					));
 			auto ifaces = link_derivation::sorted(new_module, representative_binding.second.valid_in_module);
 			bool old_module_is_first = (old_module == ifaces.first);
 			// an approximation of non-void pointers
@@ -1559,11 +1560,46 @@ assert(false && "disabled support for inferring positional argument mappings");
 			auto& constraints = (found_constraints != constraints_by_cxxname.end())
 				? found_constraints->second : empty_constraints;
 
-			if (
-				(direction_is_out && (i_binding->second.indirect_local_tagstring_out
+			// do the constraints analysis up-front, because it reveals more pointerness
+			auto precise_to_type = shared_ptr<spec::type_die>();
+			shared_ptr<type_die> constrained_to_type;
+			if (constraints.size() > 0)
+			{
+				/* The constraints reflect the pointer, whereas we want 
+				 * the pointed-to. */
+				constrained_to_type = constraints.begin()->second;
+				auto constrained_to_pointer_type = dynamic_pointer_cast<spec::pointer_type_die>(
+					constrained_to_type);
+				if (constrained_to_type && constrained_to_pointer_type
+					&& constrained_to_pointer_type->get_type())
+				{
+					precise_to_type = constrained_to_pointer_type->get_type();
+					*p_out << "// Constrained " << i_cxxname->first
+						<< " to " << precise_to_type->summary() << endl;
+				}
+				else
+				{
+					*p_out << "// Not constraining because " << constrained_to_type->summary() 
+						<< " is not a pointer-to-object type" << endl;
+				}
+				// FIXME: try other constraints here
+				if (constraints.size() > 1)
+				{
+					*p_out << "// Warning: ignored additional constraints" << endl;
+				}
+			}
+
+			if ( // HACK for ALWAYS_OVERRIDE
+				/*(direction_is_out && (i_binding->second.indirect_local_tagstring_out
 					|| i_binding->second.indirect_remote_tagstring_out))
 			||  (!direction_is_out && (i_binding->second.indirect_local_tagstring_in
-					|| i_binding->second.indirect_remote_tagstring_in))
+					|| i_binding->second.indirect_remote_tagstring_in))*/
+				//true
+				// we just want "is_a_pointer"
+				i_binding->second.indirect_local_tagstring_out
+				|| i_binding->second.indirect_local_tagstring_in
+				|| i_binding->second.pointerness == bound_var_info::IS_A_POINTER
+				|| (constrained_to_type && constrained_to_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
 				)
 			{
 				*p_out << "// override for Cake name " << i_binding->first 
@@ -1606,32 +1642,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 				auto modified_binding = *i_binding;
 				modified_binding.second.pointerness = bound_var_info::UNDEFINED;
 				
-				auto precise_to_type = shared_ptr<spec::type_die>();
-				if (constraints.size() > 0)
-				{
-					/* The constraints reflect the pointer, whereas we want 
-					 * the pointed-to. */
-					auto constrained_to_type = constraints.begin()->second;
-					auto constrained_to_pointer_type = dynamic_pointer_cast<spec::pointer_type_die>(
-						constrained_to_type);
-					if (constrained_to_type && constrained_to_pointer_type
-						&& constrained_to_pointer_type->get_type())
-					{
-						precise_to_type = constrained_to_pointer_type->get_type();
-						*p_out << "// Constrained " << i_cxxname->first
-							<< " to " << precise_to_type->summary() << endl;
-					}
-					else
-					{
-						*p_out << "// Not constraining because " << precise_to_type->summary() 
-							<< " is not a pointer-to-object type" << endl;
-					}
-					// FIXME: try other constraints here
-					if (constraints.size() > 1)
-					{
-						*p_out << "// Warning: ignored additional constraints" << endl;
-					}
-				}
 				
 				auto funcname = make_value_conversion_funcname(
 						link_derivation::sorted(make_pair(old_module, new_module)),
