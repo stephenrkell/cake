@@ -68,6 +68,24 @@ decode_cake_component_string(
 	const string&, vector<string>&, vector<string>& compile_dirs,  vector<string>&
 );
 
+static string 
+name_parts_to_string(
+	const vector<string>& name_parts
+);
+static string 
+name_parts_to_string(
+	const vector<string>& name_parts
+)
+{
+	std::ostringstream s;
+	for (auto i = name_parts.begin(); i != name_parts.end(); ++i)
+	{
+		if (i != name_parts.begin()) s << " :: ";
+		s << *i;
+	}
+	return s.str();
+}
+
 void init_components_table(void)
 {
 	if (components_table_inited) return;
@@ -444,6 +462,7 @@ static void get_object_size(
 			}
 			else
 			{
+				/* FIXME: get the heap block's start addr first -- can't assume obj is it. */
 				*out_count = malloc_usable_size(obj) / *opt_byte_size;
 				*out_size = *opt_byte_size;
 				return;
@@ -502,20 +521,28 @@ void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_r
 	auto init_tbl_ent = get_init_table_entry(object, obj_rep, co_obj_rep);
 	vector<string> name_parts;
 	if (init_tbl_ent) name_parts = init_tbl_ent->to_typename;
+	cerr << "Looking for type DIE given name parts " 
+		<< name_parts_to_string(name_parts) << endl;
 	
 	/* Look through the CUs to find a definition of this typename. */
 	std::cerr << "Searching component CU map of " << p_components->size() 
 		<< " entries." << std::endl;
+	unsigned count_tried = 0;
 	for (auto i_component_entry = p_components->begin(); 
 		i_component_entry != p_components->end();
 		++i_component_entry)
 	{
+		cerr << "Found a component entry of rep id " << i_component_entry->second << endl;
 		if (i_component_entry->second == co_obj_rep)
 		{
 			// found a CU of this component
 			auto cu_pos = i_component_entry->first;
 			auto cu = dynamic_pointer_cast<compile_unit_die>(
 				(*cu_pos.p_ds)[cu_pos.off]);
+			cerr << "Considering CU " << cu->summary() << " belonging to component "
+				<< get_component_name_for_rep(co_obj_rep) << " (rep " << co_obj_rep << ")"
+				<< endl;
+			++count_tried;
 
 			shared_ptr<type_die> found;
 			if (name_parts.size() > 0)
@@ -528,12 +555,21 @@ void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_r
 			}
 				
 			// if we didn't get an init table entry, it means "void" -- still okay
+			if (found) cerr << "Informing process_image that co-object at " << (void*) co_object
+				<< " has type " << found->summary() << endl;
+			else cerr << "Informing process_image that co-object at " << (void*) co_object
+				<< " has void/opaque type." << endl;
 			pmirror::self.inform_heap_object_descr(
 				(process_image::addr_t) co_object, found);
 				
 			return;
 		}
 	}
+	
+	// if we got here, the name parts don't resolve to a type
+	// in any of the component's CUs.
+	cerr << "Name parts " << name_parts_to_string(name_parts) << " did not resolve to a data type "
+		<< "in any CU known for rep id " << co_obj_rep << endl;
 	
 	assert(false);
 
@@ -556,12 +592,12 @@ conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, voi
 	
 	std::cerr << "Getting rep conv func from object: ";
 	self.print_object(std::cerr, source_object);
-	if (discovered_source) std::cerr << ", " << *discovered_source;
-	else std::cerr << "(assumed void type)";
+	if (discovered_source) std::cerr << endl << "(" << *discovered_source << ")";
+	else std::cerr << " (assumed void type)";
 	std::cerr << " to object: ";
 	self.print_object(std::cerr, target_object);
-	if (discovered_target) std::cerr << ", " << *discovered_target;
-	else std::cerr << "(assumed void type)";
+	if (discovered_target) std::cerr << endl << "(" << *discovered_target << ")";
+	else std::cerr << " (assumed void type)";
 	std::cerr << std::endl;
 	
 	bool from_first_to_second = 
@@ -580,17 +616,29 @@ conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, voi
 	
 	if (discovered_source_type && discovered_target_type)
 	{
+		auto source_name_parts = cake::compiler.name_parts_for(discovered_source_type);
+		auto target_name_parts = cake::compiler.name_parts_for(discovered_target_type);
+
+		cerr << "Looking in convs table at " << (void*) convs_table
+			<< " for source name parts " << name_parts_to_string(source_name_parts) 
+			<< ", target name parts " << name_parts_to_string(target_name_parts) 
+			<< endl;
 		auto found = convs_table->find(
 			(cake::conv_table_key) {
-				cake::compiler.name_parts_for(discovered_source_type),
-				cake::compiler.name_parts_for(discovered_target_type),
+				source_name_parts,
+				target_name_parts,
 				from_first_to_second,
 				0 // FIXME
 				});
 		assert(found != convs_table->end());
+		cerr << "Found a conv func at " << (void*) found->second.func << endl;
 		return found->second.func;
 	}
-	else return noop_conv_func;
+	else 
+	{
+		cerr << "Using noop conv func." << endl;
+		return noop_conv_func;
+	}
 }
 
 conv_func_t get_init_func(int from_rep, int to_rep, void *source_object, void *target_object)
@@ -606,10 +654,10 @@ conv_func_t get_init_func(int from_rep, int to_rep, void *source_object, void *t
 	
 	std::cerr << "Getting init func from object: ";
 	self.print_object(std::cerr, source_object);
-	std::cerr << discovered_source->summary()
+	std::cerr << endl << "(" << discovered_source->summary() << ")"
 		<< " to object: ";
 	self.print_object(std::cerr, target_object);
-	std::cerr << " (NEW INIT)"
+	std::cerr << endl << " (NEW INIT)"
 		<< std::endl;
 	
 	bool from_first_to_second = 
@@ -626,13 +674,24 @@ conv_func_t get_init_func(int from_rep, int to_rep, void *source_object, void *t
 		found_table->second.inits_from_first_to_second
 		: found_table->second.inits_from_second_to_first;
 	
+	auto name_parts = cake::compiler.name_parts_for(discovered_source_type);
+	cerr << "Looking in init table at " << (void*) init_table
+		<< " for name parts " << name_parts_to_string(name_parts) << endl;
 	auto found = init_table->find(
 		(cake::init_table_key) {
-			cake::compiler.name_parts_for(discovered_source_type),
+			name_parts,
 			from_first_to_second});
 			
-	if (found != init_table->end()) return found->second.func;
-	else return noop_conv_func;
+	if (found != init_table->end())
+	{
+		cerr << "Found init func at " << (void*) found->second.func << endl;
+		return found->second.func;
+	}
+	else
+	{
+		cerr << "Didn't find init func; returning noop_conv_func." << endl;
+		return noop_conv_func;
+	}
 }
 
 void *noop_conv_func(void *arg1, void *arg2)

@@ -1,9 +1,12 @@
 #include "common.hpp"
 #include "repman.h"
 
+//#include <cstdarg>
+#include <initializer_list>
 #include <vector>
 #include <map>
 #include <string>
+#include <iostream>
 
 namespace cake
 {
@@ -134,4 +137,43 @@ namespace cake
 		return pointer_ensurer<T>()(obj);
 	}
 
+	struct co_obj_replacement_notifier
+	{
+		std::vector<void **> objs;
+		co_obj_replacement_notifier(std::initializer_list<void **> arg)
+		{
+// 			va_list args;
+// 			va_start(args, arg);
+// 			void *obj;
+// 			do
+// 			{
+// 				obj = va_arg(args, __typeof(obj));
+// 				if (obj) objs.push_back(&obj);
+// 			} while (obj);
+			for (auto i = arg.begin(); i != arg.end(); ++i)
+			{
+				if (*i && **i) objs.push_back(*i);
+			}
+			
+		}
+		
+		void notify(void *old_addr, void *new_addr)
+		{
+			std::cerr << "Notifier at " << this << " notified of old address " << old_addr
+				 << " and new address " << new_addr << std::endl;
+			for (auto i = objs.begin(); i != objs.end(); ++i)
+			{
+				if (**i == old_addr) **i = new_addr;
+			}
+		}
+	};
+	
+	inline addr_change_cb_t make_replacer_cb(co_obj_replacement_notifier& notifier)
+	{
+		auto member_fun_ptr = &co_obj_replacement_notifier::notify;
+		addr_change_cb_t retval
+		 = *reinterpret_cast<void(**)(void*, void*, void*)>(&member_fun_ptr);
+		std::cerr << "Snarfed function pointer " << retval << std::endl;
+		return retval;
+	}
 }

@@ -584,7 +584,7 @@ typename corresponding_type_to_first< \
 	template <typename FromArrayEl, typename ToArrayEl, int Dim, typename FromComponent, typename ToComponent, int RuleTag>
     struct value_convert<FromArrayEl[Dim], ToArrayEl[Dim], FromComponent, ToComponent, RuleTag>
 	{
-		typename srk31::array<ToArrayEl, Dim>& operator()(const FromArrayEl (&from)[Dim],
+		typename srk31::array<ToArrayEl, Dim> operator()(const FromArrayEl (&from)[Dim],
 		                                        ToArrayEl (*p_to)[Dim] = 0) const
 		{
 			srk31::array<ToArrayEl, Dim> tmp_buf;
@@ -592,12 +592,12 @@ typename corresponding_type_to_first< \
 			 = p_to ? (new (p_to) srk31::array<ToArrayEl, Dim>()) : &tmp_buf;
 			for (auto i = 0; i < Dim; ++i)
 			{
-				(*p_ret)[i]
-				 = value_convert<FromArrayEl, ToArrayEl, FromComponent, ToComponent, RuleTag>()(
-					from[i], ((ToArrayEl *) &p_to[0]) + i
+				/*(*p_ret)[i]
+				 =*/ value_convert<FromArrayEl, ToArrayEl, FromComponent, ToComponent, RuleTag>()(
+					from[i], ((ToArrayEl *) &p_ret[0]) + i
 				);
 			}
-			return *p_ret;
+			return *p_ret; // returns array by value!
 		}
 	};
 	
@@ -709,16 +709,32 @@ typename corresponding_type_to_first< \
 //                 >().operator()(arg);
 //         }	
     };
+	
+	// helper to avoid forming a reference to void
+	template <typename T>
+	struct non_void
+	{
+		typedef T type;
+	};
+	template <>
+	struct non_void<void>
+	{
+		typedef char type;
+	};
 
 	// now we can define a function template to wrap all these up
-	template <typename Source, typename Sink, typename FromComponent, typename ToComponent, int RuleTag>
+	template 
+	<typename Source, typename Sink, typename FromComponent, typename ToComponent, int RuleTag,
+		typename SourceNonVoid = typename non_void<Source>::type >
 	inline
 	void *
 	value_convert_function(
 		Source *from,
 		Sink *to)
 	{
-		Source& from_ref = *from; //reinterpret_cast<Source&>(from);
+		SourceNonVoid& from_ref = /**from; */ reinterpret_cast<SourceNonVoid&>(
+			*reinterpret_cast<SourceNonVoid*>(from)
+		);
 		value_convert<Source, Sink, FromComponent, ToComponent, RuleTag>().operator()(from_ref, to);
 		return to;
 	}

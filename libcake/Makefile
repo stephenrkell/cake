@@ -1,7 +1,8 @@
 CXX ?= g++-4.5
 
 .PHONY: default
-default: libcake.so libcake.a
+#default: libcake.so libcake.a
+default: libcake.a
 
 C_SRC := $(wildcard *.c) 
 CPP_SRC := $(wildcard *.cpp)

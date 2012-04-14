@@ -1275,14 +1275,14 @@ assert(false && "disabled support for inferring positional argument mappings");
 			 * have to look ahead to the inward ("out" values),
 			 * because if we have an output-only rule, 
 			 * we will try to take __typeof( *the-pointer-we're-making-here ) later on. */
-			bool will_override = true; // HACK for ALWAYS_OVERRIDE, but has no effect
-// 				(direction_is_out && (representative_binding.second.indirect_local_tagstring_out
-// 					|| representative_binding.second.indirect_remote_tagstring_out))
-// 			||  (!direction_is_out && (representative_binding.second.indirect_local_tagstring_in
-// 					|| representative_binding.second.indirect_remote_tagstring_in
-// 					|| representative_binding.second.indirect_local_tagstring_out
-// 					|| representative_binding.second.indirect_remote_tagstring_out
-// 					));
+			bool will_override = //true; // HACK for ALWAYS_OVERRIDE, but has no effect
+				(direction_is_out && (representative_binding.second.indirect_local_tagstring_out
+					|| representative_binding.second.indirect_remote_tagstring_out))
+			||  (!direction_is_out && (representative_binding.second.indirect_local_tagstring_in
+					|| representative_binding.second.indirect_remote_tagstring_in
+					|| representative_binding.second.indirect_local_tagstring_out
+					|| representative_binding.second.indirect_remote_tagstring_out
+					));
 			auto ifaces = link_derivation::sorted(new_module, representative_binding.second.valid_in_module);
 			bool old_module_is_first = (old_module == ifaces.first);
 			// an approximation of non-void pointers
@@ -1539,7 +1539,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		auto old_bindings_by_cxxname = group_bindings_by_cxxname(old_env);
 		auto new_bindings_by_cxxname = group_bindings_by_cxxname(new_env);
 		
-		*p_out << "sync_all_co_objects(REP_ID(" << m_d.name_of_module(old_module)
+		*p_out << "sync_all_co_objects(0, 0, REP_ID(" << m_d.name_of_module(old_module)
 			<< "), REP_ID(" << m_d.name_of_module(new_module) << "), ";
 		// for each binding that is being crossed over, and that has an indirect tagstring,
 		// we add it to the list
@@ -1590,16 +1590,15 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 
 			if ( // HACK for ALWAYS_OVERRIDE
-				/*(direction_is_out && (i_binding->second.indirect_local_tagstring_out
+				(direction_is_out && (i_binding->second.indirect_local_tagstring_out
 					|| i_binding->second.indirect_remote_tagstring_out))
 			||  (!direction_is_out && (i_binding->second.indirect_local_tagstring_in
-					|| i_binding->second.indirect_remote_tagstring_in))*/
-				//true
+					|| i_binding->second.indirect_remote_tagstring_in))
 				// we just want "is_a_pointer"
-				i_binding->second.indirect_local_tagstring_out
-				|| i_binding->second.indirect_local_tagstring_in
-				|| i_binding->second.pointerness == bound_var_info::IS_A_POINTER
-				|| (constrained_to_type && constrained_to_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
+// 				i_binding->second.indirect_local_tagstring_out
+// 				|| i_binding->second.indirect_local_tagstring_in
+// 				|| i_binding->second.pointerness == bound_var_info::IS_A_POINTER
+// 				|| (constrained_to_type && constrained_to_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
 				)
 			{
 				*p_out << "// override for Cake name " << i_binding->first 
@@ -2777,10 +2776,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 			to_typeof,
 			from_module,
 			to_module
-		);
+		); // we can't use REMOVE_CV here because the commas  in some nested typenames confuse cpp,
+		// and extra brackets left by REMOVE_CV(( )) confuse the C++ parser
 		return string("::cake::value_convert_function<") + "\n"
-			+ "\t/* from type: */ " + params.from_typestring + ", " + "\n"
-			+ "\t/* to type: */ " + params.to_typestring + ", " + "\n"
+			+ "\t/* from type: */ boost::remove_const< " + params.from_typestring + ">::type, " + "\n"
+			+ "\t/* to type: */ boost::remove_const< " + params.to_typestring + ">::type, " + "\n"
 			+ "\t/* FromComponent: */ " + params.from_component_class + ", " + "\n"
 			+ "\t/* ToComponent: */ " + params.to_component_class + ", " + "\n"
 			+ "\t/* rule tag: */ " + params.rule_tag_str + "\n"

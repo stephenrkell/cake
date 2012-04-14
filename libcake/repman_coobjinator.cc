@@ -29,17 +29,22 @@ extern "C" {
 #include <boost/shared_ptr.hpp>
 #include <boost/weak_ptr.hpp>
 #include <boost/make_shared.hpp>
-typedef std::map<void*, boost::shared_ptr<co_object_group> > map_t;
+
+// HACK: replace shared_ptr and weak_ptr with regular pointers until we can test this properly
+
+typedef std::map<void*, co_object_group* > map_t;
 struct entry {
 	unsigned present:1;
 	map_t m;
-} __attribute__((packed));	
+} __attribute__((packed));
 
 entry *coobjinator_region;
 #define entry_coverage_in_bytes (64*1024*1024)
 // 64MB regions; there are 2^38 such in a 64-bit address space
 
 using boost::shared_ptr;
+using std::cerr;
+using std::endl;
 
 static void init() __attribute__((constructor));
 static void init()
@@ -67,16 +72,16 @@ map_t *map_ptr_for_object(void *obj)
 	else return 0;
 }
 
-static shared_ptr<co_object_group> group_for_object(void *obj)
+static /*shared_ptr<co_object_group>*/ co_object_group* group_for_object(void *obj)
 {
 	entry *e = entry_for_object(obj);
 	if (e && e->present)
 	{
 		auto found = e->m.find(obj);
 		if (found != e->m.end()) return found->second;
-		else return shared_ptr<co_object_group>();
+		else return 0; //shared_ptr<co_object_group>();
 	}
-	else return shared_ptr<co_object_group>();
+	else return 0; //shared_ptr<co_object_group>();
 }
 
 
@@ -127,7 +132,7 @@ void *find_co_object(const void *object, int object_rep, int co_object_rep,
 	else 
 	{
 		assert(group->reps[object_rep] == object);
-		*co_object_rec_out = group.get();
+		*co_object_rec_out = group/*.get()*/;
 		if (group->reps[co_object_rep] == 0)
 		{
 			/* the co-object in the required form is NULL, so print a message */
@@ -139,7 +144,7 @@ void *find_co_object(const void *object, int object_rep, int co_object_rep,
 }
 
 static std::set<map_t*> maps; // FIXME: reclaim these
-static std::set<boost::weak_ptr<co_object_group> > groups;
+static std::set</*boost::weak_ptr< co_object_group> */ co_object_group* > groups;
 
 static map_t *ensure_map_for_addr(void *addr)
 {
@@ -167,12 +172,12 @@ struct co_object_group *register_co_object(
 		if (group->reps[i_rep])
 		{
 			assert(group->array_len == array_len);
-			return group.get();
+			return group;//.get();
 		}
 	}
 	// if we got here, no array len is recorded, so record it
 	group->array_len = array_len;
-	return group.get();
+	return group;//.get();
 }
 
 struct co_object_group *
@@ -181,8 +186,11 @@ new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by
 {
 	assert(!group_for_object(initial_object));
 	auto p_m = ensure_map_for_addr(initial_object);
-	auto group = boost::make_shared<co_object_group>();
+	co_object_group* group = new co_object_group(); //boost::make_shared<co_object_group>();
+	cerr << "Groups previously had size " << groups.size() << endl;
+	cerr << "Inserting " << group/*.get()*/ << endl;
 	groups.insert(group);
+	cerr << "Groups now has size " << groups.size() << endl;
 	group->reps[initial_rep] = initial_object;
 	group->co_object_info[initial_rep].allocated_by = initial_alloc_by;
 	group->co_object_info[initial_rep].initialized = !is_uninit;
@@ -190,10 +198,10 @@ new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by
 	
 	p_m->insert(std::make_pair(initial_object, group));
 	
-	return group.get();
+	return group/*.get()*/;
 }
 
-void sync_all_co_objects(int from_rep, int to_rep, ...)
+void sync_all_co_objects(addr_change_cb_t cb, void* cb_arg, int from_rep, int to_rep, ...)
 {
 	/* We allow the caller to pass a list of objects (in the from_rep domain) and the
 	 * conversion functions that should be used for them, terminated by "NULL, NULL, NULL".
@@ -226,13 +234,19 @@ void sync_all_co_objects(int from_rep, int to_rep, ...)
 	} while (!(!obj && !conv && !init));
 	va_end(args);
 	 
+	cerr << "Walking the set of " << groups.size() << " groups." << endl;
 	for (auto i_group = groups.begin(); i_group != groups.end(); ++i_group)
 	{
-		if (!i_group->expired())
+		if (/*!i_group->expired()*/ true)
 		{
-			auto p_group = (*i_group).lock();
+			auto p_group = (*i_group);//.lock();
+			cerr << "Group record at " << p_group;
 			if (p_group->reps[from_rep] && p_group->reps[to_rep])
 			{
+				cerr << " has rep " << get_component_name_for_rep(from_rep) << "(" << from_rep << ")"
+					<< " at " << p_group->reps[from_rep]
+					<< " and rep " << get_component_name_for_rep(to_rep) << "(" << to_rep << ")"
+					<< " at " << p_group->reps[to_rep] << endl;
 				/*rep_conv_funcs[from_rep][to_rep][p->form](p->reps[from_rep], p->reps[to_rep]);*/
 				bool is_overridden = (overrides.find(p_group->reps[from_rep]) != overrides.end());
 				
@@ -252,6 +266,19 @@ void sync_all_co_objects(int from_rep, int to_rep, ...)
 					}
 					else // not initialized
 					{
+						/* A quirk here is that init rule conversion functions are allowed 
+						 * to replace their co-object with a user-allocated one. Wrapper
+						 * functions might have the old addr on their stack, so we notify
+						 * them using a callback. 
+						 * FIXME: in general, this is quite hard. How to we identify all
+						 * copies of the pointer that have been issued so far? To stop the
+						 * old pointer value escaping, we want to run these init rules as
+						 * soon as possible. We can improve things by doing all the inits
+						 * first. But what about inits that depend on inits? We can push this
+						 * to the user: the user shouldn't write co-object replacements that
+						 * have dependencies being initialized in the same wrapper.
+						 * That's pretty horrible, but it will have to do for now. */
+						void *old_to_rep = p_group->reps[to_rep];
 						auto p_func = is_overridden 
 							? overrides[p_group->reps[from_rep]].init 
 							: get_init_func(
@@ -260,6 +287,12 @@ void sync_all_co_objects(int from_rep, int to_rep, ...)
 								p_group->reps[to_rep]
 							);
 						p_func(p_group->reps[from_rep], p_group->reps[to_rep]);
+						if (p_group->reps[to_rep] != old_to_rep) 
+						{
+							fprintf(stderr, 
+								"Init rule at %p replaced its co-object.\n", p_func);
+							if (cb) cb(cb_arg, old_to_rep, p_group->reps[to_rep]);
+						}
 
 						p_group->co_object_info[to_rep].initialized = 1;
 					}
@@ -268,7 +301,10 @@ void sync_all_co_objects(int from_rep, int to_rep, ...)
 		}
 		else
 		{
-			groups.erase(i_group); // means an expired/deallocated group
+// 			cerr << "Groups previously had size " << groups.size() 
+// 				<< "; erasing group at " << /*i_group->lock().get()*/ *i_group << endl;
+// 			groups.erase(i_group); // means an expired/deallocated group
+// 			cerr << "Groups now has size " << groups.size() << endl;
 		}
 	}
 }
@@ -309,8 +345,8 @@ void allocate_co_object_idem(void *object, int object_rep, int co_object_rep, in
 	
 	/* tell the image what the type of this heap object is */
 	if (co_object == NULL) { fprintf(stderr, "Error: malloc failed\n"); exit(42); }
-	fprintf(stderr, "Allocating a co-object in rep %d for object at %p (rep %d)\n", 
-	        co_object_rep, object, object_rep);
+	fprintf(stderr, "Allocated a co-object in rep %d for object at %p (rep %d), co-object at %p\n", 
+	        co_object_rep, object, object_rep, co_object);
 	
 	/* we *may* need a new co object record */
 	if (!co_object_rec) co_object_rec = new_co_object_record(
@@ -329,6 +365,12 @@ void *replace_co_object(void *existing_obj,
 	int existing_rep, 
 	int require_other_rep)
 {
+	cerr << "Asked to replace existing co_object " << existing_obj
+		<< " with object at " << new_obj
+		<< " (for rep " << get_component_name_for_rep(existing_rep) << "[" << existing_rep << "], "
+		<< " other rep " << get_component_name_for_rep(require_other_rep) 
+		<< "[" << require_other_rep << "])"
+		<< endl;
 	struct co_object_group *found_existing_co_object;	 
 	void *found = find_co_object(existing_obj, 
 	   	existing_rep, 
@@ -336,10 +378,23 @@ void *replace_co_object(void *existing_obj,
 		&found_existing_co_object);
 	if (found)
 	{
+		cerr << "Found existing co-object." << endl;
+		// free old co-object if we allocated ti
+		if (found_existing_co_object->reps[existing_rep] &&
+			found_existing_co_object->co_object_info[existing_rep].allocated_by
+			 == ALLOC_BY_REP_MAN)
+		{
+			cerr << "Freeing unwanted old co-object at " 
+				<< found_existing_co_object->reps[existing_rep]
+				<< endl;
+			free(found_existing_co_object->reps[existing_rep]);
+		}
 		found_existing_co_object->reps[existing_rep] = new_obj;
 		found_existing_co_object->co_object_info[existing_rep].allocated_by = ALLOC_BY_USER;
 		found_existing_co_object->co_object_info[existing_rep].initialized = 1;
+		cerr << "Successfully replaced" << endl;
 		return new_obj;
 	}
+	cerr << "Did not find record, so not replacing." << endl;
 	return existing_obj;
 }
