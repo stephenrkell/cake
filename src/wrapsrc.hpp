@@ -112,7 +112,9 @@ namespace cake
 			const map<string, set< pair<
 					antlr::tree::Tree*, 
 					shared_ptr<spec::type_die> 
-				> > >& constraints);
+				> > >& constraints,
+			const vector<string>& replaceable_co_obj_ptr_idents
+			);
 
 		environment initial_environment(
 			antlr::tree::Tree *pattern,

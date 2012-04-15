@@ -166,13 +166,18 @@ namespace cake
 				auto subt = get_subroutine_type(i_memb);
 				
 				assert(subt);
+				// create subprogram DIE
 				auto created_subprogram = dynamic_pointer_cast<encap::subprogram_die>(
 					dwarf::encap::factory::for_spec(
 						dwarf::spec::DEFAULT_DWARF_SPEC
 					).create_die(DW_TAG_subprogram,
 						dynamic_pointer_cast<encap::basic_die>(created_cu),
 						symbol_prefix + *(*i_memb)->get_name()));
+						
+				// it's a prototype
 				created_subprogram->set_declaration(true);
+				
+				// add the parameters
 				for (auto i_fp = subt->formal_parameter_children_begin();
 					i_fp != subt->formal_parameter_children_end(); ++i_fp)
 				{
@@ -183,6 +188,12 @@ namespace cake
 						dynamic_pointer_cast<encap::basic_die>(created_subprogram),
 						(*i_fp)->get_name()));
 					created_fp->set_type((*i_fp)->get_type());
+				}
+				
+				// return type
+				if (subt->get_type())
+				{
+					created_subprogram->set_type(subt->get_type());
 				}
 				// FIXME: also do unspecified_parameters
 			}

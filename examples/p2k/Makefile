@@ -38,7 +38,7 @@ $(warning OBJS are $(OBJS))
 BASENAME := $(shell basename $(shell readlink -f $(shell pwd)))
 
 
-default: cake-generated.mk /usr/src/usr.sbin/puffs/rump_caketmpfs/rump_tmpfs
+default: cake-generated.mk p2k_wrap.o #/usr/src/usr.sbin/puffs/rump_caketmpfs/rump_tmpfs
 
 -include cake-generated.mk
 

@@ -1024,6 +1024,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 		map<string, set< pair<antlr::tree::Tree*, shared_ptr<spec::type_die> > > > 
 		constraints_by_cxxname;
 		
+		// we will put any idents that are pointers that we have called
+		// ensure_co_objects_allocated on in here
+		vector<string> replaceable_co_obj_ptr_idents;
+		
 		// for each unique cxxname...
 		for (auto i_cxxname = bindings_by_cxxname.begin(); 
 			i_cxxname != bindings_by_cxxname.end();
@@ -1187,6 +1191,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 			// output co-objects allocation call, if we have a pointer
 			if (is_a_pointer && !is_virtual)
 			{
+				replaceable_co_obj_ptr_idents.push_back(ident);
+				
 				auto id = new_ident("stackptr_helper");
 				*p_out << "__typeof(ensure_is_a_pointer(" << cur_cxxname << ")) *" 
 					<< id << ";" << endl;
@@ -1215,7 +1221,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				*p_out << "// Discarding precise to-type for virtual corresp" << endl;
 				precise_to_type = shared_ptr<type_die>();
 			}
-
+			
 			string cxxname_to_use = cur_cxxname;
 			optional<string> reuse_old_variable;
 			// collect replacements 
@@ -1453,7 +1459,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 				env,
 				new_env,
 				direction_is_out,
-				constraints_by_cxxname);
+				constraints_by_cxxname,
+				replaceable_co_obj_ptr_idents
+				);
 		}
 		
 		return new_env;
@@ -1533,13 +1541,25 @@ assert(false && "disabled support for inferring positional argument mappings");
 		bool direction_is_out,
 		const map< string, 
 			set< pair<antlr::tree::Tree *, shared_ptr<type_die> > >
-		>& constraints_by_cxxname
+		>& constraints_by_cxxname, 
+		const vector<string>& replaceable_co_obj_ptr_idents
 	)
 	{
 		auto old_bindings_by_cxxname = group_bindings_by_cxxname(old_env);
 		auto new_bindings_by_cxxname = group_bindings_by_cxxname(new_env);
 		
-		*p_out << "sync_all_co_objects(0, 0, REP_ID(" << m_d.name_of_module(old_module)
+		auto notifier_ident = new_ident("notifier");
+		*p_out << "co_obj_replacement_notifier " << notifier_ident << " = {";
+		for (auto i_ident = replaceable_co_obj_ptr_idents.begin(); 
+				i_ident != replaceable_co_obj_ptr_idents.end(); 
+				++i_ident)
+		{
+			if (i_ident != replaceable_co_obj_ptr_idents.begin()) *p_out << ", ";
+			*p_out << "(void **) &" << *i_ident;
+		}
+		*p_out << " };" << endl;
+		*p_out << "sync_all_co_objects(make_replacer_cb(" << notifier_ident << "), &" << notifier_ident
+			<< ", REP_ID(" << m_d.name_of_module(old_module)
 			<< "), REP_ID(" << m_d.name_of_module(new_module) << "), ";
 		// for each binding that is being crossed over, and that has an indirect tagstring,
 		// we add it to the list

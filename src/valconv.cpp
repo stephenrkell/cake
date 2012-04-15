@@ -1677,7 +1677,9 @@ namespace cake
 				source_module,
 				false
 			};
-			if (init_only) emit_pre_stub_co_object_substitution_check(ctxt);
+			if (init_only && /* we only replace in the pre-stub if there is no post-stub */
+				(!sink_infix_stub || GET_CHILD_COUNT(sink_infix_stub) == 0)
+			) emit_pre_stub_co_object_substitution_check(ctxt);
 			// restore previous environment + new additions
 			ctxt.env = w.merge_environment(saved_env, return_status.new_bindings);
 		}

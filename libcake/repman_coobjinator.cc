@@ -125,7 +125,7 @@ void *find_co_object(const void *object, int object_rep, int co_object_rep,
 	auto group = group_for_object(const_cast<void*>(object));
 	if (!group) 
 	{
-		fprintf(stderr, "Failed to find co-object in rep %d of object at %p (rep %d)\n",
+		fprintf(stderr, "Failed to find co-object group (looking for rep %d) for object at %p (rep %d)\n",
 				co_object_rep, object, object_rep);
 		return 0; /* caller must use co_object_rec_out to distinguish no-rec case from no-co-obj case */
 	}
@@ -292,6 +292,9 @@ void sync_all_co_objects(addr_change_cb_t cb, void* cb_arg, int from_rep, int to
 							fprintf(stderr, 
 								"Init rule at %p replaced its co-object.\n", p_func);
 							if (cb) cb(cb_arg, old_to_rep, p_group->reps[to_rep]);
+							fprintf(stderr,
+								"After callback, rep 0 is %p and rep 1 is %p\n",
+								p_group->reps[0], p_group->reps[1]);
 						}
 
 						p_group->co_object_info[to_rep].initialized = 1;
@@ -335,7 +338,10 @@ void allocate_co_object_idem(void *object, int object_rep, int co_object_rep, in
 	struct co_object_group *co_object_rec = NULL;
 	
 	co_object = find_co_object(object, object_rep, co_object_rep, &co_object_rec);
-	if (co_object) return; /* the co-object already exists */	
+	fprintf(stderr, "Co-object search for co-obj of %p (rep %d) in rep %d yielded %p\n",
+		object, object_rep, co_object_rep, co_object);
+	if (co_object != NULL) return; /* the co-object already exists */	
+	fprintf(stderr, "No co-object yielded, so allocating a new one.\n");
 	
 	/* the co-object doesn't exist, so allocate it -- use calloc for harmless defaults */
 	unsigned size;
@@ -369,8 +375,8 @@ void *replace_co_object(void *existing_obj,
 		<< " with object at " << new_obj
 		<< " (for rep " << get_component_name_for_rep(existing_rep) << "[" << existing_rep << "], "
 		<< " other rep " << get_component_name_for_rep(require_other_rep) 
-		<< "[" << require_other_rep << "])"
-		<< endl;
+		<< "[" << require_other_rep << "] with object ";
+
 	struct co_object_group *found_existing_co_object;	 
 	void *found = find_co_object(existing_obj, 
 	   	existing_rep, 
@@ -378,6 +384,9 @@ void *replace_co_object(void *existing_obj,
 		&found_existing_co_object);
 	if (found)
 	{
+		cerr << found_existing_co_object->reps[require_other_rep] << ")" << endl;
+		assert(found_existing_co_object->reps[require_other_rep]); // must be nonnull
+		assert(found_existing_co_object->reps[existing_rep] == existing_obj);
 		cerr << "Found existing co-object." << endl;
 		// free old co-object if we allocated ti
 		if (found_existing_co_object->reps[existing_rep] &&
@@ -389,12 +398,24 @@ void *replace_co_object(void *existing_obj,
 				<< endl;
 			free(found_existing_co_object->reps[existing_rep]);
 		}
-		found_existing_co_object->reps[existing_rep] = new_obj;
-		found_existing_co_object->co_object_info[existing_rep].allocated_by = ALLOC_BY_USER;
-		found_existing_co_object->co_object_info[existing_rep].initialized = 1;
+		//found_existing_co_object->reps[existing_rep] = new_obj;
+		//found_existing_co_object->co_object_info[existing_rep].allocated_by = ALLOC_BY_USER;
+		//found_existing_co_object->co_object_info[existing_rep].initialized = 1;
+		
+		auto p_rec = register_co_object(
+			found_existing_co_object->reps[require_other_rep], // i.e. the obj we're co-obj of
+			require_other_rep,
+			new_obj, // i.e. the new co-object
+			existing_rep,
+			ALLOC_BY_USER,
+			found_existing_co_object->array_len
+		);
+		p_rec->co_object_info[existing_rep].initialized = 1;
+		assert(p_rec == found_existing_co_object);
+
 		cerr << "Successfully replaced" << endl;
 		return new_obj;
 	}
-	cerr << "Did not find record, so not replacing." << endl;
+	cerr << ")" << endl << "Did not find record, so not replacing." << endl;
 	return existing_obj;
 }
