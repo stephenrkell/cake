@@ -31,6 +31,7 @@ struct co_object_group {
 	struct co_object_info co_object_info[MAX_REPS];
 	/* struct co_object_group *next; */
 	unsigned array_len;
+	unsigned delete_me:1; /* whether this group should be erased */
 };
 
 extern void *components_table;

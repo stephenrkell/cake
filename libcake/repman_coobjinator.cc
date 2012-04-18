@@ -26,9 +26,12 @@ extern "C" {
 #include <set>
 #include <cstdio>
 #include <cstdarg>
+#include <strings.h>
 #include <boost/shared_ptr.hpp>
 #include <boost/weak_ptr.hpp>
 #include <boost/make_shared.hpp>
+#include "repman_image.hh"
+using pmirror::process_image;
 
 // HACK: replace shared_ptr and weak_ptr with regular pointers until we can test this properly
 
@@ -37,6 +40,9 @@ struct entry {
 	unsigned present:1;
 	map_t m;
 } __attribute__((packed));
+
+static std::set<map_t*> maps; // FIXME: reclaim these
+static std::set</*boost::weak_ptr< co_object_group> */ co_object_group* > groups;
 
 entry *coobjinator_region;
 #define entry_coverage_in_bytes (64*1024*1024)
@@ -106,10 +112,15 @@ int invalidate_co_object(void *object, int rep)
 			map_ptr_for_object(group->reps[i])->erase(object);
 			if (group->co_object_info[i].allocated_by == ALLOC_BY_REP_MAN)
 			{
+				fprintf(stderr, "Freeing co-object at %p\n", group->reps[i]);
 				free(group->reps[i]);
-			}
+			} else fprintf(stderr, "Not freeing user-allocated co-object at %p\n", group->reps[i]);
 		}
 	}
+	
+	// don't do this, because it's likely we are being called mid-traversal
+	//groups.erase(group);
+	group->delete_me = 1;
 	
 	return 0;
 }
@@ -143,9 +154,6 @@ void *find_co_object(const void *object, int object_rep, int co_object_rep,
 	}
 }
 
-static std::set<map_t*> maps; // FIXME: reclaim these
-static std::set</*boost::weak_ptr< co_object_group> */ co_object_group* > groups;
-
 static map_t *ensure_map_for_addr(void *addr)
 {
 	entry *e = entry_for_object(addr);
@@ -164,6 +172,7 @@ struct co_object_group *register_co_object(
 {
 	auto group = group_for_object(existing_object);
 	assert(group);
+	assert(group->reps[co_object_rep] == 0);
 	group->reps[co_object_rep] = co_object;
 	group->co_object_info[co_object_rep].allocated_by = alloc_by;
 	ensure_map_for_addr(co_object)->insert(std::make_pair(co_object, group));
@@ -187,6 +196,7 @@ new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by
 	assert(!group_for_object(initial_object));
 	auto p_m = ensure_map_for_addr(initial_object);
 	co_object_group* group = new co_object_group(); //boost::make_shared<co_object_group>();
+	bzero(group, sizeof (co_object_group));
 	cerr << "Groups previously had size " << groups.size() << endl;
 	cerr << "Inserting " << group/*.get()*/ << endl;
 	groups.insert(group);
@@ -237,7 +247,7 @@ void sync_all_co_objects(addr_change_cb_t cb, void* cb_arg, int from_rep, int to
 	cerr << "Walking the set of " << groups.size() << " groups." << endl;
 	for (auto i_group = groups.begin(); i_group != groups.end(); ++i_group)
 	{
-		if (/*!i_group->expired()*/ true)
+		if (!(*i_group)->delete_me && /*!i_group->expired()*/ true)
 		{
 			auto p_group = (*i_group);//.lock();
 			cerr << "Group record at " << p_group;
@@ -309,6 +319,17 @@ void sync_all_co_objects(addr_change_cb_t cb, void* cb_arg, int from_rep, int to
 // 			groups.erase(i_group); // means an expired/deallocated group
 // 			cerr << "Groups now has size " << groups.size() << endl;
 		}
+	} /* end for i_group */
+	
+	/* Now walk again, erasing any items that should be deleted. */
+	auto i_group = groups.begin();
+	while (i_group != groups.end())
+	{
+		if ((*i_group)->delete_me)
+		{
+			fprintf(stderr, "Erasing group at %p\n", *i_group);
+			i_group = groups.erase(i_group);
+		} else ++i_group;
 	}
 }
 
@@ -402,6 +423,13 @@ void *replace_co_object(void *existing_obj,
 		//found_existing_co_object->co_object_info[existing_rep].allocated_by = ALLOC_BY_USER;
 		//found_existing_co_object->co_object_info[existing_rep].initialized = 1;
 		
+		// delete the old obj
+		ensure_map_for_addr(existing_obj)->erase(existing_obj);
+		// zero the old group entry
+		found_existing_co_object->reps[existing_rep] = 0;
+		// forget any descr
+		pmirror::self.forget_heap_object_descr((process_image::addr_t) existing_rep);
+		
 		auto p_rec = register_co_object(
 			found_existing_co_object->reps[require_other_rep], // i.e. the obj we're co-obj of
 			require_other_rep,
@@ -412,6 +440,15 @@ void *replace_co_object(void *existing_obj,
 		);
 		p_rec->co_object_info[existing_rep].initialized = 1;
 		assert(p_rec == found_existing_co_object);
+
+		// sanity check that the existing object has really gone away
+		// 1. co-object search for it yields nothing
+		assert(find_co_object(existing_obj, existing_rep, require_other_rep, 0) == 0);
+		// 2. no group contains it
+		for (auto i_group = groups.begin(); i_group != groups.end(); ++i_group)
+		{
+			assert((*i_group)->reps[existing_rep] != existing_obj);
+		}
 
 		cerr << "Successfully replaced" << endl;
 		return new_obj;
