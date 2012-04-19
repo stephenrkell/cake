@@ -563,7 +563,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 				(source_infix_stub && GET_CHILD_COUNT(source_infix_stub) > 0) ?
 					emit_stub_expression_as_statement_list(
 						ctxt,
-						source_infix_stub/*,
+						GET_TYPE(source_infix_stub) == CAKE_TOKEN(INFIX_STUB_EXPR) ? 
+							GET_CHILD(source_infix_stub, 0) : source_infix_stub/*,
 						shared_ptr<type_die>()*/) // FIXME: really no type expectations here?
 				: (post_emit_status){NO_VALUE, "true", environment()};
 			// now update the environment to add new let-bindings and "it"
@@ -619,7 +620,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 				(sink_infix_stub && GET_CHILD_COUNT(sink_infix_stub) > 0) ?
 					emit_stub_expression_as_statement_list(
 						ctxt,
-						sink_infix_stub
+						GET_TYPE(sink_infix_stub) == CAKE_TOKEN(INFIX_STUB_EXPR) ?
+							GET_CHILD(sink_infix_stub, 0) : sink_infix_stub
 					) // FIXME: really no type expectations here?
 					: (post_emit_status){NO_VALUE, "true", environment()};
 			auto saved_env2 = ctxt.env;
@@ -2118,7 +2120,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 						if (!seen_interp_flavour) seen_interp_flavour = GET_TYPE(GET_PARENT(*i_ctxt));
 						else if (*seen_interp_flavour != GET_TYPE(GET_PARENT(*i_ctxt)))
 						{ RAISE(*i_ctxt, "interpretation does not agree with previous uses of ident"); }
-							
+						
+						/* If the context of the use of this argname is an interpretation... */
 						if (GET_TYPE(GET_PARENT(*i_ctxt)) == CAKE_TOKEN(KEYWORD_AS)
 						||  GET_TYPE(GET_PARENT(*i_ctxt)) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
 						||  GET_TYPE(GET_PARENT(*i_ctxt)) == CAKE_TOKEN(KEYWORD_IN_AS)
@@ -2142,15 +2145,34 @@ assert(false && "disabled support for inferring positional argument mappings");
 								}
 							}
 						}
-						else
+						else /* the argname's usage is not in an interpretation, but 
+						        we remember it anyway. */
 						{
-							// We might still want to keep this AST
+							// We might still want to keep this AST  (-----WHY??)
 							// ... set it to point to the function expression argument
 							if (!representative_ast) representative_ast = *i_ctxt;
-							else assert(*i_ctxt == representative_ast);
+							else 
+							{
+								// discard the representative if we're not in consensus?
+								// Or keep the earlier one, since we seem to want 
+								// representative_ast to be set if 
+								// 
+								if (*i_ctxt != representative_ast)
+								{
+									//representative_ast = 0;
+									//break;
+									cerr << "Warning: usage " 
+										<< CCP(TO_STRING_TREE(*i_ctxt))
+										<< " does not perform consistent interpretation "
+										<< "of an underlying ident, "
+										<< "w.r.t. context(s) seen earlier: " 
+										<< CCP(TO_STRING_TREE(representative_ast)) << endl;
+								}
+							}
 						}
 					}
-					// now we have a single representative AST (or null)
+					// now we have a single representative AST node (or null)
+					// that we can use to infer what tagstrings apply to this bound value
 					shared_ptr<spec::basic_die> found;
 					if (representative_ast) found = map_ast_context_to_dwarf_element(
 						representative_ast, remote_module, false);
@@ -3128,7 +3150,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					}	// end case IDENT
 					case CAKE_TOKEN(IDENTS_TO_BIND): {
 						BIND2(expr, subExpr);
-						/* Our expression should output multiple values. We will
+						/* Our expression is likely to output multiple values. We will
 						 * bind an ident to each one.
 						 * How to encode multiple return/output values in a
 						 * C++ stub expr result?  We need our "result" ident
@@ -3144,26 +3166,73 @@ assert(false && "disabled support for inferring positional argument mappings");
 						);
 						environment new_bindings;
 						assert(result.multivalue);
-						string multivalue_cxxname = result.multivalue->first;
-						auto multivalue_outargs = result.multivalue->second;
-						auto i_outarg = multivalue_outargs.begin();
+						string cxx_expr;
+
+						vector< sig_output_arginfo_t >::iterator i_outarg;
+						if (result.multivalue)
+						{
+							string multivalue_cxxname = result.multivalue->first;
+							auto multivalue_outargs = result.multivalue->second;
+							i_outarg = multivalue_outargs.begin();
+							cxx_expr = "*" + multivalue_cxxname + "->" + i_outarg->argname;
+							if (GET_CHILD_COUNT(boundNameOrNames) > multivalue_outargs.size())
+							{  RAISE(boundNameOrNames, "too many idents to bind"); }
+						}
+						else cxx_expr = result.result_fragment;
+						
 						/* multivalue is an instance of a wrapper-local struct type
 						 * -- we want to bind a new Cakename to each element. */
 						FOR_ALL_CHILDREN(boundNameOrNames)
 						{
-							if (i_outarg == multivalue_outargs.end()) RAISE(n,
-								"too many idents to bind");
-							assert(GET_TYPE(n) == CAKE_TOKEN(IDENT));
-							string ident_to_bind = unescape_ident(CCP(GET_TEXT(n)));
+							string ident_to_bind;
+							optional<string> interp_string;
+							int interp_type = 0;
+							switch(GET_TYPE(n))
+							{
+								case CAKE_TOKEN(IDENT): 
+									ident_to_bind = unescape_ident(CCP(GET_TEXT(n)));
+									break;
+								case CAKE_TOKEN(NAME_AND_INTERPRETATION): {
+									INIT;
+									BIND3(n, boundName, IDENT);
+									ident_to_bind = unescape_ident(CCP(GET_TEXT(boundName)));
+									BIND2(n, interp);
+									interp_type = GET_TYPE(interp);
+									{
+										INIT;
+										BIND3(interp, ident, IDENT);
+										interp_string = unescape_ident(CCP(GET_TEXT(ident)));
+										BIND3(interp, value_construct, VALUE_CONSTRUCT);
+									}
+								} break;
+								default: RAISE_INTERNAL(n, "unexpected token");
+							}
+							optional<string> local_tagstring;
+							optional<string> indirect_local_tagstring_in;
+							optional<string> indirect_local_tagstring_out;
+							if (interp_type == CAKE_TOKEN(KEYWORD_AS)
+							 || interp_type == CAKE_TOKEN(KEYWORD_INTERPRET_AS))
+							{ local_tagstring = interp_string; }
+							else if (interp_type == CAKE_TOKEN(KEYWORD_IN_AS))
+							{ indirect_local_tagstring_in = interp_string; }
+							else if (interp_type == CAKE_TOKEN(KEYWORD_OUT_AS))
+							{ indirect_local_tagstring_out = interp_string; }
+							
 							new_bindings.insert(make_pair(ident_to_bind, (bound_var_info){
-									"*" + multivalue_cxxname + "->" + i_outarg->argname,
-									"*" + multivalue_cxxname + "->" + i_outarg->argname,
+									cxx_expr,
+									cxx_expr,
 									ctxt.modules.current,
-									false
+									false,
+									bound_var_info::UNDEFINED, // pointerness
+									local_tagstring,
+									optional<string>(),
+									indirect_local_tagstring_in,
+									indirect_local_tagstring_out
 								})
 							);
-							++i_outarg;
-						}
+							if (result.multivalue) ++i_outarg;
+
+						} // end for bound ident
 						RETURN_VALUE(((post_emit_status){ 
 							result.result_fragment,
 							result.success_fragment,
@@ -4031,7 +4100,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				if (i_result != arg_results.begin()) msg << ", ";
 				msg << i_result->result_fragment;
 			}
-			msg << ") for call";
+			msg << ") for call (min: " << min_args << ", max: " << max_args << ")" << endl;
 			RAISE(call_expr, msg.str().c_str());
 		}
 		
@@ -4431,6 +4500,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 	)
 	{
 		set<int> ast_nodes_used; 
+		set<int> caller_args_used;
 
 		/* Pass 1: explicit positional matching. */
 		/* 1a. From the left side.
@@ -4448,6 +4518,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 						goto pass1_loop_exit;
 					default: /* i.e. any other stub expression */
 						out[i] = make_pair(n, optional<string>());
+						caller_args_used.insert(i);
 						ast_nodes_used.insert(i);
 						break;
 				}
@@ -4483,6 +4554,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				unsigned ast_pos = GET_CHILD_COUNT(argsMultiValue)
 				 - pos_from_rhs;
 
+				
 				if (ast_nodes_used.find((int) ast_pos) 
 					!= ast_nodes_used.end())
 				{
@@ -4497,6 +4569,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 						default: /* i.e. any other stub expression */
 							out[ast_pos] = make_pair(n, optional<string>());
 							ast_nodes_used.insert(ast_pos);
+							caller_args_used.insert(i);
 							break;
 					}
 				}
@@ -4628,7 +4701,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 					optional<string>()
 				);
 			}
-			/* We can now write that in_args has been used. */
+			/* We can now write that in_args has been used.
+			 * HMM. What if we name-matched zero arguments? 
+			 * Well, we still "used" this node. */
 			ast_nodes_used.insert(*hit_in_args_ast_pos_pass1);
 		}
 
@@ -4639,17 +4714,36 @@ assert(false && "disabled support for inferring positional argument mappings");
 		 * remaining, we use it to fill a unique not-output-only
 		 * callee arg position. */
 		set<int> ast_nodes_unused;
+		set<int> unused_caller_args;
+		unsigned caller_fp_count = (ctxt.opt_source && ctxt.opt_source->signature)
+		 ? srk31::count(
+			ctxt.opt_source->signature->formal_parameter_children_begin(),
+			ctxt.opt_source->signature->formal_parameter_children_end())
+		 : 0;
 		for (int i = 0; i < (signed) GET_CHILD_COUNT(argsMultiValue);
 			++i)
 		{
-			if (ast_nodes_used.find(i) == ast_nodes_used.end())
+			if (ast_nodes_unused.find(i) == ast_nodes_used.end())
 			{
 				ast_nodes_unused.insert(i);
 			}
 		}
-		if (ast_nodes_unused.size() == 1)
+		for (int i = 0; i < (signed) caller_fp_count;
+			++i)
 		{
-			cerr << "Detected unused AST arg in pos " << *ast_nodes_unused.begin() << endl;
+			if (caller_args_used.find(i) == caller_args_used.end())
+			{
+				unused_caller_args.insert(i);
+			}
+		}
+		if 
+		//(ast_nodes_unused.size() == 1) 
+		//(ast_nodes_unused.size() == 1 || hit_in_args_ast_pos_pass1)
+		//(unused_caller_args.size() == 1)
+		(unused_caller_args.size() > 0)
+		{
+			/* We might have spare caller args even if all AST nodes are accounted for,
+			 * e.g. if in_args covers two arguments but only one has been matched so far. */
 			
 			/* How can we enumerate the as-yet-unfilled callee
 			 * arguments? If it's varargs, we have an infinity
@@ -4670,27 +4764,54 @@ assert(false && "disabled support for inferring positional argument mappings");
 					}
 				}
 			}
-			if (unfilled_callee_non_output_only_args.size() == 1)
+			cerr << "Trying to fill unused arguments (" 
+				<< "not output only: " << unfilled_callee_non_output_only_args.size()
+				<< ", total: " << unfilled_callee_args.size()
+			<< ") using " << unused_caller_args.size() << " unused values from caller." << endl;
+			//if (unfilled_callee_non_output_only_args.size() == 1)
+			if (unfilled_callee_non_output_only_args.size() == unused_caller_args.size())
 			{
-				auto pos = *unfilled_callee_non_output_only_args.begin();
-				cerr << "Filling lone unfilled non-output-only callee arg in pos " << pos << endl;
-				/* Fill this argument. */
-				out[pos]
-				 = make_pair(
-			 		GET_CHILD(argsMultiValue, *ast_nodes_unused.begin()),
-					optional<string>()
-					);
+				while (unfilled_callee_non_output_only_args.size() > 0)
+				{
+					auto pos = *unfilled_callee_non_output_only_args.begin();
+					cerr << "Filling lone unfilled non-output-only callee arg in pos " << pos << endl;
+					/* Fill this argument. For the moment, since we have ensured that
+					 * there is at most one in_args, and in the non-variadic case
+					 * we have processed things to both the left and the right of it,
+					 * it can only come from extra callee args (i.e. not name-matched),
+					 * not from the AST. */
+					out[pos]
+					 = make_pair(
+						/* we make the AST ourselves! */
+						make_ident_expr(basic_name_for_argnum(
+							*unused_caller_args.begin()
+							)),
+						optional<string>()
+						);
+					unfilled_callee_non_output_only_args.erase(
+						unfilled_callee_non_output_only_args.begin());
+					unused_caller_args.erase(unused_caller_args.begin());
+				}
 			}
-			else if (unfilled_callee_args.size() == 1)
+			else if //(unfilled_callee_args.size() == 1)
+				(unfilled_callee_args.size() == unused_caller_args.size())
 			{
-				auto pos = *unfilled_callee_args.begin();
-				cerr << "Filling lone unfilled callee arg in pos " << pos << endl;
-				/* Fill this argument. */
-				out[pos]
-				 = make_pair(
-			 		GET_CHILD(argsMultiValue, *ast_nodes_unused.begin()),
-					optional<string>()
-					);
+				while (unfilled_callee_args.size() > 0)
+				{
+					auto pos = *unfilled_callee_args.begin();
+					cerr << "Filling lone unfilled callee arg in pos " << pos << endl;
+					/* Fill this argument. Same comment as above. */
+					out[pos]
+					 = make_pair(
+						//GET_CHILD(argsMultiValue, *ast_nodes_unused.begin()),
+						make_ident_expr(basic_name_for_argnum(
+							*unused_caller_args.begin()
+							)),
+						optional<string>()
+						);
+					unfilled_callee_args.erase(unfilled_callee_args.begin());
+					unused_caller_args.erase(unused_caller_args.begin());
+				}
 			}
 		}
 		else if (ast_nodes_unused.size() > 1)

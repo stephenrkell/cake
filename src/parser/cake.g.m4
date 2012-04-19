@@ -311,7 +311,7 @@ bindingPrefix : bindingKeyword^ bindableIdentSet '='!
 bindableIdentSet 	: 
                        /* bindableIdentWithOptionalInterpretation 
                         -> ^( IDENTS_TO_BIND bindableIdentWithOptionalInterpretation )
-					|*/ '(' bindableIdentWithOptionalInterpretation ( ',' bindableIdentWithOptionalInterpretation )+ ')' 
+					|*/ '(' bindableIdentWithOptionalInterpretation ( ',' bindableIdentWithOptionalInterpretation )* ')' 
                         -> ^( IDENTS_TO_BIND bindableIdentWithOptionalInterpretation* )
 /*                    | lhs=IDENT ELLIPSIS rhs=IDENT
                         -> ^( FORM_ASSOCIATION $lhs $rhs )*/ /* subsumed by postfixExpression */
@@ -320,7 +320,7 @@ bindableIdentSet 	:
                     | postfixExpression valueInterpretation? /* I give in -- mutation is okay */
                     ;
 
-bindableIdentWithOptionalInterpretation: IDENT valueInterpretation? -> ^( IDENT valueInterpretation? )
+bindableIdentWithOptionalInterpretation: IDENT valueInterpretation? -> ^( NAME_AND_INTERPRETATION IDENT valueInterpretation? )
                                        ;
             
 bindingKeyword : KEYWORD_LET | KEYWORD_OUT | KEYWORD_SET ;
