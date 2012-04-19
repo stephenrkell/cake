@@ -2957,6 +2957,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			case CAKE_TOKEN(KEYWORD_DELETE):
 			case CAKE_TOKEN(KEYWORD_NEW):
 			case CAKE_TOKEN(KEYWORD_TIE):
+				cerr << "Unimplemented expression head: " << CCP(TO_STRING_TREE(expr)) << endl;
 				assert(false);
 
 			// these affect the expected cxx type, but
@@ -3655,7 +3656,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				arg_results_by_callee_name -- a map from callee-side name to result fragment
 				argnums_by_callee_name -- a map from callee-side names to their indices (in callee order)
 			and the output parameter stuff:
-				output_parameter_idents -- map from callee position to an output arg's local destination object
+				output_parameter_idents -- map from callee position to an output arg's local destination object, for output-*only* args
 				output_parameter_argnums -- the inverse, currently ignored
 				output_argnums -- similar to output_parameter_argnums, but not ignored
 				output_parameter_is_array -- map from argnum to whether it's an array (syntax...)
@@ -3945,17 +3946,28 @@ assert(false && "disabled support for inferring positional argument mappings");
 						&& (*i_arg)->get_name()
 					) ? *(*i_arg)->get_name() : basic_name_for_argnum(argnum);
 				
-				/* Now we're free to output an expression. */
-				auto result = emit_stub_expression_as_statement_list(
+				/* Now we're free to output an expression. But we don't do this
+				 * in the case of output-only args... we already have what we need.  */
+				bool is_output_only
+				 = (output_parameter_idents.find(argnum) != output_parameter_idents.end());
+				auto result = (!is_output_only)
+				 ? emit_stub_expression_as_statement_list(
 					ctxt, 
 					i_assigned->second.first
-				);
-				
+				)
+				 : (post_emit_status){
+						"(static_cast< __typeof(" 
+						   + output_parameter_idents[argnum]
+						   + ") *>(&" + output_parameter_idents[argnum] + "))",
+						"true",
+						environment()
+					};
+
 				arg_results.push_back(result);
 
-				/* If the stub expression was a KEYWORD_IN_ARGS, then
-				 * the stub code emitted  has yielded multiple outputs 
-				 * and multiple successes. */
+
+
+
 
 				// store the mapping to the callee argument
 				arg_names_in_callee.push_back((*i_arg)->get_name());
@@ -4550,7 +4562,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 		if (hit_in_args_ast_pos_pass1)
 		{
-
 			/* Now we match by name any leftover args */
 			std::vector<
 				std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
@@ -4587,7 +4598,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 			/* Sort them by position in the callee arg list.
 			 * and check that they form a contiguous sequence 
-			 * starting at our in_args pos. (HMM: really?)  */
+			 * starting at our in_args pos. (HMM: really? don't check, for now)  */
 			std::sort(
 				name_matched.begin(),
 				name_matched.end(),
