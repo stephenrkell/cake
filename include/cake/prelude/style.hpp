@@ -101,6 +101,21 @@ namespace cake
 		RetValType operator()() const 
 		{ return -1; }
 	};
+
+	template <typename RetValType, int RuleTag = 0>
+	struct success
+	{
+		RetValType operator()() const 
+		{ return 0; }
+	};
+	template <typename RetValPtrTargetType, int RuleTag /* = 0 */>
+	struct success<RetValPtrTargetType*, RuleTag>
+	{
+		RetValPtrTargetType* operator()() const 
+		{ return reinterpret_cast<RetValPtrTargetType*>(this); }
+	};
+
+
 	// now partially specialise for pointers
 	template <typename RetValType, int RuleTag>
 	struct failure<RetValType*, RuleTag>

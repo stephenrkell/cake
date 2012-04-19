@@ -6,6 +6,14 @@ CAKE ?= ../../src/cake
 PMIRROR ?= $(realpath ../../../libpmirror.hg)
 DWARFPP ?= $(realpath ../../../libdwarfpp.hg)
 
+UNWIND_ARCH ?= $(shell uname -m)
+ifeq ($(UNWIND_ARCH),i686))
+UNWIND_ARCH := x86
+endif
+ifeq ($(UNWIND_ARCH),i386))
+UNWIND_ARCH := x86
+endif
+
 CXX ?= g++-4.5
 CXXFLAGS += -I/usr/local/include 
 CXXFLAGS += -I/usr/pkg/include 
@@ -15,7 +23,7 @@ CXXFLAGS += -I$(shell dirname $(CAKE))/../../libsrk31c++.hg/include
 LDFLAGS += -L/usr/local/lib -Wl,-R/usr/local/lib 
 
 ifneq ($(NO_LIBUNWIND),yes)
-LDLIBS += -lunwind -lunwind-ptrace -lunwind-$(shell uname -m)
+LDLIBS += -lunwind -lunwind-ptrace -lunwind-$(UNWIND_ARCH)
 endif
 
 LDFLAGS += -L$(shell dirname $(CAKE))/../libcake  -Wl,-R$(realpath $(shell dirname $(CAKE))/../libcake)

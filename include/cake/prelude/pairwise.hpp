@@ -466,8 +466,18 @@ typename corresponding_type_to_first< \
         } 
     }; 
 	
+// 	template <typename FromComponent, typename ToComponent>
+// 	struct value_convert<void*, void*, FromComponent, ToComponent, 0>
+// 	{
+// 		void *operator()(const void *from, void**p_to = 0) const
+// 		{
+// 			// paste from below
+// 		}
+// 	};
+	
 	template <typename FromIsAPtr, typename ToIsAPtr, typename FromComponent, typename ToComponent, int RuleTag>
 	struct value_convert<FromIsAPtr*, ToIsAPtr*, FromComponent, ToComponent, RuleTag>
+	// : private value_convert<void*, void*, FromComponent, ToComponent, 0>
 	{
 		ToIsAPtr* operator()(const FromIsAPtr* from, ToIsAPtr **p_to = 0) const 
 		{
@@ -495,41 +505,6 @@ typename corresponding_type_to_first< \
 				if (p_to) *p_to = reinterpret_cast<__typeof(*p_to)>(found_co_object);
 				return reinterpret_cast<__typeof(*p_to)>(found_co_object);
 			}
-				/*
-				 * Cake compiler:
-				 * How do we identify source/sink data types
-				 * in the tables we output?
-				 * 
-				 * We have to account for
-				 * - 1. canonicalisation. We assume that within a Cake component,
-				 *      we have some canonical name for a data type. This is just
-				 *      a concatenation of strings (compile directory, compiler). EASY. 
-				 *      Except:
-				 *      the "compilation directory" idea doesn't quite canonicalise enough,
-				 *      because in the same component there will be multiple directories
-				 *      (usually with a common prefix). That's okay -- we can scan all
-				 *      compilation units in the component and use the common prefix.
-				 * - 2. runtime discoverability. The runtime has to do lookups
-				 *      in these tables, so that given a compilation-unit-level
-				 *      DWARF type (e.g. from heap object discovery) 
-				 *      it can index the table correctly.
-				 *      Again, this is easy. The runtime can discover 
-				 *      a name for the data type. Then it needs to compute the 
-				 *      two strings that we used earlier. Unfortunately, it doesn't
-				 *      know where component boundaries are. So we have to emit some
-				 *      metadata to tell it. In the wrapper file, we can emit
-				 *      a set of tuples
-				 *      <compilation-unit-name, full-compil-directory-name, compiler-ident>
-				 *      as a string with a name __cake_component_<component-name>.
-				 *      It can then do the longest-common-prefix calculation on the
-				 *      full-compil-directory-name
-				 * 
-				 * For the Cake runtime, we must be able to map from
-				 * a Cake component identifier to a set of these.
-				 *  */
-				
-//			}
-				
         } 
     }; 
     // HACK: allow conversion from "unspecified" to/from any pointer type

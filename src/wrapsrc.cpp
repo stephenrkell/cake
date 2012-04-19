@@ -4526,13 +4526,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 			return matched_pos;
 		};
-		auto pos_for_caller_arg_name
+		auto argnum_for_caller_arg_name
 		 = [ctxt](const string& name)
 		{
-			signed pos;
+			signed pos = -1;
 			auto subp = ctxt.opt_source->signature;
 			auto i_fp = subp->formal_parameter_children_begin();
-			for (auto i_fp = subp->formal_parameter_children_begin();
+			for (;
 				i_fp != subp->formal_parameter_children_end();
 				++pos, ++i_fp)
 			{
@@ -4604,8 +4604,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 				string name = *(*i_matched->first)->get_name();
 				unsigned pos
 				 = pos_for_callee_arg_iter(i_matched->second);
-				unsigned caller_argnum
-				 = pos_for_caller_arg_name(name);
+				signed caller_argnum
+				 = argnum_for_caller_arg_name(name);
 				assert(caller_argnum != -1); // should succeed
 				out[pos] = make_pair(
 					/* we make the AST ourselves! */
@@ -4636,6 +4636,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 		}
 		if (ast_nodes_unused.size() == 1)
 		{
+			cerr << "Detected unused AST arg in pos " << *ast_nodes_unused.begin() << endl;
+			
 			/* How can we enumerate the as-yet-unfilled callee
 			 * arguments? If it's varargs, we have an infinity
 			 * of them. Let's just enumerate the non-varargs ones. */
@@ -4657,8 +4659,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 			if (unfilled_callee_non_output_only_args.size() == 1)
 			{
+				auto pos = *unfilled_callee_non_output_only_args.begin();
+				cerr << "Filling lone unfilled non-output-only callee arg in pos " << pos << endl;
 				/* Fill this argument. */
-				out[*unfilled_callee_non_output_only_args.begin()]
+				out[pos]
 				 = make_pair(
 			 		GET_CHILD(argsMultiValue, *ast_nodes_unused.begin()),
 					optional<string>()
@@ -4666,8 +4670,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 			else if (unfilled_callee_args.size() == 1)
 			{
+				auto pos = *unfilled_callee_args.begin();
+				cerr << "Filling lone unfilled callee arg in pos " << pos << endl;
 				/* Fill this argument. */
-				out[*unfilled_callee_args.begin()]
+				out[pos]
 				 = make_pair(
 			 		GET_CHILD(argsMultiValue, *ast_nodes_unused.begin()),
 					optional<string>()
@@ -4680,6 +4686,17 @@ assert(false && "disabled support for inferring positional argument mappings");
 			RAISE(argsMultiValue, "contains extraneous arguments");
 		}
 		else assert(ast_nodes_unused.size() == 0);
+		
+		cerr << "Summary of argument mappings for call to " << callee_subprogram->summary()
+			<< ": " << endl;
+		for (auto i_ent = out.begin(); i_ent != out.end(); ++i_ent)
+		{
+			cerr << "Argument position " << i_ent->first
+				<< " has been filled by ";
+			if (i_ent->second.first) cerr << "expression " 
+				<< CCP(TO_STRING_TREE(i_ent->second.first)) << endl;
+			else cerr << "(no expression; must be output-only arg)" << endl;
+		}
 	}
 	
 }
