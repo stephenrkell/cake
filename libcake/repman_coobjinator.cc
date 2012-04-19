@@ -52,6 +52,8 @@ using boost::shared_ptr;
 using std::cerr;
 using std::endl;
 
+static map_t *ensure_map_for_addr(void *addr);
+
 static void init() __attribute__((constructor));
 static void init()
 {
@@ -62,6 +64,65 @@ static void init()
 	coobjinator_region = MEMTABLE_NEW_WITH_TYPE(entry, 
 		entry_coverage_in_bytes, 0, 0);
 	assert(coobjinator_region != MAP_FAILED);
+}
+
+static void check_maps_and_groups_consistency(void)
+{
+	/* For every map entry, the group should agree. */
+	for (auto i_map = maps.begin(); i_map != maps.end(); ++i_map)
+	{
+		fprintf(stderr, "Map at %p has { ", *i_map);
+		bool printed = false;
+		for (auto i_ent = (*i_map)->begin(); i_ent != (*i_map)->end(); ++i_ent)
+		{
+			auto p_obj = i_ent->first;
+			auto p_group = i_ent->second;
+			
+			if (printed) fprintf(stderr, ", ");
+			fprintf(stderr, "(object %p, group %p)", p_obj, p_group);
+			printed = true;
+			
+			// some rep in the group should be this object
+			bool found = false;
+			for (int i = 0; i < MAX_REPS; ++i)
+			{
+				if (p_group->reps[i] == p_obj) { found = true; break; }
+			}
+			assert(found); // if this fails, it means the map entry is stale
+		}
+		fprintf(stderr, " }\n");
+	}
+	/* For every group entry, the maps should agree. */
+	for (auto i_group = groups.begin(); i_group != groups.end(); ++i_group)
+	{
+		if ((*i_group)->delete_me) 
+		{
+			fprintf(stderr, "Group record at %p is marked for deletion.\n", *i_group);
+		}
+		else
+		{
+			fprintf(stderr, "Group record at %p has { ", *i_group);
+			bool printed = false;
+			for (int i = 0; i < MAX_REPS; ++i)
+			{
+				void *p_obj = (*i_group)->reps[i];
+				if (p_obj)
+				{
+					if (printed) fprintf(stderr, ", ");
+					fprintf(stderr, "rep %d: %p", i, p_obj);
+					printed = true;
+					auto p_map = ensure_map_for_addr(p_obj);
+					assert(p_map);
+					auto found = p_map->find(p_obj);
+					assert(found != p_map->end());
+					auto p_group = found->second;
+					assert(p_group == *i_group);
+				}
+			}
+			fprintf(stderr, "}\n");
+		}		
+		fflush(stderr);
+	}
 }
 
 entry *entry_for_object(void *obj)
@@ -99,7 +160,8 @@ static /*shared_ptr<co_object_group>*/ co_object_group* group_for_object(void *o
 int invalidate_co_object(void *object, int rep)
 {
 	auto group = group_for_object(object);
-	if (!group || !group->reps[rep] || group->reps[rep] != object) return -1; /* co-object not found */
+	//if (!group || !group->reps[rep] || group->reps[rep] != object) return -1; /* co-object not found */
+	assert(group && group->reps[rep] && group->reps[rep] == object);
 
 	/* Using the shared_ptr implementation of groups, it's not necessary to explicitly
 	 * delete the group record. But we should remove the map entries that point to it,
@@ -109,18 +171,27 @@ int invalidate_co_object(void *object, int rep)
 	{
 		if (group->reps[i])
 		{
-			map_ptr_for_object(group->reps[i])->erase(object);
+			map_ptr_for_object(group->reps[i])->erase(group->reps[i]);
 			if (group->co_object_info[i].allocated_by == ALLOC_BY_REP_MAN)
 			{
 				fprintf(stderr, "Freeing co-object at %p\n", group->reps[i]);
 				free(group->reps[i]);
-			} else fprintf(stderr, "Not freeing user-allocated co-object at %p\n", group->reps[i]);
+			} 
+			else 
+			{
+				fprintf(stderr, "Not freeing user-allocated co-object at %p\n", group->reps[i]);
+			}
+			// we null the pointer in both cases
+			group->reps[i] = 0;
 		}
 	}
 	
 	// don't do this, because it's likely we are being called mid-traversal
 	//groups.erase(group);
+	// instead, mark for deletion
 	group->delete_me = 1;
+	
+	check_maps_and_groups_consistency();
 	
 	return 0;
 }
@@ -142,12 +213,14 @@ void *find_co_object(const void *object, int object_rep, int co_object_rep,
 	}
 	else 
 	{
+		/* If the group is marked for deletion, we should have removed its maps entries. */
+		assert(!group->delete_me);
 		assert(group->reps[object_rep] == object);
-		*co_object_rec_out = group/*.get()*/;
+		if (co_object_rec_out) *co_object_rec_out = group/*.get()*/;
 		if (group->reps[co_object_rep] == 0)
 		{
 			/* the co-object in the required form is NULL, so print a message */
-			fprintf(stderr, "Found null co-object in rep %d of object at %p (rep %d)\n",
+			fprintf(stderr, "Found NULL co-object in rep %d of object at %p (rep %d)\n",
 				co_object_rep, object, object_rep);
 		}
 		return group->reps[co_object_rep];
@@ -186,6 +259,9 @@ struct co_object_group *register_co_object(
 	}
 	// if we got here, no array len is recorded, so record it
 	group->array_len = array_len;
+	
+	check_maps_and_groups_consistency();
+	
 	return group;//.get();
 }
 
@@ -207,6 +283,8 @@ new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by
 	group->array_len = array_len;
 	
 	p_m->insert(std::make_pair(initial_object, group));
+	
+	check_maps_and_groups_consistency();
 	
 	return group/*.get()*/;
 }
@@ -331,6 +409,8 @@ void sync_all_co_objects(addr_change_cb_t cb, void* cb_arg, int from_rep, int to
 			i_group = groups.erase(i_group);
 		} else ++i_group;
 	}
+	fprintf(stderr, "After purging deleted groups, groups has size %u\n", groups.size());
+	check_maps_and_groups_consistency();
 }
 
 int mark_object_as_initialized(void *object, int rep)
@@ -385,6 +465,8 @@ void allocate_co_object_idem(void *object, int object_rep, int co_object_rep, in
 	
 	/* tell the image what the type of this heap object is */
 	set_co_object_type(object, object_rep, co_object, co_object_rep);
+	
+	check_maps_and_groups_consistency();
 }
 
 void *replace_co_object(void *existing_obj, 
@@ -398,48 +480,51 @@ void *replace_co_object(void *existing_obj,
 		<< " other rep " << get_component_name_for_rep(require_other_rep) 
 		<< "[" << require_other_rep << "] with object ";
 
-	struct co_object_group *found_existing_co_object;	 
+	struct co_object_group *found_existing_group;	 
 	void *found = find_co_object(existing_obj, 
 	   	existing_rep, 
 		require_other_rep, 
-		&found_existing_co_object);
+		&found_existing_group);
 	if (found)
 	{
-		cerr << found_existing_co_object->reps[require_other_rep] << ")" << endl;
-		assert(found_existing_co_object->reps[require_other_rep]); // must be nonnull
-		assert(found_existing_co_object->reps[existing_rep] == existing_obj);
+		cerr << found_existing_group->reps[require_other_rep] << ")" << endl;
+		assert(found_existing_group->reps[require_other_rep]); // must be nonnull
+		assert(found_existing_group->reps[existing_rep] == existing_obj);
 		cerr << "Found existing co-object." << endl;
 		// free old co-object if we allocated ti
-		if (found_existing_co_object->reps[existing_rep] &&
-			found_existing_co_object->co_object_info[existing_rep].allocated_by
+		if (found_existing_group->reps[existing_rep] &&
+			found_existing_group->co_object_info[existing_rep].allocated_by
 			 == ALLOC_BY_REP_MAN)
 		{
 			cerr << "Freeing unwanted old co-object at " 
-				<< found_existing_co_object->reps[existing_rep]
+				<< found_existing_group->reps[existing_rep]
 				<< endl;
-			free(found_existing_co_object->reps[existing_rep]);
+			free(found_existing_group->reps[existing_rep]);
 		}
-		//found_existing_co_object->reps[existing_rep] = new_obj;
-		//found_existing_co_object->co_object_info[existing_rep].allocated_by = ALLOC_BY_USER;
-		//found_existing_co_object->co_object_info[existing_rep].initialized = 1;
+		//found_existing_group->reps[existing_rep] = new_obj;
+		//found_existing_group->co_object_info[existing_rep].allocated_by = ALLOC_BY_USER;
+		//found_existing_group->co_object_info[existing_rep].initialized = 1;
 		
-		// delete the old obj
+		// delete the old co-obj record
 		ensure_map_for_addr(existing_obj)->erase(existing_obj);
 		// zero the old group entry
-		found_existing_co_object->reps[existing_rep] = 0;
+		found_existing_group->reps[existing_rep] = 0;
 		// forget any descr
 		pmirror::self.forget_heap_object_descr((process_image::addr_t) existing_rep);
+		// now co-object search for the object we're replacing should yield null
+		assert(!find_co_object(found_existing_group->reps[require_other_rep], require_other_rep,
+			existing_rep, 0));
 		
 		auto p_rec = register_co_object(
-			found_existing_co_object->reps[require_other_rep], // i.e. the obj we're co-obj of
+			found_existing_group->reps[require_other_rep], // i.e. the obj we're co-obj of
 			require_other_rep,
 			new_obj, // i.e. the new co-object
 			existing_rep,
 			ALLOC_BY_USER,
-			found_existing_co_object->array_len
+			found_existing_group->array_len
 		);
 		p_rec->co_object_info[existing_rep].initialized = 1;
-		assert(p_rec == found_existing_co_object);
+		assert(p_rec == found_existing_group);
 
 		// sanity check that the existing object has really gone away
 		// 1. co-object search for it yields nothing
@@ -451,8 +536,10 @@ void *replace_co_object(void *existing_obj,
 		}
 
 		cerr << "Successfully replaced" << endl;
+		check_maps_and_groups_consistency();
 		return new_obj;
 	}
 	cerr << ")" << endl << "Did not find record, so not replacing." << endl;
 	return existing_obj;
 }
+
