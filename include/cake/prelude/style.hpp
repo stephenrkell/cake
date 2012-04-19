@@ -200,3 +200,9 @@ Arg __cake_failure_with_type_of(const Arg& arg)
 	return cake::failure<Arg, StyleTag>()();
 }
 
+template <typename Arg, int StyleTag = 0>
+Arg __cake_success_with_type_of(const Arg& arg)
+{
+	return cake::success<Arg, StyleTag>()();
+}
+

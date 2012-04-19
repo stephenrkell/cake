@@ -747,19 +747,30 @@ assert(false && "disabled support for inferring positional argument mappings");
 				 
 				if (ctxt.env.find("__cake_it") == ctxt.env.end())
 				{
-					RAISE(ctxt.opt_source->opt_pattern, 
-						"cannot synthesise a return value out of no value (void)");
+					// if we have a return value to generate, but nothing to
+					// generate it from, generate success with the relevant return value type
+					
+					assert(ctxt.opt_source->signature->get_type());
+					
+					*p_out << "return __cake_success< " 
+						<< get_type_name(ctxt.opt_source->signature->get_type())
+						<< " >(); " << endl;
+					
+					//RAISE(ctxt.opt_source->opt_pattern, 
+					//	"cannot synthesise a return value out of no value (void)");
 				}
+				else
+				{
+					// now return from the wrapper as appropriate for the stub's exit status
+					*p_out << "if (" << final_success_fragment << ") return "
+						<< ctxt.env["__cake_it"].cxx_name;
 
-				// now return from the wrapper as appropriate for the stub's exit status
-				*p_out << "if (" << final_success_fragment << ") return "
-					<< ctxt.env["__cake_it"].cxx_name;
+					*p_out << ";" << std::endl;
 
-				*p_out << ";" << std::endl;
-
-				*p_out << "else return __cake_failure_with_type_of(" 
-					<< ctxt.env["__cake_it"].cxx_name << ");" << std::endl;
-				//*p_out << "return "; // don't dangle return
+					*p_out << "else return __cake_failure_with_type_of(" 
+						<< ctxt.env["__cake_it"].cxx_name << ");" << std::endl;
+					//*p_out << "return "; // don't dangle return
+				}
 			}
 			else
 			{
@@ -3605,248 +3616,360 @@ assert(false && "disabled support for inferring positional argument mappings");
 		map< string, string > arg_results_by_callee_name;
 		map< string, int > argnums_by_callee_name;
 		post_emit_status result;
-		dwarf::spec::subprogram_die::formal_parameter_iterator i_arg
-		 = callee_subprogram->formal_parameter_children_begin();
-		unsigned argnum = 0;
-		// iterate through multiValue and callee args in lock-step
-		{
-			INIT;
-			FOR_ALL_CHILDREN(argsMultiValue)
+		//dwarf::spec::subprogram_die::formal_parameter_iterator i_arg
+		// = callee_subprogram->formal_parameter_children_begin();
+		//unsigned argnum = 0;
+		// iterate through multiValue (AST) and callee DWARF args in lock-step
+		// NO! Lock-step is not flexible enough. 
+		/* What features are we accommodating here?
+		
+			name matching of arguments using in_args
+			explicit name-based mapping of arguments enumerated in the AST
+			"one left over" matching
+			output-only arguments (need not be in the AST)
+		
+		   Let's support (in this order)
+		   
+			explicit positional matching *from both ends* of an argument tuple
+			... so we can have in_args accounting for a variable-length middle section;
+			
+			name-matching for in-args
+			
+			one-left-over matching and output-only args (if not one-left-over already,
+			  try eliminating the output-only, then see if there's one left over)
+			
+		   What are we computing?
+				- for each callee argument,
+				    a source of its value
+					  which can be
+					    an AST subexpression (from the explicit args)
+					    an AST subexpression computed from an implicit mapping
+					    no AST expression, because it's output-only
+				- i.e. pair< antlr::tree::Tree *, optional< > >
+
+
+			We are also maintaining
+			
+				arg_results -- a vector of post_emit_statuses for each arg eval'd in turn
+				arg_names_in_callee -- a vector of the callee-side names of each argument
+				arg_results_by_callee_name -- a map from callee-side name to result fragment
+				argnums_by_callee_name -- a map from callee-side names to their indices (in callee order)
+			and the output parameter stuff:
+				output_parameter_idents -- map from callee position to an output arg's local destination object
+				output_parameter_argnums -- the inverse, currently ignored
+				output_argnums -- similar to output_parameter_argnums, but not ignored
+				output_parameter_is_array -- map from argnum to whether it's an array (syntax...)
+				output_arginfo -- info we'll pass up to any enclosing let-tuple expression
+			... can hopefully be left as-is for now.
+				
+		 */
+		
+		
+		
+// 		{
+// 			INIT;
+// 			FOR_ALL_CHILDREN(argsMultiValue)
+// 			{
+// 				string argname = 
+// 					(i_arg != callee_subprogram->formal_parameter_children_end() 
+// 						&& (*i_arg)->get_name()
+// 					) ? *(*i_arg)->get_name() : basic_name_for_argnum(argnum);
+// 				// we might output zero or more arg expressions here -- tricky
+// 				// don't bother with these checks for now
+// // 				if (i_arg == callee_subprogram->formal_parameter_children_end())
+// // 				{
+// // 					cerr << "Calling function " << *callee_subprogram << endl;
+// // 					RAISE(
+// // 						argsMultiValue, "too many args for function");
+// // 				}
+// // 				if (!(*i_arg)->get_type()) 
+// // 				{
+// // 					cerr << "Calling function " << *callee_subprogram 
+// // 						<< ", passing argument " << i << endl;
+// // 					RAISE(
+// // 						n, "no type information for argument");
+// // 				}
+// 						
+// 				int args_for_this_ast_node = 1; // will be overridden in in_args handling
+// 				// for in_args handling:
+// 				std::vector<
+// 					std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
+// 								dwarf::spec::subprogram_die::formal_parameter_iterator 
+// 					> 
+// 				> matched_names;				
+// 				std::vector<
+// 					std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
+// 								dwarf::spec::subprogram_die::formal_parameter_iterator 
+// 					> 
+// 				>::iterator i_matched_name;
+// 				
+// 				/* If we have an output_args object for this,
+// 				 * then we short-circuit the eval process, because
+// 				 * we can't easily identify output args from the AST (without scanning for
+// 				 * KEYWORD_OUT, which might be buried deep). 
+// 				 * FIXME: this is because the grammar is borked, since
+// 				 * KEYWORD_OUT can appear almost anywhere in a stub expression. */
+// 				if (output_parameter_idents.find(argnum) != output_parameter_idents.end())
+// 				{
+// 					//*p_out << "&" << output_parameter_idents[argnum];
+// 					
+// 					/* We want a &-fragment such that doing "*" on it
+// 					 * gets us a reference of the exact address-taken type. 
+// 					 * If output_parameter_idents[argnum] is an array, 
+// 					 * it doesn't work to just do "*(&ident)". Rather, we want
+// 					                  *(static_cast< __typeof(outvar) * >(&ident) 
+// 					 */
+// 					string arg_result
+// 					 = "(static_cast< __typeof(" 
+// 					       + output_parameter_idents[argnum]
+// 					                     + ") *>(&" + output_parameter_idents[argnum] + "))";
+// 					
+// 					arg_results.push_back((post_emit_status){
+// 						arg_result, //"((void)0)",
+// 						"true",
+// 						environment()
+// 					});
+// 					arg_names_in_callee.push_back((*i_arg)->get_name());
+// 					
+// 					
+// 					arg_results_by_callee_name[argname] = arg_result;
+// 					argnums_by_callee_name[argname] = argnum;
+// 					goto next_arg_in_callee_sequence;
+// 				}
+// 				
+// 				/* If the stub expression was a KEYWORD_IN_ARGS, then
+// 				 * the stub code emitted  has yielded multiple outputs 
+// 				 * and multiple successes. */
+// 				switch (GET_TYPE(n))
+// 				{
+// 					case CAKE_TOKEN(KEYWORD_OUT_ARGS):
+// 						assert(false);
+// 					case CAKE_TOKEN(KEYWORD_IN_ARGS):
+// 						/* When we see in_args, we eagerly match *by name*
+// 						 * any argument in the source context (i.e. the event)
+// 						 *  that has not already been evaluated,
+// 						 * against any argument in the sink context
+// 						 *  that is not already paired with a previously evaluated argument,
+// 						 * and output them in their order of appearance in the callee.
+// 						 * It is an error if the resulting order
+// 						 * covers a noncontiguous range of arguments. */
+// 						matched_names = name_match_parameters(
+// 							ctxt.opt_source->signature,
+// 							callee_subprogram);
+// 							// FIXME: do we match names against the event pattern
+// 							// (which may have made up its own names for an argument)
+// 							// or against the DWARF info?
+// 							// Well, a major use-case of in_args... is where we 
+// 							// explicitly avoid naming any arguments and just say "bar(...)"
+// 							// so we have to go with the DWARF. 
+// 							// But FIXME: we should warn if event pattern names would give
+// 							// a different mapping
+// 						/* Now filter these matches:
+// 						 * - discard any pair that precedes our current position in the callee; 
+// 						 * - I think that's all? 
+// 						 * And then 
+// 						 * sort them by position in the callee arg list
+// 						 * and check that they form a contiguous sequence 
+// 						 * starting at our current pos. */
+// 						for (auto i_out = matched_names.begin(); i_out != matched_names.end();
+// 							++i_out)
+// 						{
+// 							dwarf::spec::subprogram_die::formal_parameter_iterator i_test;
+// 							i_test = i_out->second;
+// 							if (i_test < i_arg)
+// 							{
+// 								i_out = matched_names.erase(i_out);
+// 								// erase returns the one after the erased item...
+// 								i_out--; // ... which we want to come round next iteration
+// 							}
+// 						}
+// 						// sort in order of the sink (callee) argument ordering
+// 						std::sort(
+// 							matched_names.begin(),
+// 							matched_names.end(),
+// 							[](const std::pair< 
+// 									dwarf::spec::subprogram_die::formal_parameter_iterator,
+// 									dwarf::spec::subprogram_die::formal_parameter_iterator >& a,
+// 								const std::pair< 
+// 									dwarf::spec::subprogram_die::formal_parameter_iterator,
+// 									dwarf::spec::subprogram_die::formal_parameter_iterator >& b)
+// 							{ return a.second < b.second; });
+// 						// do they form a contiguous sequence starting at current pos?
+// 						if (matched_names.begin() == matched_names.end())
+// 						{
+// 							// no arguments to name-match
+// 							// HACK: special case: one unmatched arg is okay
+// 							auto i_next_fp = i_arg; if (i_next_fp != callee_subprogram->formal_parameter_children_end()) ++i_next_fp;
+// 							auto i_caller_fp = ctxt.opt_source->signature->formal_parameter_children_begin();
+// 							auto count = srk31::count(ctxt.opt_source->signature->formal_parameter_children_begin(),
+// 								ctxt.opt_source->signature->formal_parameter_children_end());
+// 							/* Note: `i' comes from parser.hpp -- it is the index (zero-based)
+// 							 * of our position in the argsMultiValue in the AST.  */
+// 							cerr << "Source argcount is " << count 
+// 								<< ", AST argcount is " << GET_CHILD_COUNT(argsMultiValue)
+// 								<< ", current AST index: " << i << endl;
+// 							for (unsigned j = 0; 
+// 								i_caller_fp != ctxt.opt_source->signature->formal_parameter_children_end() 
+// 									&& j < i; ++j) ++i_caller_fp;
+// 							/* If we've not reached the end of the arglists... */
+// 							if (i_arg != callee_subprogram->formal_parameter_children_end()
+// 							&& (i_caller_fp != ctxt.opt_source->signature->formal_parameter_children_end()
+// 							|| ctxt.opt_source->signature->unspecified_parameters_children_begin()
+// 							!= ctxt.opt_source->signature->unspecified_parameters_children_end()))
+// 							{
+// 								/* ... push one unmatched name. */
+// 								matched_names.push_back(make_pair(
+// 										i_caller_fp, // might be END, because of unspecified_parameters I think
+// 										i_arg)); // must not be END
+// 								args_for_this_ast_node = 1;
+// 							}
+// 							// no arguments to name-match
+// 							else 
+// 							{
+// 								args_for_this_ast_node = 0;
+// 								goto finished_argument_eval_for_current_ast_node; // naughty goto
+// 								/* This goto is here to skip over the check that the name-matched
+// 								 * args are continuous and start in the right place
+// 								 * in the callee DWARF arg sequence -- since we name-matched
+// 								 * zero args. */
+// 							}
+// 						} else args_for_this_ast_node = matched_names.size();
+// 						assert(args_for_this_ast_node > 0);
+// 						if (matched_names.begin()->second != i_arg)
+// 						{
+// 							RAISE(n, "name-matching args do not start here");
+// 						}
+// 						for (auto i_out = matched_names.begin(); i_out != matched_names.end(); ++i_out)
+// 						{
+// 							auto i_next_matched_name = i_out; ++i_next_matched_name;
+// 							auto i_next_callee_parameter = i_out->second; ++i_next_callee_parameter;
+// 							if (i_next_matched_name != matched_names.end()
+// 							// in the callee arg list, i.e. ->second, they must be contiguous
+// 								&& i_next_matched_name->second != i_next_callee_parameter)
+// 							{
+// 								RAISE(n, "name-matching args are non-contiguous");
+// 							}
+// 						}
+// 						// start the iterator
+// 						i_matched_name = matched_names.begin();
+// 						// now what? well, we simply evaluate them in order. What order?
+// 						// the order they appear in the *callee*, so that we can keep
+// 						// i_arg moving forward
+// 						do
+// 						{
+// 							// what's the binding of the argument in the caller? 
+// 							{
+// 								std::ostringstream s;
+// 								s << wrapper_arg_name_prefix << (i + (i_matched_name - matched_names.begin()));
+// 
+// 								// emit some stub code to evaluate this argument
+// 								result = emit_stub_expression_as_statement_list(
+// 								  ctxt, 
+// 								  // we need to manufacture an AST node: IDENT(arg_name_in_caller)
+// 								  make_ident_expr(s.str())//,
+// 								  /* Result type is that of the *argument* that we're going to pass
+// 								   * this subexpression's result to. */
+// 								  /*(treat_subprogram_as_untyped(callee_subprogram) 
+// 								  ? boost::shared_ptr<dwarf::spec::type_die>()
+// 								  : *(*i_arg)->get_type())*/);
+// 								// next time round we will handle the next matched name
+// 								++i_matched_name;
+// 							}
+// 							// the rest is like the simple case
+// 							goto remember_arg_names;
+// 					default:
+// 							// emit some stub code to evaluate this argument -- simple case
+// 							result = emit_stub_expression_as_statement_list(
+// 							  ctxt, n//,
+// // 							  /* Result type is that of the *argument* that we're going to pass
+// // 							   * this subexpression's result to. */
+// // 							  (treat_subprogram_as_untyped(callee_subprogram) 
+// // 							  ? boost::shared_ptr<dwarf::spec::type_die>()
+// // 							  : *(*i_arg)->get_type())*/
+// 							  );
+// 							// remember the names used for the output of this evaluation
+// 					remember_arg_names:
+// 							arg_results.push_back(result);
+// 
+// 							/* If the stub expression was a KEYWORD_IN_ARGS, then
+// 							 * the stub code emitted  has yielded multiple outputs 
+// 							 * and multiple successes. */
+// 
+// 							// store the mapping to the callee argument
+// 							arg_names_in_callee.push_back((*i_arg)->get_name());
+// 							arg_results_by_callee_name[argname] = result.result_fragment;
+// 							argnums_by_callee_name[argname] = argnum;
+// 					output_control:
+// 							*p_out << success_ident << " &= " << result.success_fragment << ";" << std::endl;
+// 							*p_out << "if (" << success_ident << ") // okay to proceed with next arg?" 
+// 								<< std::endl;
+// 							*p_out << "{" << std::endl;
+// 							++arg_eval_subexpr_count;
+// 							p_out->inc_level();
+// 					next_arg_in_callee_sequence:
+// 							++i_arg; ++argnum;
+// 						} // end do
+// 						while (--args_for_this_ast_node > 0);
+// 					finished_argument_eval_for_current_ast_node:
+// 						break;
+// 				} // end switch
+// 			} // end FOR_ALL_CHILDREN
+
+			/* Instead, do the much simpler assign_argument_expressions(). */
+			map<
+				int,
+				pair<
+					antlr::tree::Tree *,
+					optional< string >
+				>
+			> assigned_argument_expressions;
+			assign_argument_expressions(ctxt,
+				callee_subprogram,
+				argsMultiValue,
+				assigned_argument_expressions);
+			unsigned argnum = 0;
+			auto i_arg = callee_subprogram->formal_parameter_children_begin();
+			for (auto i_assigned = assigned_argument_expressions.begin();
+				i_assigned != assigned_argument_expressions.end();
+				++i_assigned, ++argnum, ++i_arg)
 			{
+				if (i_assigned->first != argnum)
+				{
+					cerr << "No binding for argument " << argnum << endl;
+					RAISE(argsMultiValue, "no binding for one or more arguments");
+				}
+				
+				// we always have an argname, whether generated or DWARF-supplied
 				string argname = 
 					(i_arg != callee_subprogram->formal_parameter_children_end() 
 						&& (*i_arg)->get_name()
 					) ? *(*i_arg)->get_name() : basic_name_for_argnum(argnum);
-				// we might output zero or more arg expressions here -- tricky
-				// don't bother with these checks for now
-// 				if (i_arg == callee_subprogram->formal_parameter_children_end())
-// 				{
-// 					cerr << "Calling function " << *callee_subprogram << endl;
-// 					RAISE(
-// 						argsMultiValue, "too many args for function");
-// 				}
-// 				if (!(*i_arg)->get_type()) 
-// 				{
-// 					cerr << "Calling function " << *callee_subprogram 
-// 						<< ", passing argument " << i << endl;
-// 					RAISE(
-// 						n, "no type information for argument");
-// 				}
-						
-				int args_for_this_ast_node = 1; // will be overridden in in_args handling
-				// for in_args handling:
-				std::vector<
-					std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
-								dwarf::spec::subprogram_die::formal_parameter_iterator 
-					> 
-				> matched_names;				
-				std::vector<
-					std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
-								dwarf::spec::subprogram_die::formal_parameter_iterator 
-					> 
-				>::iterator i_matched_name;
 				
-				/* If we have an output_args object for this,
-				 * then we short-circuit the eval process, because
-				 * we can't easily identify output args from the AST (without scanning for
-				 * KEYWORD_OUT, which might be buried deep). 
-				 * FIXME: this is because the grammar is borked, since
-				 * KEYWORD_OUT can appear almost anywhere in a stub expression. */
-				if (output_parameter_idents.find(argnum) != output_parameter_idents.end())
-				{
-					//*p_out << "&" << output_parameter_idents[argnum];
-					
-					/* We want a &-fragment such that doing "*" on it
-					 * gets us a reference of the exact address-taken type. 
-					 * If output_parameter_idents[argnum] is an array, 
-					 * it doesn't work to just do "*(&ident)". Rather, we want
-					                  *(static_cast< __typeof(outvar) * >(&ident) 
-					 */
-					string arg_result
-					 = "(static_cast< __typeof(" 
-					       + output_parameter_idents[argnum]
-					                     + ") *>(&" + output_parameter_idents[argnum] + "))";
-					
-					arg_results.push_back((post_emit_status){
-						arg_result, //"((void)0)",
-						"true",
-						environment()
-					});
-					arg_names_in_callee.push_back((*i_arg)->get_name());
-					
-					
-					arg_results_by_callee_name[argname] = arg_result;
-					argnums_by_callee_name[argname] = argnum;
-					goto next_arg_in_callee_sequence;
-				}
+				/* Now we're free to output an expression. */
+				auto result = emit_stub_expression_as_statement_list(
+					ctxt, 
+					i_assigned->second.first
+				);
 				
+				arg_results.push_back(result);
+
 				/* If the stub expression was a KEYWORD_IN_ARGS, then
 				 * the stub code emitted  has yielded multiple outputs 
 				 * and multiple successes. */
-				switch (GET_TYPE(n))
-				{
-					case CAKE_TOKEN(KEYWORD_OUT_ARGS):
-						assert(false);
-					case CAKE_TOKEN(KEYWORD_IN_ARGS):
-						/* When we see in_args, we eagerly match *by name*
-						 * any argument in the source context (i.e. the event)
-						 *  that has not already been evaluated,
-						 * against any argument in the sink context
-						 *  that is not already paired with a previously evaluated argument,
-						 * and output them in their order of appearance in the callee.
-						 * It is an error if the resulting order
-						 * covers a noncontiguous range of arguments. */
-						matched_names = name_match_parameters(
-							ctxt.opt_source->signature,
-							callee_subprogram);
-							// FIXME: do we match names against the event pattern
-							// (which may have made up its own names for an argument)
-							// or against the DWARF info?
-							// Well, a major use-case of in_args... is where we 
-							// explicitly avoid naming any arguments and just say "bar(...)"
-							// so we have to go with the DWARF. 
-							// But FIXME: we should warn if event pattern names would give
-							// a different mapping
-						/* Now filter these matches:
-						 * - discard any pair that precedes our current position in the callee; 
-						 * - I think that's all? 
-						 * And then 
-						 * sort them by position in the callee arg list
-						 * and check that they form a contiguous sequence 
-						 * starting at our current pos. */
-						for (auto i_out = matched_names.begin(); i_out != matched_names.end();
-							++i_out)
-						{
-							dwarf::spec::subprogram_die::formal_parameter_iterator i_test;
-							i_test = i_out->second;
-							if (i_test < i_arg)
-							{
-								i_out = matched_names.erase(i_out);
-								// erase returns the one after the erased item...
-								i_out--; // ... which we want to come round next iteration
-							}
-						}
-						// sort in order of the sink (callee) argument ordering
-						std::sort(
-							matched_names.begin(),
-							matched_names.end(),
-							[](const std::pair< 
-									dwarf::spec::subprogram_die::formal_parameter_iterator,
-									dwarf::spec::subprogram_die::formal_parameter_iterator >& a,
-								const std::pair< 
-									dwarf::spec::subprogram_die::formal_parameter_iterator,
-									dwarf::spec::subprogram_die::formal_parameter_iterator >& b)
-							{ return a.second < b.second; });
-						// do they form a contiguous sequence starting at current pos?
-						if (matched_names.begin() == matched_names.end())
-						{
-							// no arguments to name-match
-							// HACK: special case: one unmatched arg is okay
-							auto i_next_fp = i_arg; if (i_next_fp != callee_subprogram->formal_parameter_children_end()) ++i_next_fp;
-							auto i_caller_fp = ctxt.opt_source->signature->formal_parameter_children_begin();
-							auto count = srk31::count(ctxt.opt_source->signature->formal_parameter_children_begin(),
-								ctxt.opt_source->signature->formal_parameter_children_end());
-							cerr << "Caller argcount is " << count << ", current index: " << i << endl;
-							for (unsigned j = 0; 
-								i_caller_fp != ctxt.opt_source->signature->formal_parameter_children_end() 
-									&& j < i; ++j) ++i_caller_fp;
-							if (i_arg != callee_subprogram->formal_parameter_children_end()
-							&& (i_caller_fp != ctxt.opt_source->signature->formal_parameter_children_end()
-							|| ctxt.opt_source->signature->unspecified_parameters_children_begin()
-							!= ctxt.opt_source->signature->unspecified_parameters_children_end()))
-							{
-								matched_names.push_back(make_pair(
-										i_caller_fp, // might be END
-										i_arg)); // must not be END
-								args_for_this_ast_node = 1;
-							}
-							// no arguments to name-match
-							else 
-							{
-								args_for_this_ast_node = 0;
-								goto finished_argument_eval_for_current_ast_node; // naughty goto
-							}
-						} else args_for_this_ast_node = matched_names.size();
-						assert(args_for_this_ast_node > 0);
-						if (matched_names.begin()->second != i_arg)
-						{
-							RAISE(n, "name-matching args do not start here");
-						}
-						for (auto i_out = matched_names.begin(); i_out != matched_names.end(); ++i_out)
-						{
-							auto i_next_matched_name = i_out; ++i_next_matched_name;
-							auto i_next_callee_parameter = i_out->second; ++i_next_callee_parameter;
-							if (i_next_matched_name != matched_names.end()
-							// in the callee arg list, i.e. ->second, they must be contiguous
-								&& i_next_matched_name->second != i_next_callee_parameter)
-							{
-								RAISE(n, "name-matching args are non-contiguous");
-							}
-						}
-						// start the iterator
-						i_matched_name = matched_names.begin();
-						// now what? well, we simply evaluate them in order. What order?
-						// the order they appear in the *callee*, so that we can keep
-						// i_arg moving forward
-						do
-						{
-							// what's the binding of the argument in the caller? 
-							{
-								std::ostringstream s;
-								s << wrapper_arg_name_prefix << (i + (i_matched_name - matched_names.begin()));
 
-								// emit some stub code to evaluate this argument
-								result = emit_stub_expression_as_statement_list(
-								  ctxt, 
-								  // we need to manufacture an AST node: IDENT(arg_name_in_caller)
-								  make_ident_expr(s.str())//,
-								  /* Result type is that of the *argument* that we're going to pass
-								   * this subexpression's result to. */
-								  /*(treat_subprogram_as_untyped(callee_subprogram) 
-								  ? boost::shared_ptr<dwarf::spec::type_die>()
-								  : *(*i_arg)->get_type())*/);
-								// next time round we will handle the next matched name
-								++i_matched_name;
-							}
-							// the rest is like the simple case
-							goto remember_arg_names;
-					default:
-							// emit some stub code to evaluate this argument -- simple case
-							result = emit_stub_expression_as_statement_list(
-							  ctxt, n//,
-// 							  /* Result type is that of the *argument* that we're going to pass
-// 							   * this subexpression's result to. */
-// 							  (treat_subprogram_as_untyped(callee_subprogram) 
-// 							  ? boost::shared_ptr<dwarf::spec::type_die>()
-// 							  : *(*i_arg)->get_type())*/
-							  );
-							// remember the names used for the output of this evaluation
-					remember_arg_names:
-							arg_results.push_back(result);
+				// store the mapping to the callee argument
+				arg_names_in_callee.push_back((*i_arg)->get_name());
+				arg_results_by_callee_name[argname] = result.result_fragment;
+				argnums_by_callee_name[argname] = argnum;
 
-							/* If the stub expression was a KEYWORD_IN_ARGS, then
-							 * the stub code emitted  has yielded multiple outputs 
-							 * and multiple successes. */
-
-							// store the mapping to the callee argument
-							arg_names_in_callee.push_back((*i_arg)->get_name());
-							arg_results_by_callee_name[argname] = result.result_fragment;
-							argnums_by_callee_name[argname] = argnum;
-					output_control:
-							*p_out << success_ident << " &= " << result.success_fragment << ";" << std::endl;
-							*p_out << "if (" << success_ident << ") // okay to proceed with next arg?" 
-								<< std::endl;
-							*p_out << "{" << std::endl;
-							++arg_eval_subexpr_count;
-							p_out->inc_level();
-					next_arg_in_callee_sequence:
-							++i_arg; ++argnum;
-						} // end do
-						while (--args_for_this_ast_node > 0);
-					finished_argument_eval_for_current_ast_node:
-						break;
-				} // end switch
-			} // end FOR_ALL_CHILDREN
+				// output control logic
+				*p_out << success_ident << " &= " << result.success_fragment << ";" << std::endl;
+				*p_out << "if (" << success_ident << ") // okay to proceed with next arg?" 
+					<< std::endl;
+				*p_out << "{" << std::endl;
+				++arg_eval_subexpr_count; // count used to return indent level back to norm
+				p_out->inc_level();
+			}
 			
 			/* If we have some output-only args, they may not appear
 			 * in the arglist. Handle this case now. */
@@ -3874,7 +3997,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				++i_arg; ++argnum;
 			}
 			
-		} // end INIT argsMultiValue
+//		} // end INIT argsMultiValue
 		*p_out << "// end argument eval" << std::endl;
 		
 		// semantic check: did we output enough arguments for the callee?
@@ -4279,6 +4402,284 @@ assert(false && "disabled support for inferring positional argument mappings");
 		const context& ctxt)
 	{
 		return optional<string>();
+	}
+	
+	void 
+	wrapper_file::assign_argument_expressions(
+		context& ctxt,
+		shared_ptr<subprogram_die> callee_subprogram,
+		antlr::tree::Tree *argsMultiValue,
+		map<
+			int,
+			pair<
+				antlr::tree::Tree *,
+				optional< string >
+			>
+		>& out
+	)
+	{
+		set<int> ast_nodes_used; 
+
+		/* Pass 1: explicit positional matching. */
+		/* 1a. From the left side.
+		 * Keep going until we hit an in_args. */
+		optional<unsigned> hit_in_args_ast_pos_pass1;
+		optional<unsigned> hit_in_args_ast_pos_pass2;
+		{
+			INIT;
+			FOR_ALL_CHILDREN(argsMultiValue)
+			{
+				switch (GET_TYPE(n))
+				{
+					case CAKE_TOKEN(KEYWORD_IN_ARGS):
+						hit_in_args_ast_pos_pass1 = optional<unsigned>(i);
+						goto pass1_loop_exit;
+					default: /* i.e. any other stub expression */
+						out[i] = make_pair(n, optional<string>());
+						ast_nodes_used.insert(i);
+						break;
+				}
+			}
+		pass1_loop_exit:
+			if (hit_in_args_ast_pos_pass1)
+			{
+				// we have in_args
+			}
+		}
+
+		/* Pass 2: explicit positional matching from right side.
+		 * We can only do this if it's not a varargs function. */
+		unsigned callee_fp_count = srk31::count(
+			callee_subprogram->formal_parameter_children_begin(),
+			callee_subprogram->formal_parameter_children_end());
+		bool callee_is_varargs = !(callee_subprogram->unspecified_parameters_children_begin()
+		 == callee_subprogram->unspecified_parameters_children_end());
+		if (!callee_is_varargs)
+		{
+			optional<unsigned> hit_in_args_pos;
+			for (int i = callee_fp_count - 1;
+					i >= 0; --i)
+			{
+				// count forward to find the current fp
+				unsigned pos = 0;
+				auto i_fp = callee_subprogram->formal_parameter_children_begin();
+				while ((signed) pos != i) { ++i_fp; ++pos; }
+
+				// work out the corresponding AST node
+				unsigned pos_from_rhs = callee_fp_count - 1 - i;
+				antlr::tree::Tree *expr = 0;
+				unsigned ast_pos = GET_CHILD_COUNT(argsMultiValue)
+				 - pos_from_rhs;
+
+				if (ast_nodes_used.find((int) ast_pos) 
+					!= ast_nodes_used.end())
+				{
+					// this AST node is fair game
+					antlr::tree::Tree *n = GET_CHILD(argsMultiValue,
+						ast_pos);
+					switch (GET_TYPE(n))
+					{
+						case CAKE_TOKEN(KEYWORD_IN_ARGS):
+							hit_in_args_ast_pos_pass2 = optional<unsigned>(ast_pos);
+							goto pass2_loop_exit;
+						default: /* i.e. any other stub expression */
+							out[ast_pos] = make_pair(n, optional<string>());
+							ast_nodes_used.insert(ast_pos);
+							break;
+					}
+				}
+
+			}
+		pass2_loop_exit:
+			if (hit_in_args_ast_pos_pass2)
+			{
+				assert(hit_in_args_ast_pos_pass1);
+				if (*hit_in_args_ast_pos_pass2
+				!= *hit_in_args_ast_pos_pass1)
+				{
+					RAISE(GET_CHILD(argsMultiValue,
+						*hit_in_args_ast_pos_pass1),
+						"cannot use multiple instances of in_args "
+						"in the same argument tuple");
+				}
+			}
+
+		}
+
+		/* NOTE: if we didn't hit in_args, we might have
+		 * some unmatched args anyway if the caller
+		 * supplied too few args. We only do the name-
+		 * -matching if the caller put in_args somewhere. */
+		auto pos_for_callee_arg_iter
+		 = [callee_subprogram](
+	 		dwarf::spec::subprogram_die::formal_parameter_iterator i_target
+		)
+		{
+			dwarf::spec::subprogram_die::formal_parameter_iterator i_test
+			 = callee_subprogram->formal_parameter_children_begin();
+			unsigned matched_pos = 0;
+			while (i_test != i_target
+				&& i_test != callee_subprogram->formal_parameter_children_end())
+			{ 
+				++matched_pos; ++i_test;
+				assert(i_test != callee_subprogram->formal_parameter_children_end());
+			}
+			return matched_pos;
+		};
+		auto pos_for_caller_arg_name
+		 = [ctxt](const string& name)
+		{
+			signed pos;
+			auto subp = ctxt.opt_source->signature;
+			auto i_fp = subp->formal_parameter_children_begin();
+			for (auto i_fp = subp->formal_parameter_children_begin();
+				i_fp != subp->formal_parameter_children_end();
+				++pos, ++i_fp)
+			{
+				if ((*i_fp)->get_name() 
+				 && *(*i_fp)->get_name() == name) break;
+			}
+			if (i_fp == subp->formal_parameter_children_end())
+			{
+				// search failed
+				return -1;
+			} else return pos;
+		};
+
+		if (hit_in_args_ast_pos_pass1)
+		{
+
+			/* Now we match by name any leftover args */
+			std::vector<
+				std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
+							dwarf::spec::subprogram_die::formal_parameter_iterator 
+				> 
+			> name_matched = name_match_parameters(
+				ctxt.opt_source->signature,
+				callee_subprogram
+			);
+			/* Now filter these matches:
+			 * discard any pair that is already matched. */
+			auto i_matched = name_matched.begin();
+			while (i_matched != name_matched.end())
+			{
+				string name = *(*i_matched->first)->get_name();
+				dwarf::spec::subprogram_die::formal_parameter_iterator i_test
+				 = callee_subprogram->formal_parameter_children_begin();
+				unsigned matched_pos
+				 = pos_for_callee_arg_iter(i_matched->second);
+				if (out.find(matched_pos) != out.end())
+				{
+					/* This means we've filled this pos already. */
+					cerr << "Warning: arg pos " << matched_pos
+						<< " matched with argument name " 
+						<< name
+						<< " already filled by positional matching "
+						<< "with argument expression "
+						<< CCP(TO_STRING_TREE(
+							out[(int) matched_pos].first
+							))
+						<< endl;
+					i_matched = name_matched.erase(i_matched);
+				} else ++i_matched;
+			}
+			/* Sort them by position in the callee arg list.
+			 * and check that they form a contiguous sequence 
+			 * starting at our in_args pos. (HMM: really?)  */
+			std::sort(
+				name_matched.begin(),
+				name_matched.end(),
+				[](const std::pair< 
+						dwarf::spec::subprogram_die::formal_parameter_iterator,
+						dwarf::spec::subprogram_die::formal_parameter_iterator >& a,
+					const std::pair< 
+						dwarf::spec::subprogram_die::formal_parameter_iterator,
+						dwarf::spec::subprogram_die::formal_parameter_iterator >& b)
+				{ return a.second < b.second; });
+			/* Now write the relevant entries to "out". */
+			for (auto i_matched = name_matched.begin();
+				i_matched != name_matched.end();
+				++i_matched)
+			{
+				string name = *(*i_matched->first)->get_name();
+				unsigned pos
+				 = pos_for_callee_arg_iter(i_matched->second);
+				unsigned caller_argnum
+				 = pos_for_caller_arg_name(name);
+				assert(caller_argnum != -1); // should succeed
+				out[pos] = make_pair(
+					/* we make the AST ourselves! */
+					make_ident_expr(basic_name_for_argnum(
+						caller_argnum
+						)),
+					optional<string>()
+				);
+			}
+			/* We can now write that in_args has been used. */
+			ast_nodes_used.insert(*hit_in_args_ast_pos_pass1);
+		}
+
+		/* Now we still might have some callee args yet to be filled.
+		 * First we try to fill ones that are not output-only,
+		 * using the one-left-over approach.
+		 * This means if we have a single AST-supplied expr
+		 * remaining, we use it to fill a unique not-output-only
+		 * callee arg position. */
+		set<int> ast_nodes_unused;
+		for (int i = 0; i < (signed) GET_CHILD_COUNT(argsMultiValue);
+			++i)
+		{
+			if (ast_nodes_used.find(i) == ast_nodes_used.end())
+			{
+				ast_nodes_unused.insert(i);
+			}
+		}
+		if (ast_nodes_unused.size() == 1)
+		{
+			/* How can we enumerate the as-yet-unfilled callee
+			 * arguments? If it's varargs, we have an infinity
+			 * of them. Let's just enumerate the non-varargs ones. */
+			set<int> unfilled_callee_non_output_only_args;
+			set<int> unfilled_callee_args;
+			int i = 0;
+			for (auto i_fp = callee_subprogram->formal_parameter_children_begin();
+				i_fp != callee_subprogram->formal_parameter_children_end();
+				++i_fp, ++i)
+			{
+				if (out.find(i) == out.end())
+				{
+					unfilled_callee_args.insert(i);
+					if (!arg_is_output_only(*i_fp))
+					{
+						unfilled_callee_non_output_only_args.insert(i);
+					}
+				}
+			}
+			if (unfilled_callee_non_output_only_args.size() == 1)
+			{
+				/* Fill this argument. */
+				out[*unfilled_callee_non_output_only_args.begin()]
+				 = make_pair(
+			 		GET_CHILD(argsMultiValue, *ast_nodes_unused.begin()),
+					optional<string>()
+					);
+			}
+			else if (unfilled_callee_args.size() == 1)
+			{
+				/* Fill this argument. */
+				out[*unfilled_callee_args.begin()]
+				 = make_pair(
+			 		GET_CHILD(argsMultiValue, *ast_nodes_unused.begin()),
+					optional<string>()
+					);
+			}
+		}
+		else if (ast_nodes_unused.size() > 1)
+		{
+			/* FIXME: we might still want these, for varargs. */
+			RAISE(argsMultiValue, "contains extraneous arguments");
+		}
+		else assert(ast_nodes_unused.size() == 0);
 	}
 	
 }

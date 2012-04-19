@@ -261,7 +261,20 @@ namespace cake
 		//emit_event_corresp_stub(
 		//	const context& ctxt,
 		//    antlr::tree::Tree *stub);
-
+		void 
+		assign_argument_expressions(
+			context& ctxt,
+			shared_ptr<subprogram_die> callee_subprogram,
+			antlr::tree::Tree *argsMultiValue,
+			map<
+				int,
+				pair<
+					antlr::tree::Tree *,
+					optional< string >
+				>
+			>& out
+		);
+		
 		post_emit_status
 		emit_stub_expression_as_statement_list(
 			context& ctxt,
