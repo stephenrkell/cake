@@ -3178,11 +3178,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 						string cxx_expr;
 						
 						string multivalue_cxxname;
+						vector< sig_output_arginfo_t > multivalue_outargs;
 						vector< sig_output_arginfo_t >::iterator i_outarg;
+						
 						if (result.multivalue)
 						{
 							multivalue_cxxname = result.multivalue->first;
-							auto multivalue_outargs = result.multivalue->second;
+							multivalue_outargs = result.multivalue->second;
 							i_outarg = multivalue_outargs.begin();
 							if (GET_CHILD_COUNT(boundNameOrNames) > multivalue_outargs.size())
 							{  RAISE(boundNameOrNames, "too many idents to bind"); }
