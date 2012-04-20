@@ -4529,8 +4529,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 		auto argnum_for_caller_arg_name
 		 = [ctxt](const string& name)
 		{
-			signed pos = -1;
+			signed pos = 0;
 			auto subp = ctxt.opt_source->signature;
+			cerr << "Looking for argument named " << name << " in subprogram " 
+				<< *subp << endl;
 			auto i_fp = subp->formal_parameter_children_begin();
 			for (;
 				i_fp != subp->formal_parameter_children_end();
