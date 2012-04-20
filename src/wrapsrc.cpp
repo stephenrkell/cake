@@ -894,9 +894,15 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 			*p_out << "// handling deferred co-objectification of " 
 				<< cakename << endl;
-				
 			auto ident = new_ident("rec");
-			*p_out << "auto " << ident << " = new_co_object_record(" 
+			*p_out << "co_object_group *" << ident << ";" << endl;
+			if (env[cakename].guard_cxxname) 
+			{
+				*p_out << "if (" << *env[cakename].guard_cxxname << ")" << endl;
+				*p_out << "{" << endl;
+				p_out->inc_level();
+			}
+			*p_out << ident << " = new_co_object_record(" 
 				<< /* initial_object */ "&" << env[cakename].cxx_name << ", "
 				<< /* initial_rep */ "REP_ID(" << m_d.name_of_module(current_module) << "), "
 				<< /* initial_alloc_by */ "ALLOC_BY_USER, "
@@ -922,10 +928,18 @@ assert(false && "disabled support for inferring positional argument mappings");
 				<< "&" << id << ", " // <-- stackptr_helper
 				<< "REP_ID("
 				<< m_d.name_of_module(caller_module) << "), false);" << endl;
+				
+			if (env[cakename].guard_cxxname) 
+			{
+				p_out->dec_level();
+				*p_out << "}" << endl;
+			}
+			
 			// now we REMOVE the env entry!
 			// Why? This is the env entry for the output object. It has now 
 			// done its bit. In particular, we *don't* want it to get caught
-			// up in the normal crossover logic. Before removal, save the binding for later cleanup.
+			// up in the normal crossover logic. 
+			// Before removal, save the binding for later cleanup.
 			return_env.insert(*env_found);
 			env.erase(env_found);
 			// When can we invalidate the co-object relationship we just created?
@@ -955,14 +969,29 @@ assert(false && "disabled support for inferring positional argument mappings");
 			}
 			*p_out << "// handling deferred co-objectification of " 
 				<< cakename << endl;
-			
 			/* After the sync has happened... remove the 
 			 * temporary co-object relationship we created before crossover. */
 			assert(env.find(cakename) != env.end());
+		
+			if (env[cakename].guard_cxxname) 
+			{
+				*p_out << "if (" << *env[cakename].guard_cxxname << ")" << endl;
+				*p_out << "{" << endl;
+				p_out->inc_level();
+			}
+		
 			*p_out << "invalidate_co_object("
 				<< "&" << env[cakename].cxx_name << ", "
 				<< "REP_ID(" << m_d.name_of_module(current_module) << ")"
 				<< ");" << endl;
+				
+			if (env[cakename].guard_cxxname) 
+			{
+				p_out->dec_level();
+				*p_out << "}" << endl;
+			}
+			
+			
 		}
 	}
 
@@ -3472,6 +3501,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 		/* Scan the argument expressions for any that are "out".
 		 * Declare the output object for those arguments now. */
+		auto success_ident = new_ident("success"); // this will be the guard for these guys
 		environment new_bindings;
 		auto current_fp = callee_subprogram->formal_parameter_children_begin();
 		int current_argnum = 0;
@@ -3549,6 +3579,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					ctxt.modules.current,
 					false
 				}));
+				new_bindings[decl_and_cakename->cakename].guard_cxxname = success_ident;
 
 				output_parameter_idents[current_argnum] = ident;
 				output_parameter_argnums[ident] = current_argnum;
@@ -3589,6 +3620,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 						ctxt.modules.current,
 						false
 					}));
+					new_bindings[decl_and_cakename->cakename].guard_cxxname = success_ident;
+					
 					output_parameter_idents[current_argnum] = ident;
 					output_parameter_argnums[ident] = current_argnum;
 					output_parameter_is_array[current_argnum]
@@ -3605,14 +3638,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 			   0 : callee_subprogram->get_type();
 			   
 		/* evaluate the arguments and bind temporary names to them */
-		auto success_ident = new_ident("success");
 		*p_out << "bool " << success_ident << " = true; " << std::endl;
 		std::string value_ident = new_ident("value");
 		if (/*treat_subprogram_as_untyped(callee_subprogram)
 			&& !*/subprogram_returns_void(callee_subprogram))
 		{
 			*p_out << /* "::cake::unspecified_wordsize_type" */ "int" // HACK: this is what our fake DWARF will say
-			 << ' ' << value_ident << "; // unused" << std::endl;
+			 << ' ' << value_ident << " = ::cake::success<int>()(); // trivial success" << std::endl;
 		}
 		else //if (!subprogram_returns_void(callee_subprogram))
 		{
@@ -4254,7 +4286,15 @@ assert(false && "disabled support for inferring positional argument mappings");
 						i_arginfo->argname);
 					assert(i_found_argnum != argnums_by_callee_name.end());
 					
-					if (i_arginfo->tn) *p_out << *i_arginfo->tn << "( *";
+					// tn is a classname which at the moment is either unset
+					// or boost::optional<something>.
+					// Here we arrange that if our call failed, the optional output
+					// arguments are not set.
+					if (i_arginfo->tn) 
+					{	
+						*p_out << success_ident << " ? ";
+						*p_out << *i_arginfo->tn << "( *";
+					}
 					emit_arg_expr_maybe_with_cast(
 						// this func needs the type of the fp -- will be noop for retval
 						i_arginfo->p_fp ? i_arginfo->p_fp->get_type() : shared_ptr<type_die>(),
@@ -4263,7 +4303,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 						 then the typeof will be precise enough, and if we write the
 						 cast, it will just give us element [0] i.e. the element type. */
 					);
-					if (i_arginfo->tn) *p_out << " )";
+					if (i_arginfo->tn)
+					{
+						*p_out << " )";
+						*p_out << " : " << *i_arginfo->tn << "()";
+					}
 				}
 			}
 			*p_out << " }";

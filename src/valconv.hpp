@@ -58,6 +58,13 @@ namespace cake
 		/** Whether the binding comes from an ellipsis, and if so, what position
 		 within the ellipsis it corresponds to, or -1 if name-only ellipsis. */
 		optional<int> from_ellipsis;
+		
+		/** The name of a boolean (or otherwise if-able) cxx variable that determines
+		 * whether this binding is valid i.e. whether its cxxname's value is to be used.
+		 * We use this for the "deferred out bindings" / virtual value corresp approach
+		 * to applying correspondences to output values (i.e. only if they were successfully
+		 * generated, by a successful call to whatever function outputs them). */
+		optional<string> guard_cxxname;
 	};
 	//typedef std::map<std::string, bound_var_info> environment;
 	struct environment : public map<string, bound_var_info>

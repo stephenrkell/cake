@@ -302,25 +302,47 @@ namespace cake
 				switch(GET_TYPE(el))
 				{
 					case CAKE_TOKEN(KEYWORD_CLASS_OF): {
-						/* This means we should create a type. */
+						/* This means we should create a type. 
+						 * This might be some completely new type.
+						 * OR it might be an existing type with just a
+						 * different name, in which case we create a typedef only. 
+						 * Split these cases here. */
 						INIT;
 						BIND3(el, descr, VALUE_DESCRIPTION);
 						assert(GET_CHILD_COUNT(descr) > 0);
 						auto child_descr = GET_CHILD(descr, 0);
-						shared_ptr<type_die> t = create_dwarf_type(child_descr);
-						if (!t) goto bad_descr; // goes for void too, since we can't name it
-						shared_ptr<encap::basic_die> encap_t
-						 = dynamic_pointer_cast<encap::basic_die>(t);
-						assert(encap_t);
-						encap_t->set_name(name_to_create);
-						cerr << "Added DWARF type: " << *t << endl;
-						assert(eval_claim_depthfirst(
-								el,
-								t,
-								p_resolver,
-								&module_described_by_dwarf::do_nothing_handler
-							)
-						);
+						auto existing_type = existing_dwarf_type(child_descr);
+						if (existing_type)
+						{
+							// typedef case
+							auto created = create_typedef(existing_type, name_to_create);
+							cerr << "Added DWARF typedef: " << *created << endl;
+							assert(eval_claim_depthfirst(
+									el,
+									created,
+									p_resolver,
+									&module_described_by_dwarf::do_nothing_handler
+								)
+							);
+							
+						}
+						else
+						{
+							shared_ptr<type_die> t = create_dwarf_type(child_descr);
+							if (!t) goto bad_descr; // goes for void too, since we can't name it
+							shared_ptr<encap::basic_die> encap_t
+							 = dynamic_pointer_cast<encap::basic_die>(t);
+							assert(encap_t);
+							encap_t->set_name(name_to_create);
+							cerr << "Added DWARF type: " << *t << endl;
+							assert(eval_claim_depthfirst(
+									el,
+									t,
+									p_resolver,
+									&module_described_by_dwarf::do_nothing_handler
+								)
+							);
+						}
 						return true;
 					}
 					case CAKE_TOKEN(VALUE_DESCRIPTION): {

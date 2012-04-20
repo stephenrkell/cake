@@ -42,6 +42,9 @@ default: cake-generated.mk p2k_wrap.o #/usr/src/usr.sbin/puffs/rump_caketmpfs/ru
 
 -include cake-generated.mk
 
+access-test: access-test.c
+	$(CC) -o "$@" "$<"
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o "$@" "$<"
 
