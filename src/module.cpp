@@ -574,6 +574,33 @@ namespace cake
 				}
 				break;
 //			}
+			case TAG_AND_TOKEN(DW_TAG_subprogram, VALUE_DESCRIPTION): {
+				INIT;
+				BIND2(falsifiable, typeDescr);
+				auto subprogram = dynamic_pointer_cast<encap::subprogram_die>(falsifier);
+				assert(subprogram);
+				cerr << "Overriding signature of subprogram " << subprogram->summary()
+					<< " to be that described by " << CCP(TO_STRING_TREE(falsifiable)) << endl;
+				if (GET_TYPE(typeDescr) != CAKE_TOKEN(FUNCTION_ARROW)) RAISE(
+					falsifiable, "cannot override a subprogram to be a non-subprogram");
+
+				ALIAS3(typeDescr, functionHead, FUNCTION_ARROW);
+				{
+					INIT;
+					BIND2(functionHead, args);
+					BIND2(functionHead, returnType);
+					
+					cerr << "Warning: only overriding return type of subprogram "
+						<< subprogram->summary() << endl;
+					
+					auto new_type = ensure_dwarf_type(returnType);
+					if (!new_type) cerr << "Warning: overriding to void return type: "
+						<< subprogram->summary() << endl;
+					
+					subprogram->set_type(new_type);
+				}
+			
+			}
 			default: assert(false);
 		}
 
