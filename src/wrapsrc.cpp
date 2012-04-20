@@ -3115,6 +3115,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 				/* We have a problem: how to unify the typeofs for the two
 				 * arms?
 				 * We do this by 
+				 * - generating "delayed" code for both arms, using lambdas;
+				 * - using a "unify_types" template to unify types;
 				 * - avoiding opening a new scope for the results of the cond/t/f
 				 *   (it's okay if they open scopes to eval subexpressions) 
 				 * - using a "default_value_with_type<>() helper template
@@ -3123,25 +3125,67 @@ assert(false && "disabled support for inferring positional argument mappings");
 				 * - FIXME: implement this
 				 */
 				
+				// delayed true
+				auto true_lambda_ident = new_ident("delayed_true");
+				*p_out << "auto " << true_lambda_ident << " = [=]() {" << endl;
+				p_out->inc_level();
+				auto resultTrue = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 1));
+				*p_out << "return std::make_pair("
+					<< resultTrue.success_fragment << ", "
+					<< resultTrue.result_fragment << ");" << endl;
+				p_out->dec_level();
+				*p_out << "};" << endl;
+				
+				// delayed false
+				auto false_lambda_ident = new_ident("delayed_false");
+				*p_out << "auto " << false_lambda_ident << " = [=]() {" << endl;
+				p_out->inc_level();
+				auto resultFalse = emit_stub_expression_as_statement_list(
+					ctxt,
+					GET_CHILD(expr, 2));
+				*p_out << "return std::make_pair(" 
+					<< resultFalse.success_fragment << ", "
+					<< resultFalse.result_fragment << ");" << endl;
+				p_out->dec_level();
+				*p_out << "};" << endl;
+				
+				// declare result
+				auto conditional_result_ident = new_ident("result");
+				*p_out << " ::cake::unify_types< __typeof( " << true_lambda_ident << "().second), __typeof( "
+					<< false_lambda_ident << "().second) >::type " 
+					<< conditional_result_ident << ";" << endl;
+				
+				// did the condition evaluate successfully?
+				*p_out <
+				
 				*p_out << "if (" << resultCond.success_fragment << ")" << endl
 					<< "{";
+				// we now evaluate the delayed_true or delayed_false fragment
 				p_out->inc_level();
 				*p_out << endl << "if (" << resultCond.result_fragment << ")"
 					<< endl << "{";
 				p_out->inc_level();
 				
-				auto resultTrue = emit_stub_expression_as_statement_list(
-					ctxt,
-					GET_CHILD(expr, 1));
+				auto true_result_pair = new_ident("true_result"); 
+				*p_out << "auto " << true_result_pair << " = " << true_lambda_ident << "();" << endl;
+				
+				*p_out << "if (" << true_result_pair << ".first" << ") " 
+					<< conditional_result_ident << " = " 
+					<< true_result_pair << ".second;" << endl;
 				
 				p_out->dec_level();
 				*p_out << "}" << endl
 					<< "else" << endl << "{";
 				p_out->inc_level();
 				
-				auto resultFalse = emit_stub_expression_as_statement_list(
-					ctxt,
-					GET_CHILD(expr, 2));
+				auto false_result_pair = new_ident("false_result"); 
+				*p_out << "auto " << false_result_pair << " = " << false_lambda_ident << "();" << endl;
+				
+				*p_out << "if (" << false_result_pair << ".first" << ") " 
+					<< conditional_result_ident << " = " 
+					<< false_result_pair << ".second;" << endl;
 				
 				p_out->dec_level();
 				*p_out << "} /* end else */" << endl;
@@ -3149,12 +3193,14 @@ assert(false && "disabled support for inferring positional argument mappings");
 				*p_out << "} /* end if condition succeeded */" << endl;
 				
 				RETURN_VALUE(((post_emit_status) { 
-				/* result fragment */ "(void)0", // FIXME: implement the actual 
+				/* result fragment */  
+					conditional_result_ident
+					,
 				/* success fragment */
 					"(" + resultCond.success_fragment 
 						+ " && (" + resultCond.result_fragment 
-							+ " ? (" + resultTrue.success_fragment 
-							+ ") : (" + resultFalse.success_fragment + ")))",
+							+ " ? (" + true_result_pair + ".first"
+							+ ") : (" + false_result_pair + ".first" + ")))",
 						// no *new* failures added, so delegate failure
 					environment() }));
 			}
@@ -3643,8 +3689,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 		if (/*treat_subprogram_as_untyped(callee_subprogram)
 			&& !*/subprogram_returns_void(callee_subprogram))
 		{
-			*p_out << /* "::cake::unspecified_wordsize_type" */ "int" // HACK: this is what our fake DWARF will say
-			 << ' ' << value_ident << " = ::cake::success<int>()(); // trivial success" << std::endl;
+			*p_out << /* "::cake::unspecified_wordsize_type" */ "cake::no_value:t" // HACK: this is what our fake DWARF will say
+			 << ' ' << value_ident << " = ::cake::success< cake::no_value_t>()(); // trivial success" << std::endl;
 		}
 		else //if (!subprogram_returns_void(callee_subprogram))
 		{
@@ -4971,7 +5017,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 									auto fp_pointer_target_type = dynamic_pointer_cast<pointer_type_die>(
 										fp_concrete_type)->get_type();
 
-									if (data_types_are_identical(
+									if ((!fp_pointer_target_type && !unique_corresponding_type) // <-- void pointer case
+										|| data_types_are_identical(
 										canonicalise_type(unique_corresponding_type, m_d.module_of_die(unique_corresponding_type), compiler),
 										canonicalise_type(fp_pointer_target_type, m_d.module_of_die(fp_pointer_target_type), compiler)))
 									{
@@ -4993,7 +5040,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 											<< endl;
 										continue;
 									}
-
+									
+									// can't have void here
+									assert(unique_corresponding_type);
+									assert(fp_concrete_type);
+									
 									if (data_types_are_identical(
 										canonicalise_type(unique_corresponding_type, m_d.module_of_die(unique_corresponding_type), compiler),
 										canonicalise_type(fp_concrete_type, m_d.module_of_die(fp_concrete_type), compiler)))

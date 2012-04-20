@@ -108,6 +108,12 @@ namespace cake
 		RetValType operator()() const 
 		{ return 0; }
 	};
+	template <int RuleTag /*= 0*/>
+	struct success<cake::no_value_t, RuleTag>
+	{
+		no_value_t operator()() const 
+		{ return no_value_t(); }
+	};
 	template <typename RetValPtrTargetType, int RuleTag /* = 0 */>
 	struct success<RetValPtrTargetType*, RuleTag>
 	{
@@ -203,10 +209,22 @@ bool __cake_success_of(const Arg& arg)
 	return cake::success_of<Arg, StyleTag>()(arg);
 }
 
+template <int StyleTag = 0>
+bool __cake_success_of(const cake::no_value_t& arg)
+{
+	return true;
+}
+
 template <typename Arg, int StyleTag = 0>
 Arg __cake_value_of(const Arg& arg)
 {
 	return cake::retval_of<Arg, StyleTag>()(arg);
+}
+
+template <int StyleTag = 0>
+cake::no_value_t __cake_value_of(const cake::no_value_t& arg)
+{
+	return arg;
 }
 
 template <typename Arg, int StyleTag = 0>

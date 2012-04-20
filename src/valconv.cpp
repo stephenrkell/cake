@@ -1307,7 +1307,7 @@ namespace cake
 			/* Note: we're replacing the __p_to co-object with what the stub returned. */
 			m_out() << "replace_co_object(" 
 				<< there_cxxname << ", "
-				<< it_cxxname << ", "
+				<< "*reinterpret_cast<void**>(&" << it_cxxname << ")" << ", "
 				<< "REP_ID(" << w.ns_prefix << "::" << w.m_d.name_of_module(
 					ctxt.modules.current == ctxt.modules.source 
 					? ctxt.modules.sink : ctxt.modules.source) << "), "
@@ -1335,7 +1335,7 @@ namespace cake
 			/* Note: we're replacing the __p_to co-object with what the stub returned. */
 			m_out() << "replace_co_object(" 
 				<< here_cxxname << ", "
-				<< it_cxxname << ", "
+				<< "*reinterpret_cast<void**>(&" << it_cxxname << ")" << ", "
 				<< "REP_ID(" << w.ns_prefix << "::" << w.m_d.name_of_module(
 					ctxt.modules.current == ctxt.modules.source 
 					? ctxt.modules.source : ctxt.modules.sink) << "), "
