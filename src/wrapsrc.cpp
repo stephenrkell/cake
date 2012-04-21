@@ -1948,6 +1948,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 			{
 				//boost::shared_ptr<dwarf::spec::type_die> p_arg_type = boost::shared_ptr<dwarf::spec::type_die>();
 				boost::shared_ptr<dwarf::spec::program_element_die> p_arg_origin;
+				if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS))
+				{
+					/* This means we need to add any arguments that are in the DWARF 
+					 * signature but not explicitly in the event pattern. */
+					add_excess_dwarf_args = true;
+					break;
+				}
 				
 				if (i_caller_arg == caller_subprogram->formal_parameter_children_end())
 				{
@@ -1978,13 +1985,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 					{
 						arg_is_outparam = true;
 					}
-				}
-				if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS))
-				{
-					/* This means we need to add any arguments that are in the DWARF 
-					 * signature but not explicitly in the event pattern. */
-					add_excess_dwarf_args = true;
-					break;
 				}
 				ALIAS3(n, annotatedValuePattern, ANNOTATED_VALUE_PATTERN);
 				{
@@ -4566,6 +4566,20 @@ assert(false && "disabled support for inferring positional argument mappings");
 	{
 		set<int> ast_nodes_used; 
 		set<int> caller_args_used;
+		
+		enum how_assigned_t { POSITION_LR, POSITION_RL, NAME_MATCHED, BY_TYPE, BY_LEFTOVER };
+		map<int, how_assigned_t> how_assigned;
+		auto name_for = [](how_assigned_t h) {
+			switch(h)
+			{
+				case POSITION_LR: return "position left-to-right";
+				case POSITION_RL: return "position right-to-left";
+				case NAME_MATCHED: return "name matched";
+				case BY_TYPE: return "by type";
+				case BY_LEFTOVER: return "by leftover matching";
+				default: assert(false);
+			}
+		};
 
 		/* Pass 1: explicit positional matching. */
 		/* 1a. From the left side.
@@ -4583,6 +4597,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 						goto pass1_loop_exit;
 					default: /* i.e. any other stub expression */
 						out[i] = make_pair(n, optional<string>());
+						how_assigned[i] = POSITION_LR;
 						caller_args_used.insert(i);
 						ast_nodes_used.insert(i);
 						break;
@@ -4602,7 +4617,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 			callee_subprogram->formal_parameter_children_end());
 		bool callee_is_varargs = !(callee_subprogram->unspecified_parameters_children_begin()
 		 == callee_subprogram->unspecified_parameters_children_end());
-		if (!callee_is_varargs)
+		unsigned caller_fp_count = (ctxt.opt_source && ctxt.opt_source->signature)
+		 ? srk31::count(
+			ctxt.opt_source->signature->formal_parameter_children_begin(),
+			ctxt.opt_source->signature->formal_parameter_children_end())
+		 : 0;
+		if (!callee_is_varargs && (callee_fp_count == caller_fp_count))
 		{
 			optional<unsigned> hit_in_args_pos;
 			for (int i = callee_fp_count - 1;
@@ -4632,9 +4652,15 @@ assert(false && "disabled support for inferring positional argument mappings");
 							hit_in_args_ast_pos_pass2 = optional<unsigned>(ast_pos);
 							goto pass2_loop_exit;
 						default: /* i.e. any other stub expression */
-							out[ast_pos] = make_pair(n, optional<string>());
+							out[i] = make_pair(n, optional<string>());
+							how_assigned[i] = POSITION_RL;
 							ast_nodes_used.insert(ast_pos);
-							caller_args_used.insert(i);
+							caller_args_used.insert(i); // HMM -- 
+							// why need we be at the same position in caller and callee? 
+							// We are assuming they have the same number of arguments.
+							// But they might not, if some caller-supplied arguments are ignored.
+							// Let's say this only works if caller and calle have same argcount.
+							// Fixed by adding to the if-test above.
 							break;
 					}
 				}
@@ -4719,7 +4745,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				 = callee_subprogram->formal_parameter_children_begin();
 				unsigned matched_pos
 				 = pos_for_callee_arg_iter(i_matched->second);
-				if (out.find(matched_pos) != out.end())
+				if (out.find((int) matched_pos) != out.end())
 				{
 					/* This means we've filled this pos already. */
 					cerr << "Warning: arg pos " << matched_pos
@@ -4765,6 +4791,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 						)),
 					optional<string>()
 				);
+				caller_args_used.insert(caller_argnum);
+				how_assigned[pos] = NAME_MATCHED;
 			}
 			/* We can now write that in_args has been used.
 			 * HMM. What if we name-matched zero arguments? 
@@ -4780,11 +4808,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 		 * callee arg position. */
 		set<int> ast_nodes_unused;
 		set<int> unused_caller_args;
-		unsigned caller_fp_count = (ctxt.opt_source && ctxt.opt_source->signature)
-		 ? srk31::count(
-			ctxt.opt_source->signature->formal_parameter_children_begin(),
-			ctxt.opt_source->signature->formal_parameter_children_end())
-		 : 0;
 		for (int i = 0; i < (signed) GET_CHILD_COUNT(argsMultiValue);
 			++i)
 		{
@@ -4999,8 +5022,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 										)),
 									optional<string>()
 									);
+								how_assigned[*i_unfilled] = BY_TYPE; 
+								int saved_unfilled_pos = *i_unfilled;
 								i_unfilled = unfilled_callee_non_output_only_args.erase(i_unfilled);
-								unused_caller_args.erase(candidates.begin()->first);
+								unfilled_callee_args.erase(unfilled_callee_args.find(saved_unfilled_pos));
+								unused_caller_args.erase(unused_caller_args.find(candidates.begin()->first));
 								continue; // i.e. successful continue, skipping increment
 							}
 							else
@@ -5039,6 +5065,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							)),
 						optional<string>()
 						);
+					how_assigned[pos] = BY_LEFTOVER;
 					unfilled_callee_non_output_only_args.erase(
 						unfilled_callee_non_output_only_args.begin());
 					unused_caller_args.erase(unused_caller_args.begin());
@@ -5060,6 +5087,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							)),
 						optional<string>()
 						);
+					how_assigned[pos] = BY_LEFTOVER;
 					unfilled_callee_args.erase(unfilled_callee_args.begin());
 					unused_caller_args.erase(unused_caller_args.begin());
 				}
@@ -5074,13 +5102,16 @@ assert(false && "disabled support for inferring positional argument mappings");
 		
 		cerr << "Summary of argument mappings for call to " << callee_subprogram->summary()
 			<< ": " << endl;
-		for (auto i_ent = out.begin(); i_ent != out.end(); ++i_ent)
+		int ent_pos = 0;
+		for (auto i_ent = out.begin(); i_ent != out.end(); ++i_ent, ++ent_pos)
 		{
 			cerr << "Argument position " << i_ent->first
 				<< " has been filled by ";
-			if (i_ent->second.first) cerr << "expression " 
-				<< CCP(TO_STRING_TREE(i_ent->second.first)) << endl;
-			else cerr << "(no expression; must be output-only arg)" << endl;
+			if (i_ent->second.first) cerr << "expression" 
+				<< CCP(TO_STRING_TREE(i_ent->second.first));
+			else cerr << "(no expression; must be output-only arg)";
+			assert(how_assigned.find(ent_pos) != how_assigned.end());
+			cerr << " using match criterion " << name_for(how_assigned[ent_pos]) << endl;
 		}
 	}
 	
