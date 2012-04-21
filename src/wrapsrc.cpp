@@ -754,9 +754,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 					
 					assert(ctxt.opt_source->signature->get_type());
 					
-					*p_out << "return __cake_success< " 
+					*p_out << "return ::cake::success< " 
 						<< get_type_name(ctxt.opt_source->signature->get_type())
-						<< " >(); " << endl;
+						<< " >()(); " << endl;
 					
 					//RAISE(ctxt.opt_source->opt_pattern, 
 					//	"cannot synthesise a return value out of no value (void)");
@@ -3196,13 +3196,16 @@ assert(false && "disabled support for inferring positional argument mappings");
 									INIT;
 									BIND3(n, boundName, IDENT);
 									ident_to_bind = unescape_ident(CCP(GET_TEXT(boundName)));
-									BIND2(n, interp);
-									interp_type = GET_TYPE(interp);
+									if (GET_CHILD_COUNT(n) > 1)
 									{
-										INIT;
-										BIND3(interp, ident, IDENT);
-										interp_string = unescape_ident(CCP(GET_TEXT(ident)));
-										BIND3(interp, value_construct, VALUE_CONSTRUCT);
+										BIND2(n, interp);
+										interp_type = GET_TYPE(interp);
+										{
+											INIT;
+											BIND3(interp, ident, IDENT);
+											interp_string = unescape_ident(CCP(GET_TEXT(ident)));
+											BIND3(interp, value_construct, VALUE_CONSTRUCT);
+										}
 									}
 								} break;
 								default: RAISE_INTERNAL(n, "unexpected token");
@@ -4010,6 +4013,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 				}
 				
 				// we always have an argname, whether generated or DWARF-supplied
+				// NOTE: this is the name in the *callee*. So it's not supposed
+				// to be valid in the current environment. 
 				string argname = 
 					(i_arg != callee_subprogram->formal_parameter_children_end() 
 						&& (*i_arg)->get_name()
@@ -4039,7 +4044,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 
 				// store the mapping to the callee argument
-				arg_names_in_callee.push_back((*i_arg)->get_name());
+				arg_names_in_callee.push_back(argname);
 				arg_results_by_callee_name[argname] = result.result_fragment;
 				argnums_by_callee_name[argname] = argnum;
 
@@ -4768,6 +4773,192 @@ assert(false && "disabled support for inferring positional argument mappings");
 				<< "not output only: " << unfilled_callee_non_output_only_args.size()
 				<< ", total: " << unfilled_callee_args.size()
 			<< ") using " << unused_caller_args.size() << " unused values from caller." << endl;
+			
+			if (unfilled_callee_non_output_only_args.size() > unused_caller_args.size())
+			{
+				RAISE(argsMultiValue, "not enough arguments for call");
+			}
+
+			/* This means we have a chance of filling the remaining callee arguments.
+			 * In general, we use existence of a unique corresponding type and caller's
+			 * provision of a suitable value. */
+			auto caller_subprogram = ctxt.opt_source->signature;
+			auto i_unfilled = unfilled_callee_non_output_only_args.begin();
+			//for (auto i_unfilled = unfilled_callee_non_output_only_args.begin();
+			//	i_unfilled != unfilled_callee_non_output_only_args.end();
+			//	++i_unfilled)
+			while (i_unfilled != unfilled_callee_non_output_only_args.end())
+			{
+				// get the callee argument
+				auto i_callee_arg = srk31::nth_zero_based(
+					callee_subprogram->formal_parameter_children_begin(),
+					callee_subprogram->formal_parameter_children_end(),
+					*i_unfilled);
+				assert(i_callee_arg != callee_subprogram->formal_parameter_children_end());
+
+				// what's the type of this argument?
+				auto p_type = (*i_callee_arg)->get_type();
+
+				// if there is no type, we can't do anything with this arg
+				if (!p_type) 
+				{
+					cerr << "Callee argument " << (*i_callee_arg)->summary()
+						<< " has no type info, so can't match by type." << endl;
+					goto next_callee_arg;
+				}
+				else
+				{
+
+					// is it a pointer?
+					bool is_a_pointer = (p_type->get_concrete_type() && 
+						p_type->get_concrete_type()->get_tag() == DW_TAG_pointer_type);
+					shared_ptr<type_die> type_of_interest
+					 = is_a_pointer 
+					 	? dynamic_pointer_cast<pointer_type_die>(p_type->get_concrete_type())->get_type()
+						: p_type;
+					if (!type_of_interest)
+					{
+						cerr << "Callee argument " << (*i_callee_arg)->summary()
+							<< " is a generic pointer, so can't match by type." << endl;
+						goto next_callee_arg;
+					}
+					else 
+					{
+
+						// does this type have a unique corresponding type?
+						auto corresponding_types = m_d.corresponding_dwarf_types(
+								type_of_interest,
+								m_d.module_of_die(caller_subprogram),
+								/* flow_from_type_module_to_corresp_module */ false /* i.e. other way */);
+						if (corresponding_types.size() != 1)
+						{
+							cerr << "Callee argument " << (*i_callee_arg)->summary()
+								<< " has no unique corresponding type (candidates: ";
+								if (corresponding_types.size() == 0) cerr << "none";
+								else for (auto i_cand = corresponding_types.begin(); 
+									i_cand != corresponding_types.end(); ++i_cand)
+								{
+									if (i_cand != corresponding_types.begin()) cerr << "; ";
+									cerr << (*i_cand)->summary();
+								}
+								cerr << "), so can't match by type." << endl;
+							goto next_callee_arg;
+						}
+						else
+						{
+							auto unique_corresponding_type = *corresponding_types.begin();
+
+							// do we have a *unique* caller-side argument with this corresponding type?
+							vector< pair<int, subprogram_die::formal_parameter_iterator > > candidates;
+							for (auto i_caller_argnum = unused_caller_args.begin();
+								i_caller_argnum != unused_caller_args.end();
+								++i_caller_argnum)
+							{
+								auto i_caller_fp
+								 = srk31::nth_zero_based(caller_subprogram->formal_parameter_children_begin(),
+									caller_subprogram->formal_parameter_children_end(),
+									*i_caller_argnum);
+								assert(i_caller_fp != caller_subprogram->formal_parameter_children_end());
+
+								if (!(*i_caller_fp)->get_type())
+								{
+									cerr << "Skipping untyped caller arg "
+										<< (*i_caller_fp)->summary()
+										<< endl;
+									continue;
+								}
+								auto fp_concrete_type = (*i_caller_fp)->get_type()->get_concrete_type();
+
+								if (!fp_concrete_type)
+								{
+									cerr << "Skipping void-typed caller arg (a bit strange) "
+										<< (*i_caller_fp)->summary()
+										<< endl;
+									continue;
+								}
+								if (is_a_pointer)
+								{
+									if (fp_concrete_type->get_tag() != DW_TAG_pointer_type)
+									{
+										cerr << "Skipping non-pointer arg " << (*i_caller_fp)->summary()
+											<< endl;
+										continue;
+									}
+
+									auto fp_pointer_target_type = dynamic_pointer_cast<pointer_type_die>(
+										fp_concrete_type)->get_type();
+
+									if (data_types_are_identical(
+										canonicalise_type(unique_corresponding_type, m_d.module_of_die(unique_corresponding_type), compiler),
+										canonicalise_type(fp_pointer_target_type, m_d.module_of_die(fp_pointer_target_type), compiler)))
+									{
+										cerr << "Caller (pointer) argument " << (*i_caller_fp)->summary()
+											<< " is a candidate." << endl;
+										candidates.push_back(make_pair(*i_caller_argnum, i_caller_fp));
+									}
+									else
+									{
+										cerr << "Caller (pointer) argument " << (*i_caller_fp)->summary()
+											<< " is not a candidate." << endl;
+									}
+								}
+								else // !is_a_pointer
+								{
+									if (fp_concrete_type->get_tag() == DW_TAG_pointer_type)
+									{
+										cerr << "Skipping pointer arg " << (*i_caller_fp)->summary()
+											<< endl;
+										continue;
+									}
+
+									if (data_types_are_identical(
+										canonicalise_type(unique_corresponding_type, m_d.module_of_die(unique_corresponding_type), compiler),
+										canonicalise_type(fp_concrete_type, m_d.module_of_die(fp_concrete_type), compiler)))
+									{
+										cerr << "Caller (non-pointer) argument " << (*i_caller_fp)->summary()
+											<< " is a candidate." << endl;
+										candidates.push_back(make_pair(*i_caller_argnum, i_caller_fp));
+									}
+									else
+									{
+										cerr << "Caller (non-pointer) argument " << (*i_caller_fp)->summary()
+											<< " is not a candidate." << endl;
+									}
+								}
+							} // end for caller args
+							if (candidates.size() == 1)
+							{
+								cerr << "Type-based matching gave a unique candidate for arg "
+									<< (*i_callee_arg)->summary()
+									<< " so assigning mapping." << endl;
+								out[*i_unfilled]
+								 = make_pair(
+									/* we make the AST ourselves! */
+									make_ident_expr(basic_name_for_argnum(
+										candidates.begin()->first
+										)),
+									optional<string>()
+									);
+								i_unfilled = unfilled_callee_non_output_only_args.erase(i_unfilled);
+								unused_caller_args.erase(candidates.begin()->first);
+								continue; // i.e. successful continue, skipping increment
+							}
+							else
+							{
+								cerr << "Type-based matching gave no unique candidate (count: "
+									<< candidates.size()
+									<< ") for arg "
+									<< (*i_callee_arg)->summary()
+									<< endl;
+							} // end if unique candidates
+						} // end else
+					} // end else
+				} // end else
+			next_callee_arg:
+				++i_unfilled;
+			} // end while unfilled  
+			// i.e. end type-based matching
+			
 			//if (unfilled_callee_non_output_only_args.size() == 1)
 			if (unfilled_callee_non_output_only_args.size() == unused_caller_args.size())
 			{

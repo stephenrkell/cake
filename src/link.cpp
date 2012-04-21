@@ -4863,6 +4863,18 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		bool flow_from_type_module_to_corresp_module)
 	{
 		vector<shared_ptr<dwarf::spec::type_die> > found;
+		
+		// we return a vector, but deduplicate here
+		auto add_and_deduplicate = [&found](shared_ptr<type_die> t) {
+			for (auto i_already_found = found.begin();
+				i_already_found != found.end();
+				++i_already_found)
+			{
+				if (data_types_are_identical(*i_already_found, t)) return;
+			}
+			found.push_back(t);
+		};
+		
 		auto ifaces = sorted(make_pair(corresp_module,
 			module_of_die(type)));
 		auto iters = val_corresps.equal_range(ifaces);
@@ -4872,11 +4884,25 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 		{
 			if (flow_from_type_module_to_corresp_module)
 			{
-				if (i_corresp->second->source_data_type == type) found.push_back(i_corresp->second->sink_data_type);
+				if (data_types_are_identical(
+					canonicalise_type(i_corresp->second->source_data_type,
+						i_corresp->second->source,
+						compiler),
+					canonicalise_type(type,
+						module_of_die(type),
+						compiler)
+					)) add_and_deduplicate(i_corresp->second->sink_data_type);
 			}
 			else // flow is from corresp module to type module
 			{
-				if (i_corresp->second->sink_data_type == type) found.push_back(i_corresp->second->source_data_type);
+				if (data_types_are_identical(
+					canonicalise_type(i_corresp->second->sink_data_type,
+						i_corresp->second->sink,
+						compiler),
+					canonicalise_type(type,
+						module_of_die(type),
+						compiler)
+					)) add_and_deduplicate(i_corresp->second->source_data_type);
 			}
 		}
 		return found;
