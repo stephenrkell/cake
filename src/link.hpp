@@ -242,7 +242,8 @@ namespace cake {
  		vector<shared_ptr<spec::type_die> >
 		corresponding_dwarf_types(shared_ptr<spec::type_die> type,
 			module_ptr corresp_module,
-			bool flow_from_type_module_to_corresp_module);
+			bool flow_from_type_module_to_corresp_module,
+			bool canonicalise_before_add = false);
 			
 		shared_ptr<spec::type_die>
 		unique_corresponding_dwarf_type(

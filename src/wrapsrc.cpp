@@ -3158,8 +3158,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 					<< conditional_result_ident << ";" << endl;
 				
 				// did the condition evaluate successfully?
-				*p_out <
-				
 				*p_out << "if (" << resultCond.success_fragment << ")" << endl
 					<< "{";
 				// we now evaluate the delayed_true or delayed_false fragment
@@ -4674,6 +4672,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 			for (int i = callee_fp_count - 1;
 					i >= 0; --i)
 			{
+				// we stop if we hit a position already filled by left-to-right
+				if (out.find(i) != out.end()) break;
+				
 				// count forward to find the current fp
 				unsigned pos = 0;
 				auto i_fp = callee_subprogram->formal_parameter_children_begin();
@@ -4953,12 +4954,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 					}
 					else 
 					{
-
 						// does this type have a unique corresponding type?
 						auto corresponding_types = m_d.corresponding_dwarf_types(
 								type_of_interest,
 								m_d.module_of_die(caller_subprogram),
-								/* flow_from_type_module_to_corresp_module */ false /* i.e. other way */);
+								/* flow_from_type_module_to_corresp_module */ false /* i.e. other way */,
+								true /* canonicalise_before_add */);
 						if (corresponding_types.size() != 1)
 						{
 							cerr << "Callee argument " << (*i_callee_arg)->summary()
@@ -4976,6 +4977,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 						else
 						{
 							auto unique_corresponding_type = *corresponding_types.begin();
+							assert(m_d.module_of_die(unique_corresponding_type)
+							    == m_d.module_of_die(caller_subprogram));
+							cerr << "Looking for a caller-supplied argument with type canonicalising to " 
+								<< unique_corresponding_type->summary() << endl;
 
 							// do we have a *unique* caller-side argument with this corresponding type?
 							vector< pair<int, subprogram_die::formal_parameter_iterator > > candidates;
@@ -5017,10 +5022,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 									auto fp_pointer_target_type = dynamic_pointer_cast<pointer_type_die>(
 										fp_concrete_type)->get_type();
 
-									if ((!fp_pointer_target_type && !unique_corresponding_type) // <-- void pointer case
-										|| data_types_are_identical(
-										canonicalise_type(unique_corresponding_type, m_d.module_of_die(unique_corresponding_type), compiler),
-										canonicalise_type(fp_pointer_target_type, m_d.module_of_die(fp_pointer_target_type), compiler)))
+									assert(m_d.module_of_die(unique_corresponding_type) 
+										== m_d.module_of_die(fp_pointer_target_type));
+									auto caller_module = m_d.module_of_die(unique_corresponding_type);
+									if (data_types_are_identical(
+										canonicalise_type(unique_corresponding_type, caller_module, compiler),
+										canonicalise_type(fp_pointer_target_type, caller_module, compiler)))
 									{
 										cerr << "Caller (pointer) argument " << (*i_caller_fp)->summary()
 											<< " is a candidate." << endl;
@@ -5040,11 +5047,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 											<< endl;
 										continue;
 									}
-									
-									// can't have void here
-									assert(unique_corresponding_type);
-									assert(fp_concrete_type);
-									
+
 									if (data_types_are_identical(
 										canonicalise_type(unique_corresponding_type, m_d.module_of_die(unique_corresponding_type), compiler),
 										canonicalise_type(fp_concrete_type, m_d.module_of_die(fp_concrete_type), compiler)))
@@ -5056,7 +5059,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 									else
 									{
 										cerr << "Caller (non-pointer) argument " << (*i_caller_fp)->summary()
-											<< " is not a candidate." << endl;
+											<< " is not a candidate, because type (corresp) "
+											<< *unique_corresponding_type
+											<< " and "
+											<< *fp_concrete_type
+											<< "are not identical." << endl;
 									}
 								}
 							} // end for caller args
@@ -5095,6 +5102,25 @@ assert(false && "disabled support for inferring positional argument mappings");
 				++i_unfilled;
 			} // end while unfilled  
 			// i.e. end type-based matching
+			
+			auto set_as_string = [](const std::set<int>& s) {
+				std::ostringstream str;
+				str << "{";
+				for (auto i_el = s.begin(); i_el != s.end(); ++i_el)
+				{
+					if (i_el != s.begin()) str << ", ";
+					str << *i_el;
+				}
+				str << "}";
+				return str.str();
+			};
+			cerr << "Beginning leftover matching with " 
+				<< unfilled_callee_non_output_only_args.size() << " callee non-o-o args left (" 
+				<< set_as_string(unfilled_callee_non_output_only_args) << ", "
+				<< ", " << unfilled_callee_args.size() << " callee args total left ("
+				<< set_as_string(unfilled_callee_args) << "), "
+				<< ", " << unused_caller_args.size() << " caller args left ("
+				<< set_as_string(unused_caller_args) << ")" << endl;
 			
 			//if (unfilled_callee_non_output_only_args.size() == 1)
 			if (unfilled_callee_non_output_only_args.size() == unused_caller_args.size())
@@ -5153,16 +5179,16 @@ assert(false && "disabled support for inferring positional argument mappings");
 		
 		cerr << "Summary of argument mappings for call to " << callee_subprogram->summary()
 			<< ": " << endl;
-		int ent_pos = 0;
-		for (auto i_ent = out.begin(); i_ent != out.end(); ++i_ent, ++ent_pos)
+
+		for (auto i_ent = out.begin(); i_ent != out.end(); ++i_ent)
 		{
 			cerr << "Argument position " << i_ent->first
 				<< " has been filled by ";
-			if (i_ent->second.first) cerr << "expression" 
+			if (i_ent->second.first) cerr << "expression " 
 				<< CCP(TO_STRING_TREE(i_ent->second.first));
 			else cerr << "(no expression; must be output-only arg)";
-			assert(how_assigned.find(ent_pos) != how_assigned.end());
-			cerr << " using match criterion " << name_for(how_assigned[ent_pos]) << endl;
+			assert(how_assigned.find(i_ent->first) != how_assigned.end());
+			cerr << " using match criterion " << name_for(how_assigned[i_ent->first]) << endl;
 		}
 	}
 	

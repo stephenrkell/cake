@@ -4860,7 +4860,8 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 	link_derivation::
 	corresponding_dwarf_types(shared_ptr<dwarf::spec::type_die> type,
 		module_ptr corresp_module,
-		bool flow_from_type_module_to_corresp_module)
+		bool flow_from_type_module_to_corresp_module,
+		bool canonicalise_before_add /* = false */)
 	{
 		vector<shared_ptr<dwarf::spec::type_die> > found;
 		
@@ -4882,27 +4883,54 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 			i_corresp != iters.second;
 			++i_corresp)
 		{
+			auto canonicalised_t = canonicalise_type(type,
+					module_of_die(type),
+					compiler);
 			if (flow_from_type_module_to_corresp_module)
 			{
-				if (data_types_are_identical(
-					canonicalise_type(i_corresp->second->source_data_type,
+				/* This means we're looking for a corresp whose source is 
+				 * in the module of t and whose sink is in corresp_module.
+				 * We store the type in corresp_module, as always. */
+				if (i_corresp->second->sink != corresp_module) continue;
+
+				/* BUT note that we *test* t against the non-corresp module, 
+				 * i.e. t's module! */
+				auto canonicalised_in_module_of_t
+				 = canonicalise_type(i_corresp->second->source_data_type,
 						i_corresp->second->source,
-						compiler),
-					canonicalise_type(type,
-						module_of_die(type),
-						compiler)
-					)) add_and_deduplicate(i_corresp->second->sink_data_type);
+						compiler);
+				auto canonicalised_in_other_module
+				 = canonicalise_type(i_corresp->second->sink_data_type,
+						i_corresp->second->sink,
+						compiler);				
+				if (data_types_are_identical(
+						canonicalised_in_module_of_t,
+						canonicalised_t
+					)) add_and_deduplicate(canonicalise_before_add ?
+						canonicalised_in_other_module
+						: i_corresp->second->sink_data_type);
 			}
 			else // flow is from corresp module to type module
 			{
-				if (data_types_are_identical(
-					canonicalise_type(i_corresp->second->sink_data_type,
+				/* This means we're looking for a corresp whose source is 
+				 * in corresp_module and whose sink is in the module of t.
+				 * We store the type in corresp_module, as always. */
+				if (i_corresp->second->source != corresp_module) continue;
+				
+				auto canonicalised_in_module_of_t 
+				 = canonicalise_type(i_corresp->second->sink_data_type,
 						i_corresp->second->sink,
-						compiler),
-					canonicalise_type(type,
-						module_of_die(type),
-						compiler)
-					)) add_and_deduplicate(i_corresp->second->source_data_type);
+						compiler);
+				auto canonicalised_in_other_module
+				 = canonicalise_type(i_corresp->second->source_data_type,
+						i_corresp->second->source,
+						compiler);
+				if (data_types_are_identical(
+						canonicalised_in_module_of_t,
+						canonicalised_t
+					)) add_and_deduplicate(canonicalise_before_add ?
+						canonicalised_in_other_module
+						: i_corresp->second->source_data_type);
 			}
 		}
 		return found;
