@@ -574,30 +574,33 @@ namespace cake
 				}
 				break;
 //			}
-			case TAG_AND_TOKEN(DW_TAG_subprogram, VALUE_DESCRIPTION): {
+			case TAG_AND_TOKEN(DW_TAG_subprogram, FUNCTION_ARROW): {
 				INIT;
-				BIND2(falsifiable, typeDescr);
 				auto subprogram = dynamic_pointer_cast<encap::subprogram_die>(falsifier);
 				assert(subprogram);
 				cerr << "Overriding signature of subprogram " << subprogram->summary()
 					<< " to be that described by " << CCP(TO_STRING_TREE(falsifiable)) << endl;
-				if (GET_TYPE(typeDescr) != CAKE_TOKEN(FUNCTION_ARROW)) RAISE(
-					falsifiable, "cannot override a subprogram to be a non-subprogram");
 
-				ALIAS3(typeDescr, functionHead, FUNCTION_ARROW);
+				ALIAS3(falsifiable, functionHead, FUNCTION_ARROW);
 				{
 					INIT;
 					BIND2(functionHead, args);
 					BIND2(functionHead, returnType);
-					
-					cerr << "Warning: only overriding return type of subprogram "
-						<< subprogram->summary() << endl;
-					
-					auto new_type = ensure_dwarf_type(returnType);
-					if (!new_type) cerr << "Warning: overriding to void return type: "
-						<< subprogram->summary() << endl;
-					
-					subprogram->set_type(new_type);
+					if (missing == returnType)
+					{
+						cerr << "Warning: only overriding return type of subprogram "
+							<< subprogram->summary() << endl;
+
+						auto new_type = ensure_dwarf_type(returnType);
+						if (!new_type) cerr << "Warning: overriding to void return type: "
+							<< subprogram->summary() << endl;
+
+						subprogram->set_type(new_type);
+						cerr << "Subprogram is now " << *subprogram << endl;
+						
+						return true;
+					}
+					else RAISE_INTERNAL(missing, "overriding arguments not implemented");
 				}
 			
 			}
@@ -1188,7 +1191,8 @@ namespace cake
 				// HMM... structural treatment also, it seems. 
 				// FIXME: this means dwarfidl can't express 
 				// "a structure type, named <like so>, structured <like so...>"
-				assert(false);
+				
+				//assert(false);
 			} break;
 			case CAKE_TOKEN(KEYWORD_PTR): {
 				// find the pointed-to type, then find a pointer type pointing to it
@@ -1510,11 +1514,25 @@ namespace cake
 			}
 			else
 			{
-				return eval_claim_depthfirst(
+				/* To set the return type of a function, we need to give 
+				 * the handler more context than just the return type AST node.
+				 * */
+				bool success = eval_claim_depthfirst(
 					returnValue,
 					p_d->get_type(),
 					p_resolver,
-					handler);
+					&module_described_by_dwarf::do_nothing_handler);
+				if (success) return true;
+				else
+				{
+					/* We call the handler with the whole subprogram, but with a missing hint. */
+					return (this->*handler)(
+						claim,
+						p_d,
+						returnValue,
+						p_resolver
+					);
+				}
 			}
 		}
 	}
