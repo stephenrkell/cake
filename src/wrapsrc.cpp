@@ -36,7 +36,7 @@ namespace cake
 		return retval;
 	}
 	const std::string wrapper_file::wrapper_arg_name_prefix = "__cake_arg";
-	const std::string wrapper_file::NO_VALUE = "__cake_arg";
+	const std::string wrapper_file::NO_VALUE = "(cake::no_value_t())";
 
 	codegen_context::codegen_context(wrapper_file& w, module_ptr source, module_ptr sink, 
 		const environment& initial_env)
@@ -3156,11 +3156,15 @@ assert(false && "disabled support for inferring positional argument mappings");
 				*p_out << " ::cake::unify_types< __typeof( " << true_lambda_ident << "().second), __typeof( "
 					<< false_lambda_ident << "().second) >::type " 
 					<< conditional_result_ident << ";" << endl;
+				// declare overall success
+				auto success_ident = new_ident("cond_success");
+				*p_out << "bool " << success_ident << ";" << endl; 
 				
 				// did the condition evaluate successfully?
 				*p_out << "if (" << resultCond.success_fragment << ")" << endl
 					<< "{";
 				// we now evaluate the delayed_true or delayed_false fragment
+				// We declare both results 
 				p_out->inc_level();
 				*p_out << endl << "if (" << resultCond.result_fragment << ")"
 					<< endl << "{";
@@ -3170,8 +3174,14 @@ assert(false && "disabled support for inferring positional argument mappings");
 				*p_out << "auto " << true_result_pair << " = " << true_lambda_ident << "();" << endl;
 				
 				*p_out << "if (" << true_result_pair << ".first" << ") " 
-					<< conditional_result_ident << " = " 
+					<< "{" << endl;
+				p_out->inc_level();
+				*p_out << conditional_result_ident << " = " 
 					<< true_result_pair << ".second;" << endl;
+				*p_out << success_ident << " = true;" << endl << "}" << endl;
+				p_out->dec_level();
+				*p_out << "else " << success_ident << " = false;" << endl;
+				
 				
 				p_out->dec_level();
 				*p_out << "}" << endl
@@ -3182,8 +3192,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 				*p_out << "auto " << false_result_pair << " = " << false_lambda_ident << "();" << endl;
 				
 				*p_out << "if (" << false_result_pair << ".first" << ") " 
-					<< conditional_result_ident << " = " 
+					<< "{" << endl;
+				p_out->inc_level();
+				*p_out << conditional_result_ident << " = " 
 					<< false_result_pair << ".second;" << endl;
+				*p_out << success_ident << " = true;" << endl << "}" << endl;
+				p_out->dec_level();
+				*p_out << "else " << success_ident << " = false;" << endl;
 				
 				p_out->dec_level();
 				*p_out << "} /* end else */" << endl;
@@ -3195,10 +3210,11 @@ assert(false && "disabled support for inferring positional argument mappings");
 					conditional_result_ident
 					,
 				/* success fragment */
-					"(" + resultCond.success_fragment 
-						+ " && (" + resultCond.result_fragment 
-							+ " ? (" + true_result_pair + ".first"
-							+ ") : (" + false_result_pair + ".first" + ")))",
+// 					"(" + resultCond.success_fragment 
+// 						+ " && (" + resultCond.result_fragment 
+// 							+ " ? (" + true_result_pair + ".first"
+// 							+ ") : (" + false_result_pair + ".first" + ")))",
+					"(" + resultCond.success_fragment + " && " + success_ident + ")",
 						// no *new* failures added, so delegate failure
 					environment() }));
 			}
@@ -3687,7 +3703,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		if (/*treat_subprogram_as_untyped(callee_subprogram)
 			&& !*/subprogram_returns_void(callee_subprogram))
 		{
-			*p_out << /* "::cake::unspecified_wordsize_type" */ "cake::no_value:t" // HACK: this is what our fake DWARF will say
+			*p_out << /* "::cake::unspecified_wordsize_type" */ "cake::no_value_t" // HACK: this is what our fake DWARF will say
 			 << ' ' << value_ident << " = ::cake::success< cake::no_value_t>()(); // trivial success" << std::endl;
 		}
 		else //if (!subprogram_returns_void(callee_subprogram))

@@ -126,6 +126,11 @@ namespace cake
 	{
 		template <typename T>
 		operator T() const { return T(); }
+		
+		template <typename T>
+		no_value_t(const T& arg) {}
+		
+		no_value_t() {}
 	};
 
 	
@@ -144,6 +149,11 @@ namespace cake
 	{
 		typedef NonVoid type;
 	};
+	template <>
+	struct unify_types<void, void>
+	{
+		typedef void type;
+	};
 	template <typename NonVoid>
 	struct unify_types<NonVoid, cake::no_value_t>
 	{
@@ -153,6 +163,11 @@ namespace cake
 	struct unify_types<cake::no_value_t, NonVoid>
 	{
 		typedef NonVoid type;
+	};
+	template <>
+	struct unify_types<cake::no_value_t, cake::no_value_t>
+	{
+		typedef cake::no_value_t type;
 	};
 //	template <typename Same>
 //	struct unify_types<Same, Same>
