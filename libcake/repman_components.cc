@@ -575,6 +575,20 @@ void set_co_object_type(void *object, int obj_rep, void *co_object, int co_obj_r
 
 }
 
+int allocating_component(void *obj)
+{
+	/* How to implement this? It's like discovering an object, but then
+	 * we map to the CU to a component. */
+
+	auto p_cu = pmirror::self.discover_allocating_cu_for_object((pmirror::addr_t) obj);
+	assert(p_cu);
+	auto found = p_components->find(
+		(dwarf::spec::abstract_dieset::position) { &p_cu->get_ds(), p_cu->get_offset() }
+	);
+	assert(found != p_components->end());
+	return found->second;
+}
+
 conv_func_t get_rep_conv_func(int from_rep, int to_rep, void *source_object, void *target_object)
 {
 	using pmirror::self;

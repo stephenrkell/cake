@@ -22,6 +22,7 @@ void *noop_conv_func(void *, void *);
 struct co_object_info {
 	unsigned allocated_by:1; /* 0 == by rep_man; 1 == by user code */
 	unsigned initialized:1;
+	unsigned opaque_in_this_rep:1; /* if true, tis error to use find_co_object to return it */
 } __attribute__((packed));
 
 /* Table of co-object groups; each group is an array */
@@ -49,7 +50,9 @@ void print_object(const void *);
 /* co-object bookkeeping interface */
 int invalidate_co_object(void *object, int rep);
 void *find_co_object(const void *object, int object_rep, int co_object_rep, 
-		struct co_object_group **co_object_rec_out/*, int expected_size_words*/);		
+		struct co_object_group **co_object_rec_out);		
+void *find_co_object_opaque(const void *object, int object_rep, int co_object_rep, 
+		struct co_object_group **co_object_rec_out);		
 struct co_object_group *new_co_object_record(void *initial_object, int initial_rep, 
 	int initial_alloc_by, int is_uninit, unsigned array_len);
 int mark_object_as_initialized(void *, int);
@@ -62,6 +65,8 @@ void init_co_object_from_object(int object_rep, void *object,
 typedef void (*addr_change_cb_t)(void *arg, void *old_addr, void *new_addr);
 void sync_all_co_objects(addr_change_cb_t cb, void *cb_arg, int from_rep, int to_rep, ...);
 void *replace_co_object(void *existing_obj, void *new_obj, int existing_rep, int require_other_rep);
+void set_as_opaque_in_rep(void *ptr, int nonopaque_in_this_rep, int opaque_in_this_rep);
+void ensure_allocating_component_has_co_object(void *obj);
 
 /* object graph walking */
 void walk_bfs(int object_rep, void *object, void *stackptr_helper, int co_object_rep,
@@ -82,6 +87,7 @@ void get_co_object_size(void *obj, int obj_rep, int co_obj_rep, unsigned *out_si
 /* Components table lookups */
 const char *get_component_name_for_rep(int rep);
 int get_rep_for_component_name(const char *name);
+int allocating_component(void *obj);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 } /* end extern "C" */

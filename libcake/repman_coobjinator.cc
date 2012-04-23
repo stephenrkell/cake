@@ -199,6 +199,22 @@ int invalidate_co_object(void *object, int rep)
 void *find_co_object(const void *object, int object_rep, int co_object_rep, 
 		struct co_object_group **co_object_rec_out/*, int expected_size_words*/)
 {
+	struct co_object_group *tmp_co_object_group_ptr = 0;
+	struct co_object_group **rec_out_ptr
+	 = co_object_rec_out ? co_object_rec_out : & tmp_co_object_group_ptr;
+	
+	auto found = find_co_object_opaque(object, object_rep, co_object_rep, rec_out_ptr);
+	if (found)
+	{
+		assert(*rec_out_ptr);
+		assert(!(*rec_out_ptr)->co_object_info[co_object_rep].opaque_in_this_rep);
+	}
+	return found;
+}
+
+void *find_co_object_opaque(const void *object, int object_rep, int co_object_rep, 
+		struct co_object_group **co_object_rec_out/*, int expected_size_words*/)
+{
 	if (object == NULL)
 	{
 		return NULL; /* NULL is NULL in all representations */
@@ -543,3 +559,47 @@ void *replace_co_object(void *existing_obj,
 	return existing_obj;
 }
 
+void set_as_opaque_in_rep(void *ptr, int other_valid_rep, int opaque_in_this_rep)
+{
+	assert(ptr);
+	assert(other_valid_rep != opaque_in_this_rep);
+	
+	auto found_map_ent = ensure_map_for_addr(ptr)->find(ptr);
+	assert(found_map_ent != ensure_map_for_addr(ptr)->end());
+	auto p_group = found_map_ent->second;
+	
+	assert(p_group->reps[other_valid_rep] == ptr);
+	// relaxation: we don't have to give the non-opaque rep as argument; any will do
+	//assert(!p_group->co_object_info[nonopaque_in_this_rep].opaque_in_this_rep);
+	
+	p_group->reps[opaque_in_this_rep] = ptr;
+	p_group->co_object_info[opaque_in_this_rep]
+	 = (struct co_object_info) {
+		 /*.allocated_by =*/ ALLOC_BY_USER, 
+		 /*.initialized =*/ true, 
+		 /*.opaque_in_this_rep =*/ true
+	};
+}
+
+void ensure_allocating_component_has_co_object(void *obj)
+{
+	int allocating_rep_id = allocating_component(obj);
+
+	auto found_group = group_for_object(obj);
+	if (found_group)
+	{
+		/* We just check that the group is set up appropriately. */
+		assert(found_group->reps[allocating_rep_id] == obj);
+		return;
+	}
+	else
+	{
+		struct co_object_group *group = new_co_object_record(
+			obj,
+			allocating_rep_id,
+			ALLOC_BY_USER,
+			/* is_uninit */ false, 
+			1 // FIXME
+			);
+	}
+}
