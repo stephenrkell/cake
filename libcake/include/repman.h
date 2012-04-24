@@ -66,7 +66,7 @@ typedef void (*addr_change_cb_t)(void *arg, void *old_addr, void *new_addr);
 void sync_all_co_objects(addr_change_cb_t cb, void *cb_arg, int from_rep, int to_rep, ...);
 void *replace_co_object(void *existing_obj, void *new_obj, int existing_rep, int require_other_rep);
 void ensure_opaque_co_obj_in_this_rep(void *ptr, int opaque_in_this_rep);
-void ensure_allocating_component_has_rep(void *obj);
+void ensure_allocating_component_has_rep_of(void *obj);
 
 /* object graph walking */
 void walk_bfs(int object_rep, void *object, void *stackptr_helper, int co_object_rep,
