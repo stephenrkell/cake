@@ -67,6 +67,9 @@ void sync_all_co_objects(addr_change_cb_t cb, void *cb_arg, int from_rep, int to
 void *replace_co_object(void *existing_obj, void *new_obj, int existing_rep, int require_other_rep);
 void ensure_opaque_co_obj_in_this_rep(void *ptr, int opaque_in_this_rep);
 void ensure_allocating_component_has_rep_of(void *obj);
+struct co_object_group *register_co_object(
+	void *existing_object, int existing_rep,
+	void *co_object, int co_object_rep, int alloc_by, unsigned array_len);
 
 /* object graph walking */
 void walk_bfs(int object_rep, void *object, void *stackptr_helper, int co_object_rep,

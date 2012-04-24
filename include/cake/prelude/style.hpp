@@ -95,11 +95,32 @@ namespace cake
 		{ return arg; }
 	};
 
+	// generic failure: try to convert -1 to the failure type
 	template <typename RetValType, int RuleTag = 0>
 	struct failure
 	{
 		RetValType operator()() const 
 		{ return -1; }
+		RetValType operator()(const RetValType& arg) const 
+		{ return -1; }
+	};
+	// specialize for wordsize integers: allow caller to pass the value through
+	template <int RuleTag>
+	struct failure< ::cake::wordsize_integer_type, RuleTag>
+	{
+		::cake::wordsize_integer_type operator()() const 
+		{ return -1; }
+		::cake::wordsize_integer_type operator()( ::cake::wordsize_integer_type arg) const 
+		{ return (arg != 0) ? arg : -1; }
+	};
+	// now partially specialise for pointers
+	template <typename RetValType, int RuleTag>
+	struct failure<RetValType*, RuleTag>
+	{
+		RetValType* operator()() const 
+		{ return 0; }
+		RetValType* operator()(RetValType *arg) const 
+		{ return 0; }
 	};
 
 	template <typename RetValType, int RuleTag = 0>
@@ -122,13 +143,6 @@ namespace cake
 	};
 
 
-	// now partially specialise for pointers
-	template <typename RetValType, int RuleTag>
-	struct failure<RetValType*, RuleTag>
-	{
-		RetValType* operator()() const 
-		{ return 0; }
-	};
 
 	template <typename RetValType, int RuleTag = 0>
 	struct success_of
@@ -137,10 +151,10 @@ namespace cake
 		{ return true; }
 	};
 	// overrides for wordsize integer-valued types
-	template <> struct success_of<unsigned long, 0> 
-	{ bool operator()(unsigned long arg) const { return (arg == 0); } };
-	template <> struct success_of<signed long, 0> 
-	{ bool operator()(signed long arg) const { return (arg == 0); } };
+	//template <> struct success_of<unsigned long, 0> 
+	//{ bool operator()(unsigned long arg) const { return (arg == 0); } };
+	template <> struct success_of< ::cake::wordsize_integer_type, 0> 
+	{ bool operator()( ::cake::wordsize_integer_type arg) const { return (arg == 0); } };
 	// FIXME: come up with an architecture-independent way of describing
 	// specialisations for other sizes of integer
 
@@ -233,9 +247,9 @@ Arg __cake_failure_with_type_of(const Arg& arg)
 	return cake::failure<Arg, StyleTag>()();
 }
 
-template <typename Arg, int StyleTag = 0>
-Arg __cake_success_with_type_of(const Arg& arg)
-{
-	return cake::success<Arg, StyleTag>()();
-}
+// template <typename Arg, int StyleTag = 0>
+// Arg __cake_success_with_type_of(const Arg& arg)
+// {
+// 	return cake::success<Arg, StyleTag>()();
+// }
 

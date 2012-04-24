@@ -570,7 +570,6 @@ void *replace_co_object(void *existing_obj,
 void ensure_opaque_co_obj_in_this_rep(void *ptr, int opaque_in_this_rep)
 {
 	assert(ptr);
-	assert(other_valid_rep != opaque_in_this_rep);
 	
 	auto found_map_ent = ensure_map_for_addr(ptr)->find(ptr);
 	assert(found_map_ent != ensure_map_for_addr(ptr)->end());
@@ -614,5 +613,7 @@ void ensure_allocating_component_has_rep_of(void *obj)
 			/* is_uninit */ false, 
 			1 // FIXME
 			);
+		ensure_map_for_addr(obj)->insert(std::make_pair(obj, group));
+		check_maps_and_groups_consistency();
 	}
 }
