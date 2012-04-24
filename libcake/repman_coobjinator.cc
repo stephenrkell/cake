@@ -354,6 +354,14 @@ void sync_all_co_objects(addr_change_cb_t cb, void* cb_arg, int from_rep, int to
 				/*rep_conv_funcs[from_rep][to_rep][p->form](p->reps[from_rep], p->reps[to_rep]);*/
 				bool is_overridden = (overrides.find(p_group->reps[from_rep]) != overrides.end());
 				
+				/* objects can be their own co-objects in other reps, using the 
+				 * opaqueness feature. In this case we don't run default corresps,
+				 * but we do run overrides. This is a bit of a hack -- the real fix
+				 * is to make convs work correctly when run on aliased ptrs.
+				 * Only the pointer handling is particularly difficult.  */
+				if (!is_overridden
+					&& p_group->reps[from_rep] == p_group->reps[to_rep]) continue;
+				
 				/* from_rep may or may not be initialized. */
 				if (p_group->co_object_info[from_rep].initialized)
 				{
@@ -559,7 +567,7 @@ void *replace_co_object(void *existing_obj,
 	return existing_obj;
 }
 
-void set_as_opaque_in_rep(void *ptr, int other_valid_rep, int opaque_in_this_rep)
+void ensure_opaque_co_obj_in_this_rep(void *ptr, int opaque_in_this_rep)
 {
 	assert(ptr);
 	assert(other_valid_rep != opaque_in_this_rep);
@@ -568,20 +576,25 @@ void set_as_opaque_in_rep(void *ptr, int other_valid_rep, int opaque_in_this_rep
 	assert(found_map_ent != ensure_map_for_addr(ptr)->end());
 	auto p_group = found_map_ent->second;
 	
-	assert(p_group->reps[other_valid_rep] == ptr);
+	// relaxation: don't make the caller supply another rep
+	//assert(p_group->reps[other_valid_rep] == ptr);
 	// relaxation: we don't have to give the non-opaque rep as argument; any will do
 	//assert(!p_group->co_object_info[nonopaque_in_this_rep].opaque_in_this_rep);
 	
-	p_group->reps[opaque_in_this_rep] = ptr;
-	p_group->co_object_info[opaque_in_this_rep]
-	 = (struct co_object_info) {
-		 /*.allocated_by =*/ ALLOC_BY_USER, 
-		 /*.initialized =*/ true, 
-		 /*.opaque_in_this_rep =*/ true
-	};
+	// relaxation: if we already have a rep, do nothing (but it should be this ptr)
+	if (!p_group->reps[opaque_in_this_rep])
+	{
+		p_group->reps[opaque_in_this_rep] = ptr;
+		p_group->co_object_info[opaque_in_this_rep]
+		 = (struct co_object_info) {
+			 /*.allocated_by =*/ ALLOC_BY_USER, 
+			 /*.initialized =*/ true, 
+			 /*.opaque_in_this_rep =*/ true
+		};
+	} else assert(p_group->reps[opaque_in_this_rep] == ptr);
 }
 
-void ensure_allocating_component_has_co_object(void *obj)
+void ensure_allocating_component_has_rep_of(void *obj)
 {
 	int allocating_rep_id = allocating_component(obj);
 

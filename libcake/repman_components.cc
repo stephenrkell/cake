@@ -188,6 +188,8 @@ void init_components_table(void)
 								component_name.c_str());
 							assert(component_rep != -1);
 							(*p_components)[i_cu.base().base().base()] = component_rep;
+							cerr << "Added CU " << (**i_cu) << " to components table with rep "
+								<< component_rep << endl;
 							matched.resize(i+1);
 							matched[i] = true;
 							break;
@@ -582,9 +584,10 @@ int allocating_component(void *obj)
 
 	auto p_cu = pmirror::self.discover_allocating_cu_for_object((pmirror::addr_t) obj);
 	assert(p_cu);
-	auto found = p_components->find(
-		(dwarf::spec::abstract_dieset::position) { &p_cu->get_ds(), p_cu->get_offset() }
-	);
+	dwarf::spec::abstract_dieset::position pos = { &p_cu->get_ds(), p_cu->get_offset() };
+	cerr << "We believe that object " << obj << " was allocated in CU " 
+		<< *p_cu;
+	auto found = p_components->find(pos);
 	assert(found != p_components->end());
 	return found->second;
 }

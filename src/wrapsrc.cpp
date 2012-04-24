@@ -693,8 +693,9 @@ assert(false && "disabled support for inferring positional argument mappings");
 				source,
 				deferred_out_bindings, deferred_out_caller_cxxnames);
 			ctxt.modules.current = ctxt.modules.source;
-			ctxt.env = crossover_environment_and_sync(sink, new_env3, source, return_constraints, 
-				true);
+			ctxt.env = crossover_environment_and_sync(sink, 
+				new_env3, source, return_constraints, 
+				true /* direction_is_out */);
 			// we pass the old context etc. for cleanup
 			cleanup_deferred_out_bindings(removed_env,
 				sink,
@@ -1001,7 +1002,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		const environment& env,
 		module_ptr new_module,
 		const multimap< string, pair< antlr::tree::Tree*, shared_ptr<type_die> > >& constraints,
-		bool direction_is_out,
+		bool direction_is_out, // i.e. the direction of "out" parameters (NOT "outward")
 		bool do_not_sync /* = false */
 		)
 	{
@@ -1355,9 +1356,17 @@ assert(false && "disabled support for inferring positional argument mappings");
 					<< (old_module_is_first ? /* DirectionIsFromFirstToSecond */ "true"
 					                        : /* DirectionIsFromSecondToFirst */ "true")
 					<< ">::"
-					<< make_tagstring(direction_is_out ? representative_binding.second.indirect_local_tagstring_out : representative_binding.second.indirect_local_tagstring_in)
+				/* this is the tagstring of the thing we're getting out of the value_convert,
+				 * i.e. "remote" from the p.o.v. of the binding.FIXME: so why is "local" correct? */
+					<< make_tagstring(direction_is_out 
+		? representative_binding.second.indirect_local_tagstring_out
+		: representative_binding.second.indirect_local_tagstring_in)
 					<< "_to_"
-					<< make_tagstring(direction_is_out ? representative_binding.second.indirect_remote_tagstring_out : representative_binding.second.indirect_remote_tagstring_in)
+				/* this is the tagstring of the thing we're putting in to the value_convert,
+				 * i.e. "local" from the p.o.v. of the binding. FIXME: so why is "remote" correct? */
+					<< make_tagstring(direction_is_out 
+		? representative_binding.second.indirect_remote_tagstring_out 
+		: representative_binding.second.indirect_remote_tagstring_in)
 					<< "_in_" << (old_module_is_first ? "second" : "first")
 					<< " *";
 				*p_out << ">(";
