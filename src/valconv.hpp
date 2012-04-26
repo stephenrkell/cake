@@ -65,6 +65,8 @@ namespace cake
 		 * to applying correspondences to output values (i.e. only if they were successfully
 		 * generated, by a successful call to whatever function outputs them). */
 		optional<string> guard_cxxname;
+		
+		bool is_opaque_pointer;
 	};
 	//typedef std::map<std::string, bound_var_info> environment;
 	struct environment : public map<string, bound_var_info>

@@ -770,7 +770,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 
 					*p_out << ";" << std::endl;
 
-					*p_out << "else return __cake_failure_with_type_of(" 
+					*p_out << "else return ::cake::failure<__typeof(" 
+						<< ctxt.env["__cake_it"].cxx_name << ")>()("
 						<< ctxt.env["__cake_it"].cxx_name << ");" << std::endl;
 					//*p_out << "return "; // don't dangle return
 				}
@@ -903,6 +904,17 @@ assert(false && "disabled support for inferring positional argument mappings");
 				*p_out << "{" << endl;
 				p_out->inc_level();
 			}
+			
+// 			rec_5756 = new_co_object_record(&outarg_5750, REP_ID(kfs), ALLOC_BY_USER, false, 1);
+// 			//rec_5756->reps[REP_ID(puffs_inst)] = __cake_arg2;
+// 			//rec_5756->co_object_info[REP_ID(puffs_inst)] = (co_object_info){ ALLOC_BY_USER, /* initialized */ 0 };
+// 			__typeof( &outarg_5750 ) *stackptr_helper_5757;
+// 			register_co_object(&outarg_5750, REP_ID(kfs),
+// 				__cake_arg2, REP_ID(puffs_inst), 
+// 				ALLOC_BY_USER, 1);
+// 			ensure_co_objects_allocated(REP_ID(kfs), &outarg_5750, &stackptr_helper_5757, REP_ID(puffs_inst), false);
+			
+			
 			*p_out << ident << " = new_co_object_record(" 
 				<< /* initial_object */ "&" << env[cakename].cxx_name << ", "
 				<< /* initial_rep */ "REP_ID(" << m_d.name_of_module(current_module) << "), "
@@ -911,11 +923,18 @@ assert(false && "disabled support for inferring positional argument mappings");
 				<< /* array_length */ "1"
 				<< ");" << endl;
 			// also add the caller-side object to the group
-			*p_out << ident << "->reps[REP_ID(" << m_d.name_of_module(caller_module) << ")] = "
-				<< deferred_out_caller_cxxnames.at(i) << ";" << endl;
-			*p_out << ident << "->co_object_info[REP_ID(" 
-				<< m_d.name_of_module(caller_module) << ")] = "
-				<< "(co_object_info){ ALLOC_BY_USER, /* initialized */ 0 };" << endl;
+			
+// 			*p_out << ident << "->reps[REP_ID(" << m_d.name_of_module(caller_module) << ")] = "
+// 				<< deferred_out_caller_cxxnames.at(i) << ";" << endl;
+// 			*p_out << ident << "->co_object_info[REP_ID(" 
+// 				<< m_d.name_of_module(caller_module) << ")] = "
+// 				<< "(co_object_info){ ALLOC_BY_USER, /* initialized */ 0 };" << endl;
+			*p_out << "register_co_object(&" << env[cakename].cxx_name << ", "
+				<< "REP_ID(" << m_d.name_of_module(current_module) << "), "
+				<< deferred_out_caller_cxxnames.at(i) << ", "
+				<< "REP_ID(" << m_d.name_of_module(caller_module) << "), "
+				<< "ALLOC_BY_USER, 1);" << endl;
+
 			// HACK: initialized == 0 here is wrong -- we actually don't know whether the
 			// pointed-to object has been initialized or not. 
 			
@@ -1335,17 +1354,24 @@ assert(false && "disabled support for inferring positional argument mappings");
 			auto ifaces = link_derivation::sorted(new_module, representative_binding.second.valid_in_module);
 			bool old_module_is_first = (old_module == ifaces.first);
 			// an approximation of non-void pointers
-			bool should_reinterpret = is_a_pointer 
-				&& representative_binding.second.cxx_typeof != "((void*)0)"
-				&& !precise_to_type;
+			bool should_reinterpret = 
+				(is_a_pointer && !precise_to_type)
+			||  (representative_binding.second.is_opaque_pointer && precise_to_type);
+				// && representative_binding.second.cxx_typeof != "((void*)0)")
+				//&& !precise_to_type;
 			if (/*will_override*/ should_reinterpret )
 			{
-				*p_out << "reinterpret_cast< typename ";
+				*p_out << "reinterpret_cast< ";
 				// the "more precise type" is the corresponding type
 				// ... to that of *cur_cxxname
 				// ... when flowing from the old module to the new module
 				// ... using the indirect tagstrings we have for 
-				*p_out << "::cake::corresponding_type_to_"
+				
+				if (precise_to_type) *p_out << get_type_name(precise_to_type);
+				else
+				{
+				
+				*p_out << "typename ::cake::corresponding_type_to_"
 					<< (old_module_is_first ? "first" : "second")
 					<< "<" << m_d.component_pair_typename(ifaces) << ", "
 					// instead of __typeof(* xxx ) ,
@@ -1369,25 +1395,53 @@ assert(false && "disabled support for inferring positional argument mappings");
 		: representative_binding.second.indirect_remote_tagstring_in)
 					<< "_in_" << (old_module_is_first ? "second" : "first")
 					<< " *";
+				}
 				*p_out << ">(";
 			}
-			 
-			open_value_conversion(
-				ifaces,
-				//rule_tag, // defaults to 0, but may have been set above
-				representative_binding, // from_artificial_tagstring is in our binding -- easy
-				direction_is_out,
-				false, // is_indirect
-				boost::shared_ptr<dwarf::spec::type_die>(), // no precise from type
-				precise_to_type, // defaults to "no precise to type", but may have been set above
-				((is_a_pointer && !is_virtual) ? std::string("((void*)0)") : *collected_cxx_typeof), // from typeof
-				boost::optional<std::string>(), // NO precise to typeof, 
-				   // BUT maybe we could start threading a context-demanded type through? 
-				   // It's not clear how we'd get this here -- scan future uses of each xover'd binding?
-				   // i.e. we only get it *later* when we try to emit some stub logic that uses this binding
-				representative_binding.second.valid_in_module, // from_module is in our binding
-				new_module
-			);
+			
+			if (!representative_binding.second.is_opaque_pointer)
+			{
+				open_value_conversion(
+					ifaces,
+					//rule_tag, // defaults to 0, but may have been set above
+					representative_binding, // from_artificial_tagstring is in our binding -- easy
+					direction_is_out,
+					false, // is_indirect
+					boost::shared_ptr<dwarf::spec::type_die>(), // no precise from type
+					precise_to_type, // defaults to "no precise to type", but may have been set above
+					((is_a_pointer && !is_virtual) ? std::string("((void*)0)") : *collected_cxx_typeof), // from typeof
+					boost::optional<std::string>(), // NO precise to typeof, 
+					   // BUT maybe we could start threading a context-demanded type through? 
+					   // It's not clear how we'd get this here -- scan future uses of each xover'd binding?
+					   // i.e. we only get it *later* when we try to emit some stub logic that uses this binding
+					representative_binding.second.valid_in_module, // from_module is in our binding
+					new_module
+				);
+				if (is_a_pointer && !is_virtual) *p_out << "ensure_is_a_pointer(";
+				*p_out << cxxname_to_use;
+				if (is_a_pointer && !is_virtual) *p_out << ")";
+				if (reuse_old_variable) *p_out << ", &" << *reuse_old_variable;
+				
+				close_value_conversion();
+			}
+			else
+			{
+				*p_out << "ensure_is_a_pointer(" << cxxname_to_use << ")";
+			}
+
+			if (should_reinterpret) *p_out << ")";
+			*p_out << ";" << std::endl;
+			
+			if (representative_binding.second.is_opaque_pointer)
+			{
+				*p_out << "ensure_allocating_component_has_rep_of(ensure_is_a_pointer("
+					<< cxxname_to_use
+					<< "));" << endl;
+				*p_out << "ensure_opaque_co_obj_in_this_rep(ensure_is_a_pointer(" << cxxname_to_use
+					<< "), REP_ID(" << m_d.name_of_module(old_module) << "));" << endl;
+				*p_out << "ensure_opaque_co_obj_in_this_rep(ensure_is_a_pointer(" << cxxname_to_use
+					<< "), REP_ID(" << m_d.name_of_module(new_module) << "));" << endl;
+			}
 			
 			// -- when we create a new binding, we set its artificial name to
 			// that determined by its context of use
@@ -1423,13 +1477,6 @@ assert(false && "disabled support for inferring positional argument mappings");
 			 * at the same time. This might be a problem when we do propagation of
 			 * unique_corresponding_type... although val corresps may be expressed
 			 * in terms of typedefs, so perhaps not. */
-			if (is_a_pointer && !is_virtual) *p_out << "ensure_is_a_pointer(";
-			*p_out << cxxname_to_use;
-			if (is_a_pointer && !is_virtual) *p_out << ")";
-			if (reuse_old_variable) *p_out << ", &" << *reuse_old_variable;
-			close_value_conversion();
-			if (should_reinterpret) *p_out << ")";
-			*p_out << ";" << std::endl;
 			
 			// for each Cake name bound to the current cxxname,
 			// add it to the new environment, bound to some new cxxname
@@ -1451,7 +1498,15 @@ assert(false && "disabled support for inferring positional argument mappings");
 					/* indirect local in  */ env[*i_cakename].indirect_remote_tagstring_in,
 					/* indirect local out */ env[*i_cakename].indirect_remote_tagstring_out,
 					/* remote local in    */ env[*i_cakename].indirect_local_tagstring_in,
-					/* remote local out   */ env[*i_cakename].indirect_local_tagstring_out
+					/* remote local out   */ env[*i_cakename].indirect_local_tagstring_out,
+					/* default values that may later be overwritten */
+						false, /* is pointer to uninit */
+						false, /* crossover_by_wrapper */
+						optional<int>(), /* from_ellipsis */
+						optional<string>(), /* guard_cxxname */
+					/* inherited value*/
+						env[*i_cakename].is_opaque_pointer /* is_opaque_pointer */
+					
 				};
 				// if we are xovering the address of a virtual d.t. inst, fix this up
 				if (is_virtual && saved_precise_to_type)
@@ -2245,6 +2300,20 @@ assert(false && "disabled support for inferring positional argument mappings");
 						<< "; origin_as_fp: " << (origin_as_fp ? origin_as_fp->summary() : "none")
 						<< endl;
 					
+					
+					bool is_opaque_pointer;
+					if (origin_as_fp && origin_as_fp->get_type() 
+					 	&& origin_as_fp->get_type()->get_concrete_type()
+						&& origin_as_fp->get_type()->get_concrete_type()->get_tag()
+							== DW_TAG_pointer_type)
+					{
+						auto pointer_type = dynamic_pointer_cast<spec::pointer_type_die>(
+							origin_as_fp->get_type()->get_concrete_type());
+						assert(pointer_type);
+						if (pointer_type->get_pure() && *pointer_type->get_pure())
+						{ is_opaque_pointer = true; }
+					} else is_opaque_pointer = false;
+							
 					out_env->insert(std::make_pair(basic_name, 
 						(bound_var_info) { basic_name, // use the same name for both
 						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
@@ -2258,7 +2327,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 						indirect_local_tagstring_out,
 						indirect_remote_tagstring_in,
 						indirect_remote_tagstring_out,
-						arg_is_outparam /* is_pointer_to_uninit */}));
+						arg_is_outparam, /* is_pointer_to_uninit */
+						false, /* crossover_by_wrapper */
+						optional<int>(), /* from_ellipsis */
+						optional<string>(), /* guard_cxxname */
+						is_opaque_pointer /* is_opaque_pointer */
+					}));
 					if (friendly_name) out_env->insert(std::make_pair(*friendly_name, 
 						(bound_var_info) { basic_name,
 						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
@@ -2272,7 +2346,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 						indirect_local_tagstring_out,
 						indirect_remote_tagstring_in,
 						indirect_remote_tagstring_out,
-						arg_is_outparam /* is pointer to uninit */}));
+						arg_is_outparam, /* is pointer to uninit */
+						false, /* crossover_by_wrapper */
+						optional<int>(), /* from_ellipsis */
+						optional<string>(), /* guard_cxxname */
+						is_opaque_pointer /* is_opaque_pointer */
+					}));
 				} // end ALIAS3(annotatedValuePattern
 				++argnum;
 				if (i_caller_arg != caller_subprogram->formal_parameter_children_end()) ++i_caller_arg;
@@ -4402,7 +4481,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				<<  (treat_subprogram_as_untyped(callee_subprogram)
 					 ? /* "unspecified_wordsize_type " */ "int" // HACK! "int" is what our fake DWARF will say, for now
 					 : get_type_name(callee_subprogram->get_type())) //return_type_name
-				<< ">()();" << std::endl;
+				<< ">()(" /* FIXME: << raw_result_ident*/ << ");" << std::endl;
 		}
 		p_out->dec_level();
 		*p_out << "}" << std::endl;
