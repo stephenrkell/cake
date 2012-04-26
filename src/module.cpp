@@ -1253,6 +1253,32 @@ namespace cake
 				}
 				assert(false); //return shared_ptr<spec::type_die>();
 			}
+			case CAKE_TOKEN(KEYWORD_OPAQUE):
+			{
+				INIT;
+				BIND2(t, subordinateType);
+				/* First we find which types match the subordinate type. */
+				auto found = all_existing_dwarf_types(subordinateType);
+				/* Then we filter based on whether they're opaque. For us
+				 * it means that they are pointers and have the DW_AT_pure flag set.
+				 * Here we are (HACK) repurposing "pure", which is usually used
+				 * to be describe effect-free subprograms, to also describe
+				 * opaque pointers. */
+				for (auto i_found = found.begin(); i_found != found.end(); ++i_found)
+				{
+					if ((*i_found)->get_concrete_type()
+						&& (*i_found)->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
+					{
+						auto pointer_type = dynamic_pointer_cast<spec::pointer_type_die>(*i_found);
+						assert(pointer_type);
+						if (pointer_type->get_pure() && *pointer_type->get_pure())
+						{
+							retval.push_back(*i_found);
+						}
+					}
+				}
+				break;
+			}
 			default: assert(false);
 		} // end switch
 		
@@ -1436,6 +1462,24 @@ namespace cake
 			case CAKE_TOKEN(FUNCTION_ARROW): return shared_ptr<spec::type_die>(); // error
 			case CAKE_TOKEN(ARRAY): assert(false); // for now
 			case CAKE_TOKEN(KEYWORD_ENUM): assert(false); // for now
+			case CAKE_TOKEN(KEYWORD_OPAQUE):
+			{
+				INIT;
+				BIND2(t, subordinateType);
+				auto subordinate_t = ensure_dwarf_type(subordinateType);
+				if (subordinate_t)
+				{
+					if (subordinate_t->get_concrete_type()
+						&& subordinate_t->get_concrete_type()->get_tag() == DW_TAG_pointer_type)
+					{
+						dynamic_pointer_cast<encap::pointer_type_die>(
+							subordinate_t->get_concrete_type())->set_pure(true);
+						return dynamic_pointer_cast<spec::type_die>(subordinate_t);
+					}
+					else RAISE(t, "opaque types must be pointer types");
+				}
+				else return shared_ptr<spec::type_die>();
+			}
 			default: assert(false);
 		}
 	}
