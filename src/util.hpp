@@ -149,13 +149,14 @@ namespace cake
 		shared_ptr<spec::compile_unit_die> p_cu
 	);
 
-	template <typename Action>
-	void
-	for_all_identical_types(
-		module_ptr p_mod,
-		shared_ptr<type_die> p_t,
-		const Action& action
-	); // defined in module.hpp
+// 	template <typename Action>
+// 	void
+// 	for_all_identical_types(
+// 		//module_ptr p_mod,
+// 		dwarf::spec::abstract_dieset& ds,
+// 		shared_ptr<type_die> p_t,
+// 		const Action& action
+// 	); // defined in module.hpp
 
 	boost::regex regex_from_pattern_ast(antlr::tree::Tree *t);
 	

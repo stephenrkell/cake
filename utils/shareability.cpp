@@ -3,6 +3,7 @@
 #include <dwarfpp/lib.hpp>
 #include <dwarfpp/attr.hpp>
 #include <dwarfpp/adt.hpp>
+#include <dwarfpp/encap.hpp>
 #include <dwarfpp/cxx_compiler.hpp>
 #include <boost/graph/graph_traits.hpp>
 #include <boost/graph/depth_first_search.hpp>
@@ -19,14 +20,6 @@ using boost::dynamic_pointer_cast;
 using std::set;
 using std::map;
 using dwarf::spec::type_die;
-
-/* HACK: we use a variant of the Cake compiler's canonicalise_type function. */
-shared_ptr<type_die>
-canonicalise_type(
-	shared_ptr<type_die> p_t, 
-	dwarf::spec::abstract_dieset *p_ds, 
-	dwarf::tool::cxx_compiler& compiler
-);
 
 dwarf::tool::cxx_compiler compiler;
 
@@ -114,7 +107,7 @@ public:
 	{
 		*static_cast<dwarf::spec::abstract_dieset::position *>(this)
 		 = (dwarf::spec::abstract_dieset::position){ &p_in->get_ds(), p_in->get_offset() };
-		shared_ptr<type_die> p_t = canonicalise_type(p_in, &p_in->get_ds(), compiler);
+		shared_ptr<type_die> p_t = p_in->get_ds().canonicalise_type(p_in, compiler);
 		if (!p_t) throw "is void";
 	}
 	
@@ -131,7 +124,7 @@ private:
 public:
 	/* We delay our initialization to avoid infinite looping in the case of
 	 * recursive data types. */
-	void initialize() const // <-- modifies only "mutable" fields!
+	void initialize(dwarf::encap::dieset& eds) const // <-- modifies only "mutable" fields!
 	{
 		auto nonconst_this = const_cast<type*>(this);
 		auto p_t = nonconst_this->get();
@@ -177,6 +170,14 @@ public:
 			//case DW_TAG_class_type: <-- fix up DWARF ADT to have a common supertype for struct & class
 			case DW_TAG_structure_type:
 			{
+				/* Use the backrefs info in eds{1,2} to find out who inherits
+				 * from us, or zero-offset-contains us. */
+				
+				// set<Dwarf_Off> canon_backrefs;
+				
+				// auto backrefs = eds.backrefs().find(
+				
+				
 				// we can be reached from anything that we inherit
 				auto p_struct = dynamic_pointer_cast<structure_type_die>(p_t);
 				for (auto i_inherit = p_struct->inheritance_children_begin();
@@ -185,6 +186,18 @@ public:
 				{
 					// NOTE that we are adding back-edges, so 
 					// we modify a DIFFERENT type than us!
+					
+					// FIXME: this is a bit broken.  What if the types
+					// that we could be downcast from 
+					// are not toplevel name-matched types, so are
+					// never passed to this function? How can we be sure
+					// this code will see everything that a given type
+					// could be downcast to? THis means all inheriting types
+					// which is a global property of the component's DWARF info.
+					// In other words, we need to search non-toplevel scopes
+					// that can see a given toplevel definition (and hence can inherit it).
+					// Can probably ignore for now
+					
 					const type& t = ensure_type_node(*p_graph, (*i_inherit)->get_type());
 					t.edges.insert((way_to_reach_type){
 						this->p_ds,
@@ -346,15 +359,21 @@ struct path_explorer_t : public boost::dfs_visitor<>
 	 * enumerate them? 
 	 * When we see a new edge, we walk the paths list,
 	 * and add  */
+	
+	const type *root_vertex;
 	 
 	typedef std::deque< way_to_reach_type > path;
-	vector<path> paths;
+	vector<path> *p_paths;
+
+	path_explorer_t(vector<path> *p_paths) : p_paths(p_paths) {}
 
 	template <class Edge, class Graph>
 	void add_paths(Edge e, Graph g)
 	{
+		cerr << "Saw an edge!" << endl;
 		vector<path> paths_to_add;
-		for (auto i_path = paths.begin(); i_path != paths.end(); ++i_path)
+		/* 1. extend existing paths. */
+		for (auto i_path = p_paths->begin(); i_path != p_paths->end(); ++i_path)
 		{
 			if (i_path->back().target == e.source)
 			{
@@ -363,8 +382,14 @@ struct path_explorer_t : public boost::dfs_visitor<>
 				paths_to_add.push_back(copied_path);
 			}
 		}
+		/* 2. start new paths. */
+		if (e.source == root_vertex->off)
+		{
+			paths_to_add.push_back(path(1, e));
+		}
+		
 		std::copy(paths_to_add.begin(), paths_to_add.end(),
-			std::back_inserter(paths));
+			std::back_inserter(*p_paths));
 	}
 
 	template <class Edge, class Graph>
@@ -386,6 +411,12 @@ int main(int argc, char **argv)
 	core::basic_root_die root1(fileno(in1));
 	dwarf::lib::file df1(fileno(in1));
 	dwarf::lib::dieset ds1(df1);
+	
+	// also open an encap dieset, for backrefs
+	std::ifstream ein1(argv[1]);
+	assert(ein1);
+	dwarf::encap::file edf1(fileno(ein1));
+	dwarf::encap::dieset& eds1 = edf1.ds();
 
 	cerr << "Opening " << argv[2] << "..." << endl;
 	std::ifstream in2(argv[2]);
@@ -393,6 +424,13 @@ int main(int argc, char **argv)
 	core::basic_root_die root2(fileno(in2));
 	dwarf::lib::file df2(fileno(in2));
 	dwarf::lib::dieset ds2(df2);
+
+	// also open an encap dieset, for backrefs
+	std::ifstream ein2(argv[2]);
+	assert(ein2);
+	dwarf::encap::file edf2(fileno(ein2));
+	dwarf::encap::dieset& eds2 = edf2.ds();
+	
 
 	/* Our analysis proceeds as follows.
 	 * 1. Collect distinct named toplevel data types defined in the two files.
@@ -471,51 +509,106 @@ int main(int argc, char **argv)
 	 * Start it from each name-matched type in turn?
 	 */	
 	set<type> graph1;
-	construct_graph(graph1, like_named_and_rep_compatible, ds1, false);
+	construct_graph(graph1, like_named_and_rep_compatible, ds1, eds1, false);
 	
 	set<type> graph2;
-	construct_graph(graph2, like_named_and_rep_compatible, ds2, true);
+	construct_graph(graph2, like_named_and_rep_compatible, ds2, eds2, true);
 	
-	path_explorer_t path_explorer;
-	/* Now invoke dfs on the graph. */
-	std::map<
-		boost::graph_traits<set<type> >::vertex_descriptor, 
-		boost::default_color_type
-	> underlying_dfs_node_color_map;
-	auto dfs_color_map = boost::make_assoc_property_map(underlying_dfs_node_color_map);
-	auto visitor = boost::visitor(path_explorer).color_map(dfs_color_map);
-	// go!
-	boost::depth_first_search(graph1, visitor);
-	
-	//path_explorer.print_paths
-	
-	/* Now we have the two graphs, we depthfirst explore each one
-	 * starting from each of the corresp'ing types, and
-	 * for each path that we reach, we check that there is an analogous
-	 * path in the other graph. 
-	 * What then?
-	 * For each path that does not have an analogous path,
-	 * for each data type along that common path prefix that was in the possibly-shareable set,
-	 * we can delete its pair from the set.
-	 *
-	 * FIXME: are we ensuring that all elements along the path are rep-compatible?
-	 * Otherwise, we might have to track what offsets (say) were accessed on DEREF or SUBOBJECT
-	 * etc..
-	 * FIXME: are we conflating contexts
-	 * with the treatment of pointers?
-	 * i.e. all objects containing an int* can reach int
-	 * HMm, so this seems okay.
-	 
-	 * Is this enough for shareability? Have I faithfully implemented the intended
-	 * algorithm ?*/
-	/* DUMP for each data type x...
-	 * "From x, I can reach:
-	 *    Y, by path ...
-	 *    Y, by path ...
-	 *    Z, by path ...
-	 *    Z, by path ...
-	 */
-	
+	/* Now for each data type that we care about, invoke dfs on the graph
+	 * to enumerate the set of type reachability paths starting from that type. */
+	for (auto i_lr = like_named_and_rep_compatible.begin();
+		i_lr != like_named_and_rep_compatible.end();
+		++i_lr)
+	{
+		auto found_t1 = dynamic_pointer_cast<type_die>(ds1[i_lr->first]);
+		assert(found_t1);
+		auto found_t1_vertex = graph1.find(type(graph1, found_t1));
+		assert(found_t1_vertex != graph1.end());
+		auto t1_vertex = &*found_t1_vertex;
+		
+		std::map<
+			boost::graph_traits<set<type> >::vertex_descriptor, 
+			boost::default_color_type
+		> underlying_dfs_node_color_map;
+		auto dfs_color_map = boost::make_assoc_property_map(underlying_dfs_node_color_map);
+		vector<path_explorer_t::path> paths;
+		path_explorer_t path_explorer(&paths);
+		path_explorer.root_vertex = t1_vertex;
+		auto visitor = boost::visitor(path_explorer)
+			.color_map(dfs_color_map)
+			.root_vertex(t1_vertex);
+		// run the DFS
+		cerr << "Running DFS with root " << found_t1->summary() << endl;
+		boost::depth_first_search(graph1, visitor);
+		auto edges = out_edges(t1_vertex, graph1);
+		for (auto i_out_edge = edges.first; i_out_edge != edges.second; ++i_out_edge)
+		{
+			cerr << "Root has out edge from 0x" << std::hex <<  i_out_edge->source
+				<< " to " << i_out_edge->target << std::dec << endl;
+		}
+
+		//path_explorer.print_paths
+
+		/* Now we have the two graphs, we depthfirst explore each one
+		 * starting from each of the corresp'ing types, and
+		 * for each path that we reach, we check that there is an analogous
+		 * path in the other graph. 
+		 * What then?
+		 * For each path that does not have an analogous path,
+		 * for each data type along that common path prefix that was in the possibly-shareable set,
+		 * we can delete its pair from the set.
+		 *
+		 * FIXME: are we ensuring that all elements along the path are rep-compatible?
+		 * Otherwise, we might have to track what offsets (say) were accessed on DEREF or SUBOBJECT
+		 * etc..
+		 * FIXME: are we conflating contexts
+		 * with the treatment of pointers?
+		 * i.e. all objects containing an int* can reach int
+		 * HMm, so this seems okay.
+
+		 * Is this enough for shareability? Have I faithfully implemented the intended
+		 * algorithm ?*/
+		/* DUMP for each data type x...
+		 * "From x, I can reach:
+		 *    Y, by path ...
+		 *    Y, by path ...
+		 *    Z, by path ...
+		 *    Z, by path ...
+		 */
+		cerr << "Found " << paths.size() << " paths." << endl;
+		for (auto i_path = paths.begin();
+			i_path != paths.end();
+			++i_path)
+		{
+			cerr << "From data type " << ds1[i_path->front().source]->summary()
+				<< " we can reach " << ds1[i_path->back().target]->summary()
+				<< " by path: ";
+			boost::optional< way_to_reach_type > last_hop;
+			for (auto i_hop = i_path->begin(); i_hop != i_path->end(); last_hop = *i_hop, ++i_hop)
+			{
+				switch(i_hop->how)
+				{
+					case way_to_reach_type::DEREF: cerr << "dereference"; break;
+					case way_to_reach_type::SUBOBJECT: cerr << "subobject access"; break;
+					case way_to_reach_type::DOWNCAST_ZERO_OFFSET: 
+						cerr << "downcast using zero-offset"; break;
+					case way_to_reach_type::DOWNCAST_INHERITANCE: 
+						cerr << "downcast using inheritance"; break;
+					default: assert(false);
+				}
+
+				cerr << " to " << ds1[i_hop->target]->summary() << "; ";
+
+				if (last_hop)
+				{
+					// check that he last hop's target is our source
+					assert(last_hop->target == i_hop->source);
+				}
+
+			}
+			cerr << "END." << endl;
+		}
+	} // end for i_lr
 	
 }
 	
@@ -524,6 +617,7 @@ construct_graph(
 	set<type>& graph,
 	vector< pair< Dwarf_Off, Dwarf_Off > > & offsets,
 	dwarf::lib::dieset& ds,
+	dwarf::encap::dieset& eds,
 	bool is_second)
 {
 	 
@@ -546,7 +640,7 @@ construct_graph(
 			if (!i_node->initialized)
 			{
 				saw_something_uninitialized = true;
-				i_node->initialize(); // may add more uninit'd nodes to the set
+				i_node->initialize(eds); // may add more uninit'd nodes to the set
 			}
 		}
 		
@@ -622,140 +716,4 @@ void collect_rep_compatible_pairs(
 			<< " or vice-versa." << endl;
 	}
 	cerr << "; total " << like_named.size() << endl;
-}
-
-typedef std::map<
-	std::pair<dwarf::spec::abstract_dieset *, dwarf::tool::cxx_compiler *>,
-	std::map< dwarf::tool::cxx_compiler::base_type, spec::abstract_dieset::iterator >
-> canonicalisation_cache_t;
-
-shared_ptr<type_die>
-canonicalise_type(
-	shared_ptr<type_die> p_t, 
-	dwarf::spec::abstract_dieset *p_ds, 
-	dwarf::tool::cxx_compiler& compiler
-)
-{
-	using std::clog;
-	
-	/* This is like get_concrete_type but stronger. We try to find
-	 * the first instance of the concrete type in *any* compilation unit.
-	 * Also, we deal with base types, which may be aliased below the DWARF
-	 * level. */
-
-	auto concrete_t = p_t->get_concrete_type();
-	clog << "Canonicalising concrete type " << concrete_t->summary() << endl;
-	if (!concrete_t) goto return_concrete; // void is already canonicalised
-	else
-	{
-		//Dwarf_Off concrete_off = concrete_t->get_offset();
-		auto opt_ident_path = concrete_t->ident_path_from_cu();
-		if (!opt_ident_path) clog << "No name path, so cannot canonicalise further." << endl;
-		if (opt_ident_path)
-		{
-			/* Instead of doing resolve_all_visible and then */
-
-			auto resolved_all = p_ds->toplevel()->resolve_all_visible(
-				opt_ident_path->begin(), opt_ident_path->end()
-			);
-			clog << "Name path: ";
-			for (auto i_part = opt_ident_path->begin();
-				 i_part != opt_ident_path->end(); ++i_part)
-			{
-				if (i_part != opt_ident_path->begin()) clog << " :: ";
-				clog << *i_part;
-			}
-			clog << endl;
-			if (resolved_all.size() == 0) clog << "BUG: failed to resolve this name path." << endl;
-			assert(resolved_all.size() > 0);
-
-			/* We choose the first one that is not a declaration
-			 * when we concrete + dedeclify it.
-			 * If they are all declarations, we choose the first one.
-			 * If there are none, it is an error.
-			 */
-
-			shared_ptr<type_die> first_non_decl;
-			shared_ptr<type_die> first_concrete;
-			for (auto i_resolved = resolved_all.begin();
-				i_resolved != resolved_all.end(); ++i_resolved)
-			{
-				if (dynamic_pointer_cast<type_die>(*i_resolved))
-				{
-					auto temp_concrete_t = dynamic_pointer_cast<type_die>(*i_resolved)
-						->get_concrete_type();
-					if (!first_concrete) first_concrete = temp_concrete_t;
-					auto with_data_members
-					 = dynamic_pointer_cast<spec::with_data_members_die>(temp_concrete_t);
-					if (with_data_members)
-					{
-						// we do another canonicalisation here: find the defn of a decl
-						auto defn = with_data_members->find_my_own_definition();
-						if (defn && (!defn->get_declaration() || !*defn->get_declaration())) 
-						{
-							first_non_decl = defn;
-							break;
-						}
-					}
-				}
-			}
-			if (first_non_decl) concrete_t = first_non_decl;
-			else concrete_t = first_concrete;
-
-			/*else*/ /* not resolved*/ goto return_concrete; // FIXME: we could do more here
-		}
-		else goto return_concrete; // FIXME: we could do more here
-	}
-
-return_concrete:
-	clog << "Most canonical concrete type is " << concrete_t->summary() << endl;
-	static canonicalisation_cache_t cache;
-	/* Now we handle base types. */
-	if (concrete_t->get_tag() != DW_TAG_base_type) return concrete_t;
-	else
-	{
-		/* To canonicalise base types, we have to use the compiler's 
-		 * set of base types (i.e. the base types that it considers distinct). */
-		auto base_t = dynamic_pointer_cast<base_type_die>(concrete_t);
-		assert(base_t);
-		auto compiler_base_t = dwarf::tool::cxx_compiler::base_type(base_t);
-		auto& our_cache = cache[make_pair(p_ds, &compiler)];
-		auto found_in_cache = our_cache.find(compiler_base_t);
-		if (found_in_cache == our_cache.end())
-		{
-			/* Find the first visible named base type that is identical to base_t. */
-			auto visible_grandchildren_seq
-			 = p_ds->toplevel()->visible_grandchildren_sequence();
-			auto i_vis = visible_grandchildren_seq->begin();
-			for (;
-				i_vis != visible_grandchildren_seq->end();
-				++i_vis)
-			{
-				auto vis_as_base = dynamic_pointer_cast<base_type_die>(*i_vis);
-				if (vis_as_base
-					&& vis_as_base->get_name()
-					&& dwarf::tool::cxx_compiler::base_type(vis_as_base)
-						== compiler_base_t)
-				{
-					auto result = our_cache.insert(
-						make_pair(
-							compiler_base_t,
-							vis_as_base->iterator_here()
-						)
-					);
-					assert(result.second);
-					found_in_cache = result.first;
-					break;
-				}
-			}
-			assert(i_vis != visible_grandchildren_seq->end());
-		}
-		assert(found_in_cache != our_cache.end());
-		auto found_as_type = dynamic_pointer_cast<type_die>(*found_in_cache->second);
-		assert(found_as_type);
-		//cerr << "Canonicalised base type " << concrete_t->summary() 
-		//	<< " to " << found_as_type->summary() 
-		//	<< " (in compiler: " << compiler_base_t << ")" << endl;
-		return found_as_type;
-	}
 }

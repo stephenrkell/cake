@@ -250,35 +250,36 @@ namespace cake
 		}
 	};
 	
-	// HACK: declared in util.hpp
-	template <typename Action>
-	void
-	for_all_identical_types(
-		module_ptr p_mod,
-		shared_ptr<type_die> p_t,
-		const Action& action
-	)
-	{
-		auto opt_ident_path = p_t->ident_path_from_cu();
-		vector< shared_ptr<type_die> > ts;
-		if (!opt_ident_path) ts.push_back(p_t);
-		else
-		{
-			for (auto i_cu = p_mod->get_ds().toplevel()->compile_unit_children_begin();
-				i_cu != p_mod->get_ds().toplevel()->compile_unit_children_end(); ++i_cu)
-			{
-				auto candidate = (*i_cu)->resolve(opt_ident_path->begin(), opt_ident_path->end());
-				if (dynamic_pointer_cast<type_die>(candidate))
-				{
-					ts.push_back(dynamic_pointer_cast<type_die>(candidate));
-				}
-			}
-		}
-		for (auto i_t = ts.begin(); i_t != ts.end(); ++i_t)
-		{
-			action(*i_t);
-		}
-	}
+// 	// HACK: declared in util.hpp
+// 	template <typename Action>
+// 	void
+// 	for_all_identical_types(
+// 		//module_ptr p_mod,
+// 		dwarf::spec::abstract_dieset& ds,
+// 		shared_ptr<type_die> p_t,
+// 		const Action& action
+// 	)
+// 	{
+// 		auto opt_ident_path = p_t->ident_path_from_cu();
+// 		vector< shared_ptr<type_die> > ts;
+// 		if (!opt_ident_path) ts.push_back(p_t);
+// 		else
+// 		{
+// 			for (auto i_cu = ds.toplevel()->compile_unit_children_begin();
+// 				i_cu != ds.toplevel()->compile_unit_children_end(); ++i_cu)
+// 			{
+// 				auto candidate = (*i_cu)->resolve(opt_ident_path->begin(), opt_ident_path->end());
+// 				if (dynamic_pointer_cast<type_die>(candidate))
+// 				{
+// 					ts.push_back(dynamic_pointer_cast<type_die>(candidate));
+// 				}
+// 			}
+// 		}
+// 		for (auto i_t = ts.begin(); i_t != ts.end(); ++i_t)
+// 		{
+// 			action(*i_t);
+// 		}
+// 	}
 }
 
 #endif

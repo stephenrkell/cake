@@ -548,7 +548,7 @@ namespace cake
 					shared_ptr<type_die> new_target_type = ensure_dwarf_type(typeDescr);
 					assert(new_target_type);
 					// for all types identical to our typedef...
-					for_all_identical_types(shared_from_this(), is_typedef, 
+					shared_from_this()->get_ds().for_all_identical_types(is_typedef, 
 						// replace their target type with the new target
 						[new_target_type, is_typedef](shared_ptr<type_die> t) {
 							if (t->get_tag() == DW_TAG_typedef)
