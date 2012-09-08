@@ -14,7 +14,7 @@ namespace cake
 	using std::map;
 	using std::vector;
 	using boost::optional;
-	using boost::shared_ptr;
+	using std::shared_ptr;
 	using dwarf::spec::member_die;
 	using namespace dwarf;
 	
@@ -165,10 +165,10 @@ namespace cake
 	{
 		module_ptr source;
 
-		boost::shared_ptr<dwarf::spec::type_die> source_data_type;
+		std::shared_ptr<dwarf::spec::type_die> source_data_type;
 		antlr::tree::Tree *source_infix_stub;
 		module_ptr sink;
-		boost::shared_ptr<dwarf::spec::type_die> sink_data_type;
+		std::shared_ptr<dwarf::spec::type_die> sink_data_type;
 		antlr::tree::Tree *sink_infix_stub;
 		antlr::tree::Tree *refinement;
 		bool source_is_on_left;
@@ -180,15 +180,15 @@ namespace cake
 	std::ostream& operator<<(std::ostream& s, const basic_value_conversion& c);
 	
 	// base class
-	class value_conversion : public boost::enable_shared_from_this<value_conversion>, 
+	class value_conversion : public std::enable_shared_from_this<value_conversion>, 
 		public basic_value_conversion
 	{
 		friend class link_derivation;
 	protected:
 		wrapper_file& w;
 		srk31::indenting_ostream& m_out();
-		boost::shared_ptr<dwarf::spec::type_die> source_concrete_type;
-		boost::shared_ptr<dwarf::spec::type_die> sink_concrete_type;
+		std::shared_ptr<dwarf::spec::type_die> source_concrete_type;
+		std::shared_ptr<dwarf::spec::type_die> sink_concrete_type;
 		std::string from_typename;
 		std::string to_typename;
 		
@@ -208,8 +208,8 @@ namespace cake
 		virtual void emit_signature(bool emit_return_type = true, bool emit_default_argument = true);
 		
 	public:
-		typedef std::pair < boost::shared_ptr<dwarf::spec::type_die>,
-		                         boost::shared_ptr<dwarf::spec::type_die>
+		typedef std::pair < std::shared_ptr<dwarf::spec::type_die>,
+		                         std::shared_ptr<dwarf::spec::type_die>
 								> dep;
 		value_conversion(wrapper_file& w,
 			const basic_value_conversion& basic);
@@ -218,8 +218,8 @@ namespace cake
 		virtual void emit_forward_declaration();
 		virtual void emit_function_name();
 		virtual void emit_cxx_function_ptr_type(boost::optional<const std::string&>);
-		virtual std::vector< std::pair < boost::shared_ptr<dwarf::spec::type_die>,
-		                                 boost::shared_ptr<dwarf::spec::type_die>
+		virtual std::vector< std::pair < std::shared_ptr<dwarf::spec::type_die>,
+		                                 std::shared_ptr<dwarf::spec::type_die>
 										>
 								> get_dependencies();
 		

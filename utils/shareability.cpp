@@ -1,3 +1,4 @@
+
 #include <fstream>
 #include <fileno.hpp>
 #include <dwarfpp/lib.hpp>
@@ -8,6 +9,7 @@
 #include <boost/graph/graph_traits.hpp>
 #include <boost/graph/depth_first_search.hpp>
 #include <algorithm>
+#include <srk31/algorithm.hpp>
 #include <sstream>
 
 using std::cout; 
@@ -41,7 +43,7 @@ struct way_to_reach_type
 {
 	dwarf::spec::abstract_dieset *p_ds;
 	Dwarf_Off source;
-	enum how_t { DEREF, SUBOBJECT, DOWNCAST_ZERO_OFFSET, DOWNCAST_INHERITANCE } how;
+	enum how_t { DEREF, SUBOBJECT, DOWNCAST_ZERO_OFFSET, DOWNCAST_INHERITANCE, PARAM, RETURN_VALUE } how;
 	Dwarf_Off target;
 	bool operator< (const way_to_reach_type& arg) const
 	{ return this->source < arg.source 
@@ -66,40 +68,40 @@ const type& ensure_type_node(set<type>& g, shared_ptr<type_die> p_t);
 namespace boost {
 	template <>
 	struct graph_traits< set<typename ::type> >;
-}	
-struct transform_reference_to_pointer : std::unary_function<type const&, const type *>
-{
-	const type *operator()(type const& arg) const { return &arg; }
-};
+}
+	struct transform_reference_to_pointer : std::unary_function< ::type const&, const ::type *>
+	{
+		const ::type *operator()( ::type const& arg) const { return &arg; }
+	};
 	inline const ::type * source(way_to_reach_type e, const set< ::type>& g);
 	inline const ::type * target(way_to_reach_type e, const set< ::type>& g);
-	
+
 // 	inline std::pair< set< way_to_reach_type >::iterator, set<way_to_reach_type >::iterator >
 // 	out_edges(const ::type& t, const set< ::type> & g);
-// 	
+//
 // 	inline std::pair< set< ::type>::iterator, set< ::type>::iterator >
 // 	vertices(const set< ::type>& g);
-// 
+//
 // 	inline set< ::type>::size_type num_vertices(const set< ::type>& g);
 // 	inline set<way_to_reach_type>::size_type out_degree(const ::type *t, const set< ::type>& g);
-//}
+// }
 void
 find_instantiating_inheritances_or_members(
-	shared_ptr<type_die> p_t, 
-	shared_ptr<type_die> concrete_t, 
+	shared_ptr<type_die> p_t,
+	shared_ptr<type_die> concrete_t,
 	encap::dieset& eds,
 	vector<shared_ptr<with_dynamic_location_die> >& out
 	);
 void
 find_instantiating_inheritances_or_members(
-	shared_ptr<type_die> p_t, 
-	shared_ptr<type_die> concrete_t, 
+	shared_ptr<type_die> p_t,
+	shared_ptr<type_die> concrete_t,
 	encap::dieset& eds,
 	vector<shared_ptr<with_dynamic_location_die> >& out
 	)
 {
 	assert(p_t->get_concrete_type()->get_offset() == concrete_t->get_offset());
-	
+
 	/* For each backref, if it is a typedef / qualifed type pointing at us,
 	 * we recurse on its backrefs. */
 	auto& backrefs = eds.backrefs()[p_t->get_offset()];
@@ -123,7 +125,7 @@ find_instantiating_inheritances_or_members(
 		{
 			auto p_including_t = dynamic_pointer_cast<type_die>(p_d->get_parent());
 			assert(p_including_t);
-			
+
 			auto tag = p_d->get_tag();
 			auto attr = i_backref->second;
 			if (attr != DW_AT_type) continue;
@@ -154,7 +156,7 @@ find_instantiating_inheritances_or_members(
 			continue;
 		}
 	} // end for backrefs
-}	
+}
 
 struct type : public dwarf::spec::abstract_dieset::position
 {
@@ -162,7 +164,7 @@ struct type : public dwarf::spec::abstract_dieset::position
 	// note: various stuff here is mutable so that it can be modified
 	// in-place while stored in a set. The stuff that operator< depends
 	// on is *not* mutable, naturally. We inherit position's operator<.
-	
+
 	/* At construction time, compute our out-edges. */
 	mutable set< way_to_reach_type > edges;
 	set<type> *p_graph;
@@ -175,17 +177,18 @@ private:
 	type(const position& pos) : position(pos), p_graph(0), initialized(false) {}
 	friend inline const ::type * /*boost::*/source(way_to_reach_type e, const set<type>& g);
 	friend inline const ::type * /*boost::*/target(way_to_reach_type e, const set<type>& g);
-	
+
 public:
 
 	type(set<type>& graph, shared_ptr<type_die> p_in) : p_graph(&graph), initialized(false)
 	{
-		*static_cast<dwarf::spec::abstract_dieset::position *>(this)
-		 = (dwarf::spec::abstract_dieset::position){ &p_in->get_ds(), p_in->get_offset() };
 		shared_ptr<type_die> p_t = p_in->get_ds().canonicalise_type(p_in, compiler);
 		if (!p_t) throw "is void";
+		// HM: try using the concrete position only
+		*static_cast<dwarf::spec::abstract_dieset::position *>(this)
+		 = (dwarf::spec::abstract_dieset::position){ &p_t->get_ds(), p_t->get_offset() };
 	}
-	
+
 private:
 	shared_ptr<type_die> get() 
 	{
@@ -209,10 +212,36 @@ public:
 		switch (concrete_t->get_tag())
 		{
 			case DW_TAG_base_type: break; // no edges <-- can't reach anything from these
-			case DW_TAG_enumeration_type:
-			case DW_TAG_subroutine_type:
-				break; // no edges
+			case DW_TAG_enumeration_type: break; // no edges
+			case DW_TAG_subroutine_type: {
+				// we can "reach" the argument and return types
+				auto p_subt = dynamic_pointer_cast<spec::subroutine_type_die>(concrete_t);
+				assert(p_subt);
+				for (auto i_fp = p_subt->formal_parameter_children_begin(); 
+					i_fp != p_subt->formal_parameter_children_end();
+					++i_fp)
+				{
+					if ((*i_fp)->get_type() && (*i_fp)->get_type()->get_concrete_type())
+					{
+						edges.insert((way_to_reach_type){
+							this->p_ds,
+							this->off,
+							way_to_reach_type::PARAM,
+							ensure_type_node(*p_graph, (*i_fp)->get_type()).off
+						});
+					}
+				}
+				if (p_subt->get_type() && p_subt->get_type()->get_concrete_type())
+				{
+					edges.insert((way_to_reach_type){
+						this->p_ds,
+						this->off,
+						way_to_reach_type::RETURN_VALUE,
+						ensure_type_node(*p_graph, p_subt->get_type()).off
+					});
+				}
 
+			} break;
 			case DW_TAG_array_type: {
 				// we can reach the ultimate element type
 				auto ultimate_element_type = dynamic_pointer_cast<spec::array_type_die>(concrete_t)
@@ -258,7 +287,7 @@ public:
 						// FIXME: BUG: this doesn't pick up on member/inheritance DIEs 
 						// that are defined as instances typedefs 
 						// HMM... how to fix this?
-						
+
 						vector<shared_ptr<with_dynamic_location_die> > instantiatings;
 						find_instantiating_inheritances_or_members(
 							some_t, 
@@ -278,7 +307,7 @@ public:
 								(*i_inst)->get_tag()));
 						}
 					});
-					
+
 				for (auto i_downcastable_to = canon_backrefs.begin();	
 					i_downcastable_to != canon_backrefs.end();
 					++i_downcastable_to)
@@ -286,13 +315,16 @@ public:
 					auto p_target = (*this->p_ds)[i_downcastable_to->first];
 					auto p_target_t = dynamic_pointer_cast<type_die>(p_target);
 					assert(p_target_t);
+					auto p_target_canon_t = p_ds->canonicalise_type(p_target_t,
+						compiler);
+					assert(p_target_canon_t);
 					this->edges.insert((way_to_reach_type){
 						this->p_ds,
 						this->off,
 						(i_downcastable_to->second == DW_TAG_inheritance)
 							 ? way_to_reach_type::DOWNCAST_INHERITANCE 
 							 : way_to_reach_type::DOWNCAST_ZERO_OFFSET,
-						i_downcastable_to->first
+						ensure_type_node(*p_graph, p_target_canon_t).off
 						});
 				}
 
@@ -304,7 +336,7 @@ public:
 // 				{
 // 					// NOTE that we are adding back-edges, so 
 // 					// we modify a DIFFERENT type than us!
-// 					
+//
 // 					// FIXME: this is a bit broken.  What if the types
 // 					// that we could be downcast from 
 // 					// are not toplevel name-matched types, so are
@@ -315,7 +347,7 @@ public:
 // 					// In other words, we need to search non-toplevel scopes
 // 					// that can see a given toplevel definition (and hence can inherit it).
 // 					// Can probably ignore for now
-// 					
+//
 // 					const type& t = ensure_type_node(*p_graph, (*i_inherit)->get_type());
 // 					t.edges.insert((way_to_reach_type){
 // 						this->p_ds,
@@ -324,7 +356,7 @@ public:
 // 						this->off
 // 						});
 // 				}
-// 				
+//
 // 				// we can be reached from a zero-offset-contained type
 // 				if (p_struct->member_children_begin()
 // 					 != p_struct->member_children_end())
@@ -353,9 +385,9 @@ public:
 // 							this->off
 // 							});
 // 					}
-// 					
+//
 // 				}
-				
+
 			} // fall through! to handle data members
 			case DW_TAG_union_type:
 			{
@@ -385,7 +417,7 @@ public:
 				assert(false);
 			}
 		} // end switch
-		
+
 		initialized = true;
 	}
 };
@@ -398,7 +430,7 @@ construct_graph(
 	dwarf::encap::dieset& eds,
 	bool is_second);
 
-namespace boost 
+namespace boost
 {
 	template <>
 	struct graph_traits< set< ::type> > {
@@ -419,7 +451,7 @@ namespace boost
 		typedef set<way_to_reach_type>::size_type edges_size_type;
 		typedef set<way_to_reach_type>::size_type degree_size_type;
 	};
-	
+
 	}// end namespace boost
 	inline
 	const ::type *
@@ -431,7 +463,7 @@ namespace boost
 		assert(found != g.end());
 		return &*found;
 	}
-	
+
 	inline
 	const ::type *
 	target(
@@ -442,7 +474,7 @@ namespace boost
 		assert(found != g.end());
 		return &*found;
 	}
-	
+
 	inline std::pair<
 		boost::graph_traits< set< ::type> >::out_edge_iterator,
 		boost::graph_traits< set< ::type> >::out_edge_iterator 
@@ -453,7 +485,7 @@ namespace boost
 	{
 		return make_pair(u->edges.begin(), u->edges.end());
 	}
-	
+
 	inline std::pair<
 		boost::graph_traits<set< ::type> >::vertex_iterator,
 		boost::graph_traits<set< ::type> >::vertex_iterator 
@@ -469,7 +501,7 @@ namespace boost
 	{
 		return g.size();
 	}
-	
+
 	inline boost::graph_traits<set< ::type> >::degree_size_type
 	out_degree(
 		boost::graph_traits<set< ::type> >::vertex_descriptor u,
@@ -570,7 +602,7 @@ string_rep_for_type_die(shared_ptr<type_die> p_t)
 		}
 		case DW_TAG_structure_type: {
 			ostringstream out; 
-			out << "{(";
+			out << "{<";
 			auto p_struct = dynamic_pointer_cast<spec::structure_type_die>(p_t);
 			assert(p_struct);
 			for (auto i_member = p_struct->member_children_begin();
@@ -588,12 +620,12 @@ string_rep_for_type_die(shared_ptr<type_die> p_t)
 				out << string_rep_for_type_die((*i_member)->get_type()->get_concrete_type());
 				out << "@" << offset;
 			}
-			out << ")}";
+			out << ">}";
 			return out.str();
 		}
 		case DW_TAG_union_type: {
 			ostringstream out;
-			out << "{(";
+			out << "{<";
 			auto p_union = dynamic_pointer_cast<spec::union_type_die>(p_t);
 			assert(p_union);
 			for (auto i_member = p_union->member_children_begin();
@@ -602,10 +634,30 @@ string_rep_for_type_die(shared_ptr<type_die> p_t)
 				if (i_member != p_union->member_children_begin()) out << "|";
 				out << string_rep_for_type_die((*i_member)->get_type()->get_concrete_type());
 			}
-			out << ")}";
+			out << ">}";
 			return out.str();
 		}
-		case DW_TAG_subroutine_type: return "{_()}";
+		case DW_TAG_subroutine_type: {
+			ostringstream out;
+			auto p_subt = dynamic_pointer_cast<spec::subroutine_type_die>(p_t);
+			out << "{(";
+			for (auto i_fp = p_subt->formal_parameter_children_begin(); 
+				i_fp != p_subt->formal_parameter_children_end();  ++i_fp)
+			{
+				if (i_fp != p_subt->formal_parameter_children_begin())
+				{
+					out << ",";
+				}
+				out << string_rep_for_type_die((*i_fp)->get_type()->get_concrete_type());
+			}
+			out << ")=>";
+			if (p_subt->get_type() && p_subt->get_type()->get_concrete_type())
+			{
+				out << string_rep_for_type_die(p_subt->get_type()->get_concrete_type());
+			}
+			out << "}";
+			return out.str();
+		}
 		default: {
 			Dwarf_Half tag = p_t->get_tag();
 			cerr << "Saw unexpected tag " << spec::DEFAULT_DWARF_SPEC.tag_lookup(tag) << endl;
@@ -625,6 +677,14 @@ int main(int argc, char **argv)
 	core::basic_root_die root1(fileno(in1));
 	dwarf::lib::file df1(fileno(in1));
 	dwarf::lib::dieset ds1(df1);
+	
+	// read the list of data types we care about
+	set<string> typenames;
+	int i = 3; 
+	while (i < argc)
+	{
+		typenames.insert(argv[i++]);
+	}
 	
 	// also open an encap dieset, for backrefs
 	std::ifstream ein1(argv[1]);
@@ -688,6 +748,19 @@ int main(int argc, char **argv)
 			named_toplevel_types2[i_name->first]
 		));
 	}
+	
+	// which of these is the user interested in?
+	vector< pair<Dwarf_Off, Dwarf_Off > > like_named_and_interested;
+	srk31::copy_if(like_named.begin(), like_named.end(),
+		std::back_inserter(like_named_and_interested),
+		[&eds1, &typenames](const pair<Dwarf_Off, Dwarf_Off>& p) {
+			auto opt_name = eds1[p.first]->get_name();
+			assert(opt_name);
+			return typenames.find(*opt_name) != typenames.end();
+		}
+	);
+	cout << "Of the " << typenames.size() << " types that the user is interested in, "
+		<< like_named_and_interested.size() << " were found as a like-named pair." << endl;
 
 	vector< pair< Dwarf_Off, Dwarf_Off > > like_named_and_rep_compatible;
 	collect_rep_compatible_pairs(
@@ -695,6 +768,19 @@ int main(int argc, char **argv)
 		like_named,
 		like_named_and_rep_compatible
 	);
+	
+	vector< pair< Dwarf_Off, Dwarf_Off > > like_named_and_rep_compatible_and_interested;
+	srk31::copy_if(like_named_and_rep_compatible.begin(), like_named_and_rep_compatible.end(),
+		std::back_inserter(like_named_and_rep_compatible_and_interested),
+		[&eds1, &typenames](const pair<Dwarf_Off, Dwarf_Off>& p) {
+			auto opt_name = eds1[p.first]->get_name();
+			assert(opt_name);
+			return typenames.find(*opt_name) != typenames.end();
+		}
+	);
+	cout << "Of the " << typenames.size() << " types that the user is interested in, "
+		<< like_named_and_rep_compatible_and_interested.size() 
+		<< " were found as a like-named and rep-compatible pair." << endl;
 	
 	
 	/* Now we need to build the type reachability graph.
@@ -724,18 +810,30 @@ int main(int argc, char **argv)
 	 */	
 	set<type> graph1;
 	construct_graph(graph1, like_named_and_rep_compatible, ds1, eds1, false);
+	auto size1_at_construction = graph1.size();
 	
 	set<type> graph2;
 	construct_graph(graph2, like_named_and_rep_compatible, ds2, eds2, true);
+	auto size2_at_construction = graph2.size();
 	
 	/* Now for each data type that we care about, invoke dfs on the graph
 	 * to enumerate the set of type reachability paths starting from that type. */
+	map< pair<Dwarf_Off, Dwarf_Off>, bool > rep_compatibility_cache;
 	for (auto i_lr = like_named_and_rep_compatible.begin();
 		i_lr != like_named_and_rep_compatible.end();
 		++i_lr)
 	{
 		auto start1 = dynamic_pointer_cast<type_die>(ds1[i_lr->first]);
 		auto start2 = dynamic_pointer_cast<type_die>(ds2[i_lr->second]);
+		string name1 = *start1->get_name();
+		if (typenames.find(name1) == typenames.end())
+		{
+			cerr << "Skipping pair of " << start1->summary()
+				<< " and " << start2->summary()
+				<< " which the user wasn't interested in." << endl;
+			continue;
+		}
+		
 		cerr << "Deciding whether " << start1->summary()
 			<< " and " << start2->summary()
 			<< " are shareable." << endl;
@@ -829,6 +927,10 @@ int main(int argc, char **argv)
 								cerr << "downcast using zero-offset"; break;
 							case way_to_reach_type::DOWNCAST_INHERITANCE: 
 								cerr << "downcast using inheritance"; break;
+							case way_to_reach_type::PARAM:
+								cerr << "parameter access"; break;
+							case way_to_reach_type::RETURN_VALUE:
+								cerr << "return value"; break;
 							default: assert(false);
 						}
 
@@ -860,6 +962,10 @@ int main(int argc, char **argv)
 							s << "!"; break;
 						case way_to_reach_type::DOWNCAST_INHERITANCE: 
 							s << "^"; break;
+						case way_to_reach_type::PARAM:
+							s << ">"; break;
+						case way_to_reach_type::RETURN_VALUE:
+							s << "<"; break;
 						default: assert(false);
 					}
 
@@ -923,12 +1029,15 @@ int main(int argc, char **argv)
 			auto i_path1 = it1->second;
 			auto i_path2 = it2->second;
 
+			/* Actually test_start1 won't be the same as test_start1 in general, 
+ 			 * because extra canonicalisation has been done to test_start1/2 i.e.
+			 * the ones actually in the graph. */
 			auto test_start1 = dynamic_pointer_cast<type_die>(ds1[i_path1->front().source]);
 			assert(test_start1);
-			assert(test_start1->get_offset() == start1->get_offset());
+			//assert(test_start1->get_offset() == start1->get_offset());
 			auto test_start2 = dynamic_pointer_cast<type_die>(ds2[i_path2->front().source]);
 			assert(test_start2);
-			assert(test_start2->get_offset() == start2->get_offset());
+			//assert(test_start2->get_offset() == start2->get_offset());
 
 			if (it1->first != it2->first) 
 			{ 
@@ -951,6 +1060,12 @@ int main(int argc, char **argv)
 			
 			if (!start1->is_rep_compatible(start2) || !start2->is_rep_compatible(start1))
 			{ assert(false); } // we only start the analysis from like-named and rep-compatible types
+			rep_compatibility_cache.insert(
+				make_pair(
+					make_pair(start1->get_offset(), start2->get_offset()), 
+					true
+				)
+			);
 			
 			boost::optional< way_to_reach_type > last_hop1;
 			boost::optional< way_to_reach_type > last_hop2;
@@ -963,8 +1078,16 @@ int main(int argc, char **argv)
 				auto next1 = dynamic_pointer_cast<type_die>(ds1[i_hop1->target]);
 				auto next2 = dynamic_pointer_cast<type_die>(ds2[i_hop2->target]);
 				
-				if (!next1->is_rep_compatible(next2) || !next2->is_rep_compatible(next1))
+				auto found_in_cache = rep_compatibility_cache.find(make_pair(next1->get_offset(),	
+					next2->get_offset()));
+				bool hit_cache = (found_in_cache != rep_compatibility_cache.end());
+				
+				if ((hit_cache && found_in_cache->second)
+					|| (!hit_cache && (
+						!next1->is_rep_compatible(next2) || 
+						!next2->is_rep_compatible(next1))))
 				{
+					if (!hit_cache) rep_compatibility_cache.insert(make_pair(make_pair(next1->get_offset(), next2->get_offset()), true));
 					std::ostringstream s; s << hopcount; string hopcount_str = s.str();
 					reason = string("Starting from file ") + argv[1] + ", " + start1->summary()
 					 + " and file " + argv[2] + ", " + start2->summary()
@@ -972,7 +1095,7 @@ int main(int argc, char **argv)
 					 + next1->summary() + ", " + next2->summary()
 					 + " at hop " + hopcount_str + " along path " + it1->first;
 					break;
-				}
+				} else if (!hit_cache) rep_compatibility_cache.insert(make_pair(make_pair(next1->get_offset(), next2->get_offset()), false));
 			}
 			if (i_hop1 != i_path1->end() || i_hop2 != i_path2->end())
 			{
@@ -1043,6 +1166,7 @@ construct_graph(
 		{
 			cerr << "Skipping void/opaque type " << concrete_t->summary() << endl;
 		}
+		auto tag = p_t->get_tag();
 		ensure_type_node(graph, p_t);
 	}
 
@@ -1060,7 +1184,21 @@ construct_graph(
 		}
 		
 	} while (saw_something_uninitialized && (saw_something_uninitialized = false, true));
-	 
+	
+	// 3. sanity check: for every edge in the graph, are all its vertices initialized?
+	auto verts = vertices(graph);
+	for (auto i_vert = verts.first; i_vert != verts.second; ++i_vert)
+	{
+		auto edges = out_edges(*i_vert, graph); 
+		for (auto i_edge = edges.first; i_edge != edges.second; ++i_edge)
+		{
+			assert(std::find(verts.first, verts.second, source(*i_edge, graph)) != verts.second);
+			assert(std::find(verts.first, verts.second, target(*i_edge, graph)) != verts.second);
+			auto found = graph.find(**i_vert);
+			assert(found != graph.end());
+		}
+	}
+	
 }
 
 const type& ensure_type_node(set<type>& graph, shared_ptr<type_die> p_t)

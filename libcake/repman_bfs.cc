@@ -17,7 +17,7 @@ FILE* debug_out = NULL;
 const char *debugging_output_filename = DEBUGGING_OUTPUT_FILENAME;
 #define DEBUG_GUARD(stmt) if (debug_out != NULL) { stmt; }
 
-using boost::shared_ptr;
+using std::shared_ptr;
 using boost::dynamic_pointer_cast;
 using namespace dwarf::spec;
 using pmirror::process_image;

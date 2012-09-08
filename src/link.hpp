@@ -23,7 +23,7 @@ namespace cake {
 	using std::unary_function;
 	using std::unordered_map;
 	using boost::dynamic_pointer_cast;
-	using boost::shared_ptr;
+	using std::shared_ptr;
 	using boost::optional;
 	using namespace dwarf;
 	using dwarf::spec::type_die;
@@ -271,11 +271,11 @@ namespace cake {
 			module_ptr right,
 			const std::vector<antlr::tree::Tree *>& deferred);
 	
-		typedef vector<pair<shared_ptr<subprogram_die>, boost::smatch > > matches_info_t;
+		typedef vector<pair<shared_ptr<subprogram_die>, std::smatch > > matches_info_t;
 		matches_info_t
 		find_subprograms_matching_pattern(
 			module_ptr module,
-			const boost::regex& re
+			const std::regex& re
 		);
 		
 		typedef unsigned long module_tag_t;

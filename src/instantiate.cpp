@@ -7,9 +7,9 @@
 #include "parser.hpp"
 #include "instantiate.hpp"
 
-using boost::make_shared;
+using std::make_shared;
 using boost::dynamic_pointer_cast;
-using boost::shared_ptr;
+using std::shared_ptr;
 using std::endl;
 using std::cerr;
 using std::ostream;

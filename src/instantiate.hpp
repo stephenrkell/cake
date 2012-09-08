@@ -14,7 +14,7 @@ namespace cake {
 	using std::make_pair;
 	using std::vector;
 	using boost::dynamic_pointer_cast;
-	using boost::shared_ptr;
+	using std::shared_ptr;
 	using boost::optional;
 	using namespace dwarf;
 	using dwarf::spec::type_die;

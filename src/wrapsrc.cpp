@@ -7,9 +7,9 @@
 #include <algorithm>
 #include <cmath>
 
-using boost::dynamic_pointer_cast;
+using std::dynamic_pointer_cast;
 using namespace dwarf::spec;
-using boost::shared_ptr;
+using std::shared_ptr;
 using std::ostringstream;
 using std::istringstream;
 using std::cerr;
@@ -54,7 +54,7 @@ namespace cake
 		const std::string& arg_name_prefix,
 		module_ptr calling_module, // HACK: don't do this; make a pre-pass to guess signature & store in caller's DWARF info
 		bool emit_types /*= true*/,
-		boost::shared_ptr<dwarf::spec::subprogram_die> unique_called_subprogram)
+		std::shared_ptr<dwarf::spec::subprogram_die> unique_called_subprogram)
 	{
 		auto ret_type = subprogram->get_type();
 		auto args_begin = subprogram->formal_parameter_children_begin();
@@ -464,23 +464,23 @@ assert(false && "disabled support for inferring positional argument mappings");
 		}
 
 		// convenience reference alias of subprogram
-		auto callsite_signature = boost::dynamic_pointer_cast<dwarf::spec::subprogram_die>(subp);
+		auto callsite_signature = dynamic_pointer_cast<dwarf::spec::subprogram_die>(subp);
 		
 		// if we have a unique sink action, and it's a simple function call,
 		// we can use it as an extra source of description for the call arguments.
-		boost::shared_ptr<dwarf::spec::subprogram_die> unique_called_subprogram;
+		std::shared_ptr<dwarf::spec::subprogram_die> unique_called_subprogram;
 		if (corresps.size() == 1
 			&& sink_expr_is_simple_function_name(corresps.at(0)->second.sink_expr))
 		{
 			std::string called_name = *sink_expr_is_simple_function_name(corresps.at(0)->second.sink_expr);
 			std::vector<std::string> called_name_vec(1, called_name);
 			unique_called_subprogram 
-			 = boost::dynamic_pointer_cast<dwarf::spec::subprogram_die>(
+			 = dynamic_pointer_cast<dwarf::spec::subprogram_die>(
 			 		corresps.at(0)->second.sink->get_ds().toplevel()->resolve_visible(
 			 			called_name_vec.begin(), called_name_vec.end()
 					)
 				);
-		} else unique_called_subprogram = boost::shared_ptr<dwarf::spec::subprogram_die>();
+		} else unique_called_subprogram = std::shared_ptr<dwarf::spec::subprogram_die>();
 
 		// output prototype for __real_
 		*p_out << "extern \"C\" { " << std::endl;
@@ -582,13 +582,13 @@ assert(false && "disabled support for inferring positional argument mappings");
 			// crossover point
 			ctxt.modules.current = ctxt.modules.sink;
 			*p_out << "// source->sink crossover point" << std::endl;
-			multimap< string, pair< antlr::tree::Tree *, boost::shared_ptr<dwarf::spec::type_die> > >
+			multimap< string, pair< antlr::tree::Tree *, std::shared_ptr<dwarf::spec::type_die> > >
 			 constraints;
 			// for each ident, find constraints
 			if (sink_infix_stub) m_d.find_type_expectations_in_stub(ctxt.env, 
-				sink, sink_infix_stub, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
+				sink, sink_infix_stub, std::shared_ptr<dwarf::spec::type_die>(), constraints);
 			m_d.find_type_expectations_in_stub(ctxt.env, 
-				sink, action, boost::shared_ptr<dwarf::spec::type_die>(), constraints);
+				sink, action, std::shared_ptr<dwarf::spec::type_die>(), constraints);
 			/* We also want to know whether any output bindings
 			 * -- currently marked as is_pointer_to_uninit --
 			 * will be filled by output parameters in the crossed-over stub.
@@ -667,7 +667,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 				 * may bring type expectations
 				 * that we should account for now, when converting. */
 				m_d.find_type_expectations_in_stub(ctxt.env, 
-					source, return_leg, boost::shared_ptr<dwarf::spec::type_die>(), 
+					source, return_leg, std::shared_ptr<dwarf::spec::type_die>(), 
 					return_constraints);
 			}
 			else
@@ -1158,7 +1158,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			constraints_by_cxxname[cur_cxxname] = all_constraints;
 
 			/* Work out the target type expectations, using constraints */
-			boost::shared_ptr<dwarf::spec::type_die> precise_to_type;
+			std::shared_ptr<dwarf::spec::type_die> precise_to_type;
 
 			// get the constraints defined for this Cake name
 			//auto iter_pair = constraints.equal_range(i_binding->first);
@@ -1407,7 +1407,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					representative_binding, // from_artificial_tagstring is in our binding -- easy
 					direction_is_out,
 					false, // is_indirect
-					boost::shared_ptr<dwarf::spec::type_die>(), // no precise from type
+					std::shared_ptr<dwarf::spec::type_die>(), // no precise from type
 					precise_to_type, // defaults to "no precise to type", but may have been set above
 					((is_a_pointer && !is_virtual) ? std::string("((void*)0)") : *collected_cxx_typeof), // from typeof
 					boost::optional<std::string>(), // NO precise to typeof, 
@@ -1613,8 +1613,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 // 				*i_first_binding,
 // 				direction_is_out,
 // 				is_indirect,
-// 				boost::shared_ptr<dwarf::spec::type_die> from_type, // most precise
-// 				boost::shared_ptr<dwarf::spec::type_die> to_type, 
+// 				std::shared_ptr<dwarf::spec::type_die> from_type, // most precise
+// 				std::shared_ptr<dwarf::spec::type_die> to_type, 
 // 				boost::optional<std::string> from_typeof /* = boost::optional<std::string>()*/, // mid-precise
 // 				boost::optional<std::string> to_typeof/* = boost::optional<std::string>()*/,
 // 				module_ptr from_module/* = module_ptr()*/,
@@ -1987,7 +1987,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			if (!caller) RAISE(memberNameExpr, "does not name a visible function");
 			if ((*caller).get_tag() != DW_TAG_subprogram) 
 				RAISE(memberNameExpr, "does not name a visible function"); 
-			auto caller_subprogram = boost::dynamic_pointer_cast<subprogram_die>(caller);
+			auto caller_subprogram = dynamic_pointer_cast<subprogram_die>(caller);
 			
 			struct virtual_value_construct
 			{
@@ -2010,8 +2010,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 			bool add_excess_dwarf_args = false;
 			FOR_REMAINING_CHILDREN(eventPattern)
 			{
-				//boost::shared_ptr<dwarf::spec::type_die> p_arg_type = boost::shared_ptr<dwarf::spec::type_die>();
-				boost::shared_ptr<dwarf::spec::program_element_die> p_arg_origin;
+				//std::shared_ptr<dwarf::spec::type_die> p_arg_type = std::shared_ptr<dwarf::spec::type_die>();
+				std::shared_ptr<dwarf::spec::program_element_die> p_arg_origin;
 				if (GET_TYPE(n) == CAKE_TOKEN(ELLIPSIS))
 				{
 					/* This means we need to add any arguments that are in the DWARF 
@@ -2032,12 +2032,12 @@ assert(false && "disabled support for inferring positional argument mappings");
 				else
 				{
 					//p_arg_type = *(*i_caller_arg)->get_type();
-					p_arg_origin = boost::dynamic_pointer_cast<dwarf::spec::program_element_die>(
+					p_arg_origin = dynamic_pointer_cast<dwarf::spec::program_element_die>(
 						(*i_caller_arg)->get_this());
 				}
-				auto origin_as_fp = boost::dynamic_pointer_cast<dwarf::spec::formal_parameter_die>(
+				auto origin_as_fp = dynamic_pointer_cast<dwarf::spec::formal_parameter_die>(
 						p_arg_origin);
-				auto origin_as_unspec = boost::dynamic_pointer_cast<dwarf::spec::unspecified_parameters_die>(
+				auto origin_as_unspec = dynamic_pointer_cast<dwarf::spec::unspecified_parameters_die>(
 						p_arg_origin);
 				assert(origin_as_fp || origin_as_unspec || (std::cerr << *p_arg_origin, false));
 				if (origin_as_fp)
@@ -2316,7 +2316,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							
 					out_env->insert(std::make_pair(basic_name, 
 						(bound_var_info) { basic_name, // use the same name for both
-						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
+						basic_name, // p_arg_type ? p_arg_type : std::shared_ptr<dwarf::spec::type_die>(),
 						source_module,
 						false, // do_not_crossover
 						// pointerness
@@ -2335,7 +2335,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					}));
 					if (friendly_name) out_env->insert(std::make_pair(*friendly_name, 
 						(bound_var_info) { basic_name,
-						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
+						basic_name, // p_arg_type ? p_arg_type : std::shared_ptr<dwarf::spec::type_die>(),
 						source_module,
 						false, // do_not_crossover
 						// pointerness
@@ -2365,7 +2365,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 					auto basic_name = basic_name_for_argnum(argnum);
 					out_env->insert(std::make_pair(basic_name, 
 						(bound_var_info) { basic_name, // use the same name for both
-						basic_name, // p_arg_type ? p_arg_type : boost::shared_ptr<dwarf::spec::type_die>(),
+						basic_name, // p_arg_type ? p_arg_type : std::shared_ptr<dwarf::spec::type_die>(),
 						source_module,
 						false,
 						bound_var_info::UNDEFINED,
@@ -2616,7 +2616,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 							std::ostringstream s; s << // "dummy"; s << dummycount++;
 								wrapper_arg_name_prefix << argnum;
 							bound_name = s.str();
-							boost::shared_ptr<dwarf::spec::type_die> p_arg_type;
+							std::shared_ptr<dwarf::spec::type_die> p_arg_type;
 							// find bound val's type, if it's a formal parameter
 							assert(ctxt.env.find(bound_name) != ctxt.env.end());
 							
@@ -2650,10 +2650,10 @@ assert(false && "disabled support for inferring positional argument mappings");
 	
 //	 void
 //	 wrapper_file::create_value_conversion(module_ptr source,
-//			 boost::shared_ptr<dwarf::spec::type_die> source_data_type,
+//			 std::shared_ptr<dwarf::spec::type_die> source_data_type,
 //			 antlr::tree::Tree *source_infix_stub,
 //			 module_ptr sink,
-//			 boost::shared_ptr<dwarf::spec::type_die> sink_data_type,
+//			 std::shared_ptr<dwarf::spec::type_die> sink_data_type,
 //			 antlr::tree::Tree *sink_infix_stub,
 //			 antlr::tree::Tree *refinement,
 // 			bool source_is_on_left,
@@ -2663,8 +2663,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 	
 // 	void
 // 	wrapper_file::emit_structural_conversion_body(
-// 		boost::shared_ptr<dwarf::spec::type_die> source_type,
-// 		boost::shared_ptr<dwarf::spec::type_die> target_type,
+// 		std::shared_ptr<dwarf::spec::type_die> source_type,
+// 		std::shared_ptr<dwarf::spec::type_die> target_type,
 // 		antlr::tree::Tree *refinement, 
 // 		bool source_is_on_left)
 // 	{
@@ -2672,8 +2672,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 	
 // 	void
 // 	wrapper_file::emit_reinterpret_conversion_body(
-// 		boost::shared_ptr<dwarf::spec::type_die> source_type,
-// 		boost::shared_ptr<dwarf::spec::type_die> target_type)
+// 		std::shared_ptr<dwarf::spec::type_die> source_type,
+// 		std::shared_ptr<dwarf::spec::type_die> target_type)
 // 	{ 
 // 		*p_out << "if (__cake_p_to) *__cake_p_to = *reinterpret_cast<const " 
 // 			<< get_type_name(target_type) << "*>(&__cake_from);" << std::endl
@@ -2688,8 +2688,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 		const binding& source_binding,
 		bool direction_is_out,
 		bool is_indirect,
-		boost::shared_ptr<dwarf::spec::type_die> from_type, // most precise
-		boost::shared_ptr<dwarf::spec::type_die> to_type, 
+		std::shared_ptr<dwarf::spec::type_die> from_type, // most precise
+		std::shared_ptr<dwarf::spec::type_die> to_type, 
 		boost::optional<std::string> from_typeof /* = boost::optional<std::string>()*/, // mid-precise
 		boost::optional<std::string> to_typeof/* = boost::optional<std::string>()*/,
 		module_ptr from_module/* = module_ptr()*/,
@@ -2905,8 +2905,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 		const binding& source_binding,
 		bool direction_is_out,
 		bool is_indirect,
-		boost::shared_ptr<dwarf::spec::type_die> from_type, // most precise
-		boost::shared_ptr<dwarf::spec::type_die> to_type, 
+		std::shared_ptr<dwarf::spec::type_die> from_type, // most precise
+		std::shared_ptr<dwarf::spec::type_die> to_type, 
 		boost::optional<std::string> from_typeof /* = boost::optional<std::string>()*/, // mid-precise
 		boost::optional<std::string> to_typeof/* = boost::optional<std::string>()*/,
 		module_ptr from_module/* = module_ptr()*/,
@@ -3587,8 +3587,8 @@ assert(false && "disabled support for inferring positional argument mappings");
 		> 
 	>
 	wrapper_file::name_match_parameters(
-		boost::shared_ptr< dwarf::spec::subprogram_die > first,
-		boost::shared_ptr< dwarf::spec::subprogram_die > second)
+		std::shared_ptr< dwarf::spec::subprogram_die > first,
+		std::shared_ptr< dwarf::spec::subprogram_die > second)
 	{
 		std::vector<
 			std::pair< 	dwarf::spec::subprogram_die::formal_parameter_iterator,
@@ -3643,7 +3643,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 			RAISE(functionNameTree, "does not name a visible function");
 		}
 		auto callee_subprogram
-		 = boost::dynamic_pointer_cast<subprogram_die>(callee);
+		 = dynamic_pointer_cast<subprogram_die>(callee);
 		
 		cerr << "callee_subprogram is " << *callee_subprogram << endl;
 
@@ -4139,7 +4139,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 // 								  /* Result type is that of the *argument* that we're going to pass
 // 								   * this subexpression's result to. */
 // 								  /*(treat_subprogram_as_untyped(callee_subprogram) 
-// 								  ? boost::shared_ptr<dwarf::spec::type_die>()
+// 								  ? std::shared_ptr<dwarf::spec::type_die>()
 // 								  : *(*i_arg)->get_type())*/);
 // 								// next time round we will handle the next matched name
 // 								++i_matched_name;
@@ -4153,7 +4153,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 // // 							  /* Result type is that of the *argument* that we're going to pass
 // // 							   * this subexpression's result to. */
 // // 							  (treat_subprogram_as_untyped(callee_subprogram) 
-// // 							  ? boost::shared_ptr<dwarf::spec::type_die>()
+// // 							  ? std::shared_ptr<dwarf::spec::type_die>()
 // // 							  : *(*i_arg)->get_type())*/
 // 							  );
 // 							// remember the names used for the output of this evaluation
@@ -4334,7 +4334,7 @@ assert(false && "disabled support for inferring positional argument mappings");
 		bool ran_out_of_fps = false;
 		
 		auto emit_arg_expr_maybe_with_cast
-		 = [&p_out, &compiler, this](shared_ptr<type_die> p_t, string expr,
+		 = [this](shared_ptr<type_die> p_t, string expr,
 		 	 bool do_not_cast = false) {
 		 	bool inserting_cast = false;
 			if (!do_not_cast	
@@ -4348,19 +4348,19 @@ assert(false && "disabled support for inferring positional argument mappings");
 				// and we can't do that with reinterpret,
 				// but can do it with C-style casts
 				// (with the help of the "operator void *" we defined).
-//				*p_out << "reinterpret_cast< ";
-				*p_out << "((";
-				auto declarator = compiler.cxx_declarator_from_type_die(p_t,
+//				*this->p_out << "reinterpret_cast< ";
+				*this->p_out << "((";
+				auto declarator = this->compiler.cxx_declarator_from_type_die(p_t,
 					optional<const string&>(), true,
 					get_type_name_prefix(p_t) + "::", false);
-				*p_out << declarator.first;
-//				*p_out << ">(";
-				*p_out << ")";
+				*this->p_out << declarator.first;
+//				*this->p_out << ">(";
+				*this->p_out << ")";
 			}
 			
-			*p_out << expr;
+			*this->p_out << expr;
 			
-			if (inserting_cast) *p_out << ")";
+			if (inserting_cast) *this->p_out << ")";
 		};
 		
 		for (auto i_result = arg_results.begin(); 

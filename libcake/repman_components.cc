@@ -33,7 +33,7 @@ cake_cxx_target compiler;
 }
 
 using boost::dynamic_pointer_cast;
-using boost::shared_ptr;
+using std::shared_ptr;
 using std::string;
 using std::vector;
 using std::cerr;

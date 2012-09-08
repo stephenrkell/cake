@@ -25,7 +25,6 @@
 #include <vector>
 #include <map>
 #include <memory>
-#include <boost/shared_ptr.hpp>
 #include <fstream>
 #include <functional>
 #include "cake/cxx_target.hpp"
@@ -113,7 +112,7 @@ namespace cake
 			// and then copying it -- but it's very large, so we don't want that!
 		std::map<std::string, std::vector<std::string> > module_alias_tbl;
         
-        typedef std::map<string, boost::shared_ptr<derivation> > derivation_tbl_t;
+        typedef std::map<string, std::shared_ptr<derivation> > derivation_tbl_t;
         derivation_tbl_t derivation_tbl;
         
         /* makes an absolute pathname out of a filename mentioned in Cake source */

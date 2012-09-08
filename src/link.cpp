@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <map>
+#include <regex>
 #include <boost/filesystem/path.hpp>
 
 #include "request.hpp"
@@ -9,9 +10,9 @@
 #include "wrapsrc.hpp"
 #include "cake/cxx_target.hpp"
 
-using boost::make_shared;
-using boost::dynamic_pointer_cast;
-using boost::shared_ptr;
+using std::make_shared;
+using std::dynamic_pointer_cast;
+using std::shared_ptr;
 using boost::optional;
 using std::endl;
 using std::cerr;
@@ -25,6 +26,7 @@ using std::boolalpha;
 using std::vector;
 using std::map;
 using std::multimap;
+using std::regex_match;
 using dwarf::spec::type_die;
 using dwarf::spec::subprogram_die;
 using dwarf::spec::base_type_die;
@@ -59,14 +61,14 @@ namespace cake
 	}
 	
 	module_ptr 
-	link_derivation::module_for_die(boost::shared_ptr<dwarf::spec::basic_die> p_d)
+	link_derivation::module_for_die(std::shared_ptr<dwarf::spec::basic_die> p_d)
 	{
 		assert(p_d);
 		return module_of_die(p_d);
 	}	
 
 	module_ptr 
-	link_derivation::module_of_die(boost::shared_ptr<dwarf::spec::basic_die> p_d)
+	link_derivation::module_of_die(std::shared_ptr<dwarf::spec::basic_die> p_d)
 	{
 		assert(p_d);
 		return module_for_dieset(p_d->get_ds());
@@ -871,7 +873,7 @@ namespace cake
 				vector<antlr::tree::Tree *> interps;
 				
 				optional<definite_member_name> opt_dmn;
-				boost::smatch m;
+				std::smatch m;
 				if (
 					((GET_TYPE(memberNameExprOrPattern) == CAKE_TOKEN(DEFINITE_MEMBER_NAME))
 					 && (subprogram->get_name() 
@@ -880,7 +882,7 @@ namespace cake
 					)
 				|| ((GET_TYPE(memberNameExprOrPattern) == CAKE_TOKEN(KEYWORD_PATTERN))
 					 && (subprogram->get_name() 
-					 	&& boost::regex_match(
+					 	&& std::regex_match(
 							*subprogram->get_name(), m, 
 							regex_from_pattern_ast(memberNameExprOrPattern))
 					 	)
@@ -3087,11 +3089,11 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 	link_derivation::matches_info_t
 	link_derivation::find_subprograms_matching_pattern(
 		module_ptr module,
-		const boost::regex& re
+		const std::regex& re
 	)
 	{
 		matches_info_t v;
-		boost::smatch m;
+		std::smatch m;
 
 		/* First we match all event names against the pattern */
 		// DEBUG: print out CUs
@@ -3123,13 +3125,13 @@ wrap_file << "} /* end extern \"C\" */" << endl;
 				 && subp->get_name())
 				{
 					auto name = *subp->get_name();
-					cerr << "Does name " << name << " match pattern " << re << "? ";
+					cerr << "Does name " << name << " match pattern " << /*re*/ "(FIXME: removed)"<< "? ";
 					// it's a declared-not-defined function...
 					// ... does it match the pattern?
-					if (boost::regex_match(name, m, re))
+					if (std::regex_match(name, m, re))
 					{
 						cerr << "yes." << endl;
-						cerr << "pattern " << re
+						cerr << "pattern " << /*re*/ "(FIXME: removed)"
 							<< " matched " << *subp
 							<< endl;
 

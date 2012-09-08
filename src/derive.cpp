@@ -1,8 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <map>
-#include <boost/shared_ptr.hpp>
-#include <boost/make_shared.hpp>
+#include <memory>
 #include <cassert>
 #include "parser.hpp"
 #include "request.hpp"
@@ -56,7 +55,7 @@ namespace cake
 	shared_ptr<derived_module> request::create_derived_module(derivation& d, 
 		const std::string& id, const std::string& filename)
 	{
-		auto made = boost::make_shared<derived_module>(d, id, filename);
+		auto made = std::make_shared<derived_module>(d, id, filename);
 		assert(made->shared_from_this());
 		return made;
 	}
@@ -70,7 +69,7 @@ namespace cake
 			case CAKE_TOKEN(IDENT): // unary predicates
 				if (std::string(CCP(GET_TEXT(t))) == "instantiate")
 				{
-					return boost::make_shared<instantiate_derivation>(
+					return std::make_shared<instantiate_derivation>(
 						*this, t, module_name, output_filename);
 				} 
 				//else if (std::string(GET_TEXT(t)) == "make_exec")
@@ -81,7 +80,7 @@ namespace cake
 				assert(false); return shared_ptr<derivation>();
 			case CAKE_TOKEN(KEYWORD_LINK): 
 			{
-				return boost::make_shared<link_derivation>(
+				return std::make_shared<link_derivation>(
 					*this, t, module_name, output_filename);
 			}
 			default: return shared_ptr<derivation>();

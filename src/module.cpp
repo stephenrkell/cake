@@ -16,7 +16,7 @@
 #include "module.hpp"
 #include <dwarfpp/adt.hpp>
 
-using boost::shared_ptr;
+using std::shared_ptr;
 using boost::optional;
 using boost::dynamic_pointer_cast;
 using std::string;

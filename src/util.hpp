@@ -5,7 +5,7 @@
 #include <boost/static_assert.hpp>
 #include <boost/type_traits/is_pointer.hpp>
 #include <boost/type_traits/remove_pointer.hpp>
-#include <boost/regex.hpp>
+#include <regex>
 //#include <java/lang/ClassCastException.h>
 //#include <java/lang/String.h>
 #include <string>
@@ -22,7 +22,7 @@
 namespace cake
 {
 	using namespace dwarf;
-	using boost::shared_ptr;
+	using std::shared_ptr;
 	using boost::optional;
 	using dwarf::spec::type_die;
 	using std::vector;
@@ -94,7 +94,7 @@ namespace cake
 	antlr::tree::Tree *
 	instantiate_definite_member_name_from_pattern_match(
 		antlr::tree::Tree *t,
-		const boost::smatch& m);
+		const std::smatch& m);
 		
     antlr::tree::Tree *make_simple_event_pattern_for_call_site(
     	const string& name);
@@ -158,13 +158,13 @@ namespace cake
 // 		const Action& action
 // 	); // defined in module.hpp
 
-	boost::regex regex_from_pattern_ast(antlr::tree::Tree *t);
+	std::regex regex_from_pattern_ast(antlr::tree::Tree *t);
 	
 	antlr::tree::Tree *
 	make_non_ident_pattern_event_corresp(
 		bool is_left_to_right,
 		const std::string& event_name,
-		const boost::smatch& match,
+		const std::smatch& match,
 		antlr::tree::Tree *sourcePattern,
 		antlr::tree::Tree *sourceInfixStub,
 		antlr::tree::Tree *sinkInfixStub,

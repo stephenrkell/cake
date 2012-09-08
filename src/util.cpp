@@ -11,7 +11,7 @@
 #include "parser.hpp"
 #include "module.hpp"
 
-using boost::shared_ptr;
+using std::shared_ptr;
 using namespace dwarf;
 using dwarf::spec::basic_die;
 using dwarf::spec::type_die;
@@ -447,7 +447,7 @@ namespace cake
 	antlr::tree::Tree *
 	instantiate_definite_member_name_from_pattern_match(
 		antlr::tree::Tree *t,
-		const boost::smatch& match
+		const std::smatch& match
 	)
 	{
 		auto raw_event_dmn = read_definite_member_name(t);
@@ -508,7 +508,7 @@ namespace cake
 	make_non_ident_pattern_event_corresp(
 		bool is_left_to_right,
 		const std::string& event_name,
-		const boost::smatch& match,
+		const std::smatch& match,
 		antlr::tree::Tree *sourcePattern,
 		antlr::tree::Tree *sourceInfixStub,
 		antlr::tree::Tree *sinkInfixStub,
@@ -699,7 +699,7 @@ namespace cake
 		return p_node;
 	}
 
-	boost::regex regex_from_pattern_ast(antlr::tree::Tree *t)
+	std::regex regex_from_pattern_ast(antlr::tree::Tree *t)
 	{
 		string pattern_token = CCP(GET_TEXT(GET_CHILD(t, 0)));
 		// it should be enclosed in '/' and '/' -- strip these away
@@ -707,7 +707,7 @@ namespace cake
 			&& pattern_token[0] == '/'
 			&& pattern_token[pattern_token.length() - 1] == '/');
 		auto pattern = pattern_token.substr(1, pattern_token.length() - 2);
-		boost::regex re(pattern);
+		std::regex re(pattern);
 		return re;
 	}
 
@@ -926,7 +926,7 @@ namespace cake
 	{
 		vector<shared_ptr<type_die> > v;
 		// sanity check
-		bool is_typedef = dynamic_pointer_cast<typedef_die>(d);
+		bool is_typedef = dynamic_pointer_cast<typedef_die>(d) ? true : false;
 		
 		// begin proper
 		auto concrete = d->get_concrete_type();
@@ -963,14 +963,14 @@ namespace cake
 		return -1;
 	}
 
-	boost::shared_ptr<dwarf::spec::basic_die>
+	std::shared_ptr<dwarf::spec::basic_die>
 	map_ast_context_to_dwarf_element(
 		antlr::tree::Tree *node,
 		module_ptr dwarf_context,
 		bool must_be_immediate
 	)
 	{
-		if (!node) return boost::shared_ptr<dwarf::spec::basic_die>();
+		if (!node) return std::shared_ptr<dwarf::spec::basic_die>();
 		if (!(GET_TYPE(node) == CAKE_TOKEN(IDENT)
 		|| GET_TYPE(node) == CAKE_TOKEN(DEFINITE_MEMBER_NAME)
 		|| GET_TYPE(node) == CAKE_TOKEN(ELLIPSIS)
@@ -978,7 +978,7 @@ namespace cake
 		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_IN_AS)
 		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_OUT_AS)
 		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_INTERPRET_AS)
-		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_AS))) return boost::shared_ptr<dwarf::spec::basic_die>();
+		|| GET_TYPE(node) == CAKE_TOKEN(KEYWORD_AS))) return std::shared_ptr<dwarf::spec::basic_die>();
 		cerr << "Considering use contexts of fragment " << CCP(TO_STRING_TREE(node))
 			<< endl;
 
@@ -1066,7 +1066,7 @@ namespace cake
 						// It might be the function expression itself. 
 						// If so, we return the subprogram it denotes, if it's easy to identify
 						// HACK: For now, don't bother.
-						return boost::shared_ptr<dwarf::spec::basic_die>();
+						return std::shared_ptr<dwarf::spec::basic_die>();
 					}
 				}
 				case CAKE_TOKEN(EVENT_PATTERN): {
@@ -1149,11 +1149,11 @@ namespace cake
 			}
 		} // end while walking up tree
 	failed:
-		return boost::shared_ptr<dwarf::spec::basic_die>();
+		return std::shared_ptr<dwarf::spec::basic_die>();
 	}
 	
 	bool treat_subprogram_as_untyped(
-		boost::shared_ptr<dwarf::spec::subprogram_die> subprogram)
+		std::shared_ptr<dwarf::spec::subprogram_die> subprogram)
 	{
 		auto args_begin 
 			= subprogram->formal_parameter_children_begin();

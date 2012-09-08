@@ -19,7 +19,7 @@ namespace cake
 	using std::map;
 	using std::set;
 	using boost::optional;
-	using boost::shared_ptr;
+	using std::shared_ptr;
 	using boost::dynamic_pointer_cast;
 	using namespace dwarf;
 	using dwarf::tool::cxx_compiler;
@@ -279,13 +279,13 @@ namespace cake
 		emit_stub_expression_as_statement_list(
 			context& ctxt,
 			antlr::tree::Tree *expr/*,
-			boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type*/);   
+			std::shared_ptr<dwarf::spec::type_die> cxx_expected_type*/);   
 
 		post_emit_status
 		emit_stub_function_call(
 			context& ctxt,
 			antlr::tree::Tree *call_expr/*,
-			boost::shared_ptr<dwarf::spec::type_die> cxx_expected_type*/);
+			std::shared_ptr<dwarf::spec::type_die> cxx_expected_type*/);
 		
 		struct out_arg_info
 		{
@@ -388,14 +388,14 @@ namespace cake
 	protected:
 // 		void
 // 		emit_structural_conversion_body(
-// 			boost::shared_ptr<dwarf::spec::type_die> source_type,
-// 			boost::shared_ptr<dwarf::spec::type_die> target_type,
+// 			std::shared_ptr<dwarf::spec::type_die> source_type,
+// 			std::shared_ptr<dwarf::spec::type_die> target_type,
 // 			antlr::tree::Tree *refinement,
 // 			bool source_is_on_left);
 // 		void
 // 		emit_reinterpret_conversion_body(
-// 			boost::shared_ptr<dwarf::spec::type_die> source_type,
-// 			boost::shared_ptr<dwarf::spec::type_die> target_type);    
+// 			std::shared_ptr<dwarf::spec::type_die> source_type,
+// 			std::shared_ptr<dwarf::spec::type_die> target_type);    
 	};
 }
 

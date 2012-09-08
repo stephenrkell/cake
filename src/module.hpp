@@ -5,8 +5,6 @@
 #include <set>
 #include <map>
 #include <memory>
-#include <boost/shared_ptr.hpp>
-#include <boost/enable_shared_from_this.hpp>
 #include <boost/optional.hpp>
 #include <fstream>
 #include <fileno.hpp>
@@ -24,7 +22,7 @@ namespace cake
 	using namespace antlr::tree;
 	using dwarf::spec::type_die;
 	using dwarf::spec::basic_die;
-	using boost::shared_ptr;
+	using std::shared_ptr;
 	using boost::dynamic_pointer_cast;
 	
 	class definite_member_name;
@@ -78,7 +76,7 @@ namespace cake
 
 	class module_described_by_dwarf 
 	:	public described_module,  
-		public boost::enable_shared_from_this<module_described_by_dwarf>
+		public std::enable_shared_from_this<module_described_by_dwarf>
 	{
 	protected:
 		dwarf::encap::dieset& dies;
@@ -189,7 +187,7 @@ namespace cake
 						private dwarf::encap::file,
 						public module_described_by_dwarf
 	{
-		boost::shared_ptr<std::ifstream> input_stream;
+		std::shared_ptr<std::ifstream> input_stream;
 							
 	protected:
 		static const std::set<Dwarf_Off> empty_child_list;

@@ -8,7 +8,7 @@
 #include <cmath>
 
 using boost::dynamic_pointer_cast;
-using boost::shared_ptr;
+using std::shared_ptr;
 using dwarf::spec::member_die;
 using dwarf::spec::type_die;
 using dwarf::spec::with_named_children_die;
@@ -342,7 +342,7 @@ namespace cake
 		}
 		
 		shared_ptr < srk31::concatenating_sequence< vector<shared_ptr<value_conversion> >::iterator > > p_out_seq
-		 = boost::make_shared< srk31::concatenating_sequence< vector<shared_ptr<value_conversion> >::iterator > >();
+		 = std::make_shared< srk31::concatenating_sequence< vector<shared_ptr<value_conversion> >::iterator > >();
 		p_out_seq->append(working_exact.begin(), working_exact.end())
 		.append(working_half_exact.begin(), working_half_exact.end())
 		.append(working_concrete.begin(), working_concrete.end());

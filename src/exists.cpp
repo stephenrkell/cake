@@ -11,10 +11,11 @@
 #include "util.hpp"
 #include "module.hpp"
 #include <dwarfpp/encap.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/make_shared.hpp>
+// #include <boost/filesystem.hpp> // removed use of boost::filesystem while boost is C++11-broken (depends on deleted copy constructors)
+#include <memory>
 #include <stdio.h>
 #include <ext/stdio_filebuf.h>
+#include <libgen.h> // for dirname
 
 namespace cake
 {
@@ -76,9 +77,9 @@ namespace cake
 		std::string& filename)
 	{
 		std::string unescaped_filename = unescape_string_lit(filename);
-		// #define CASE(s, f, ...) (constructor == #s ) ? (boost::make_shared<s ## _module>((f) , ##__VA_ARGS__))
-		if       (constructor == "elf_external_sharedlib") return boost::make_shared<elf_external_sharedlib_module>(lookup_solib(unescaped_filename), unescaped_filename);
-		else if  (constructor == "elf_reloc") return              boost::make_shared<elf_reloc_module>(make_absolute_pathname(unescaped_filename), unescaped_filename);
+		// #define CASE(s, f, ...) (constructor == #s ) ? (std::make_shared<s ## _module>((f) , ##__VA_ARGS__))
+		if       (constructor == "elf_external_sharedlib") return std::make_shared<elf_external_sharedlib_module>(lookup_solib(unescaped_filename), unescaped_filename);
+		else if  (constructor == "elf_reloc") return              std::make_shared<elf_reloc_module>(make_absolute_pathname(unescaped_filename), unescaped_filename);
 		return module_ptr();
 		// #undef CASE
 	}
@@ -98,8 +99,9 @@ namespace cake
 	
 	std::string request::make_absolute_pathname(std::string ref)
 	{
-		boost::filesystem::path p(ref);
-		if (!p.root_directory().empty())
+		//boost::filesystem::path p(ref);
+		//if (!p.root_directory().empty())
+		if (ref.length() > 0 && ref.at(0) == '/')
 		{
 			// this means p is absolute, so return it
 			return ref;
@@ -107,8 +109,13 @@ namespace cake
 		else
 		{
 			// this means p is relative, so prepend the Cake file's dirname
-			return (boost::filesystem::path(in_filename).branch_path() 
-				/ boost::filesystem::path(ref)).string();
+			
+			//return (boost::filesystem::path(in_filename).branch_path() 
+			//	/ boost::filesystem::path(ref)).string();
+			char *tmp = strdup(in_filename);
+			string ret = string(dirname(tmp)) + "/" + ref;
+			free(tmp);
+			return ret;
 		}
 	}
 }

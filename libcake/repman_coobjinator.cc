@@ -27,9 +27,7 @@ extern "C" {
 #include <cstdio>
 #include <cstdarg>
 #include <strings.h>
-#include <boost/shared_ptr.hpp>
-#include <boost/weak_ptr.hpp>
-#include <boost/make_shared.hpp>
+#include <memory>
 #include "repman_image.hh"
 using pmirror::process_image;
 
@@ -48,7 +46,7 @@ entry *coobjinator_region;
 #define entry_coverage_in_bytes (64*1024*1024)
 // 64MB regions; there are 2^38 such in a 64-bit address space
 
-using boost::shared_ptr;
+using std::shared_ptr;
 using std::cerr;
 using std::endl;
 
@@ -287,7 +285,7 @@ new_co_object_record(void *initial_object, int initial_rep, int initial_alloc_by
 {
 	assert(!group_for_object(initial_object));
 	auto p_m = ensure_map_for_addr(initial_object);
-	co_object_group* group = new co_object_group(); //boost::make_shared<co_object_group>();
+	co_object_group* group = new co_object_group(); //std::make_shared<co_object_group>();
 	bzero(group, sizeof (co_object_group));
 	cerr << "Groups previously had size " << groups.size() << endl;
 	cerr << "Inserting " << group/*.get()*/ << endl;
