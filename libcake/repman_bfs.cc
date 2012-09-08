@@ -7,6 +7,7 @@
 #include <map>
 #include <deque>
 #include <cstdio>
+#include <memory>
 #include <sstream>
 
 /* debugging */
@@ -18,7 +19,7 @@ const char *debugging_output_filename = DEBUGGING_OUTPUT_FILENAME;
 #define DEBUG_GUARD(stmt) if (debug_out != NULL) { stmt; }
 
 using std::shared_ptr;
-using boost::dynamic_pointer_cast;
+using std::dynamic_pointer_cast;
 using namespace dwarf::spec;
 using pmirror::process_image;
 using std::endl;
@@ -61,12 +62,12 @@ imprecise_static_type_from_stackptr_helper(void *stackptr_helper)
 	shared_ptr<type_die> stackptr_type = stackptr_var->get_type();
 	assert(stackptr_type);
 	shared_ptr< ::dwarf::spec::pointer_type_die> stackptr_ptr_type
-	 = boost::dynamic_pointer_cast< ::dwarf::spec::pointer_type_die>(stackptr_type);
+	 = dynamic_pointer_cast< ::dwarf::spec::pointer_type_die>(stackptr_type);
 	assert(stackptr_ptr_type);
 	
 	shared_ptr<type_die> stackptr_target_type = stackptr_ptr_type->get_type();
 	shared_ptr< ::dwarf::spec::pointer_type_die> stackptr_target_ptr_type
-	 = boost::dynamic_pointer_cast< ::dwarf::spec::pointer_type_die>(stackptr_target_type);
+	 = dynamic_pointer_cast< ::dwarf::spec::pointer_type_die>(stackptr_target_type);
 	assert(stackptr_target_ptr_type);
 	
 	return stackptr_target_ptr_type->get_type();

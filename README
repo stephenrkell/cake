@@ -1,0 +1,39 @@
+Non-release notes
+
+If you are reading this, you have probably read the Cake paper from OOPSLA
+2010. The Cake implementation is not currently in a usable state for third
+parties,  except for the very brave. This is because:
+
+- the language is not well enough documented for learning its considerable
+quirks (particularly certain recurring "shoehorning" idioms, subtleties
+concerning opaque pointers and co-object replacement, etc..)
+
+- error messages, and error conditions generally, will not be comprehensible
+to anyone who doesn't understand how the compiler and runtime work
+---typically they are from the C++ compiler itself, or even stranger runtime
+errors
+
+- code generation is unimplemented for several language features (lambdas,
+algorithms, event context patterns, associations, caller_free)---none of this
+will be tons of work to add, but it is currently missing;
+
+- the language semantics are still not terribly well-defined---this is good,
+because there is still some wiggle room which can be used to accommodate
+minor variations on the requirements currently catered for, but it does mean
+that one shouldn't  expect a new use-case to work without semantic tweaks,
+and in some cases, new variants on the language features;
+
+- as a consequence, existing Cake code will inevitably need to be tweaked to
+stay in sync with the compiler as semantic wiggles are added.  I don't expect
+these changes would ever require significant increase in complexity of
+existing Cake code, but they would be a pain for authors to keep up with.
+
+However, I am making the code available for anyone who wants to have a go. 
+If you do: please, please, send me e-mail. I'd love to know what you want to
+do with it, and I'd also be very happy to support your efforts (possibly as a
+collaboration).
+
+Stephen Kell <srkell@acm.org>
+September 2012
+
+
